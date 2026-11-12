@@ -228,6 +228,12 @@ func TestPeakPartsSignedShares(t *testing.T) {
 	if len(parts) != 5 || parts[3].Kind != "return" || math.Abs(rest-5) > 0.01 {
 		t.Errorf("parts %+v rest %.2f, want five parts and a rest of 5%%", parts, rest)
 	}
+	// Three equal parts print 33.3 each: the rest takes the last 0.1, so the
+	// printed row adds up to 100.0.
+	parts, rest = attributePeak(0.3, []stemSample{{"a", "track", 0.1}, {"b", "track", 0.1}, {"c", "return", 0.1}})
+	if sum := parts[0].SignedSharePct + parts[1].SignedSharePct + parts[2].SignedSharePct + rest; len(parts) != 3 || rest != 0.1 || math.Abs(sum-100) > 1e-9 {
+		t.Errorf("equal parts %+v rest %v add to %v, want 100.0", parts, rest, sum)
+	}
 }
 
 // TestDetailFields: DropDetail leaves the summaries and removes the per-bar

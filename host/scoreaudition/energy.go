@@ -340,8 +340,11 @@ func attributePeak(total float64, values []stemSample) ([]PeakPart, float64) {
 		if math.Abs(share) < minPeakPartPct || len(out) == maxPeakParts {
 			break
 		}
-		out = append(out, PeakPart{ID: s.id, Kind: s.kind, Sample: plusZero(round(s.v, 4)), SignedSharePct: plusZero(round(share, 1))})
-		listed += share
+		part := PeakPart{ID: s.id, Kind: s.kind, Sample: plusZero(round(s.v, 4)), SignedSharePct: plusZero(round(share, 1))}
+		out = append(out, part)
+		// The rest comes from the rounded parts, so the printed row adds up
+		// to exactly 100.0.
+		listed += part.SignedSharePct
 	}
 	return out, plusZero(round(100-listed, 1))
 }

@@ -307,7 +307,7 @@ func TestSilenceAndPeak(t *testing.T) {
 	for _, part := range p.PreMasterParts {
 		sum += part.SignedSharePct
 	}
-	if math.Abs(sum-100) > 0.3 || math.Abs(p.PreMasterSample) < 0.1 {
+	if math.Abs(sum-100) > 0.01 || math.Abs(p.PreMasterSample) < 0.1 {
 		t.Errorf("peak parts add to %.1f%% of %.4f", sum, p.PreMasterSample)
 	}
 	// The knock's attack and decay put energy in every band of bar 1; the sub
@@ -371,7 +371,7 @@ func TestTrackSelection(t *testing.T) {
 				t.Errorf("peak %d lists %s", i+1, part.ID)
 			}
 		}
-		if math.Abs(sum-100) > 0.3 {
+		if math.Abs(sum-100) > 0.01 {
 			t.Errorf("peak %d parts add to %.1f%%", i+1, sum)
 		}
 	}
