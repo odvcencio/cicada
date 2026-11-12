@@ -1,14 +1,15 @@
 {
-  "about": "Measured kind of each scripted row of local-first.test.cjs on main: R waits on the server, B talks to it in the background, L is local. A pull request that moves a row updates its kind here in the same change.",
+  "about": "Measured kind of each scripted row of local-first.test.cjs on main: R waits on the server, B talks to it in the background, L is local, broken is a known product bug (T4). A pull request that moves a row updates its kind here in the same change.",
   "rows": {
     "T1": "R",
     "T2": "R",
     "T3": "R",
+    "T4": "broken",
     "T5": "R",
     "T6": "R",
     "T7": "B",
     "T8": "B",
-    "G1": "B",
+    "G1": "R",
     "G3": "R",
     "G4": "R",
     "G5": "R",

@@ -122,8 +122,14 @@ segment_runs() {
 # from failing on them. Remove a name here when you add its suite to a segment.
 not_run_by_ci=(
 	# Runs in its own job, "Studio local-first walkthrough": local-first below.
+	# check runs its row check and requires a workflow job that runs it.
 	local-first
 )
+
+# The walkthrough's CI runs, fixture:part (see local_first_parts). check
+# passes them to the suite's --check-rows, which fails unless every scripted
+# row runs in exactly one of them.
+local_first_runs="scene:1/3 scene:2/3 scene:3/3 placement:1/1"
 
 self="${BASH_SOURCE[0]}"
 
@@ -208,11 +214,21 @@ check_shards() {
 		if [[ ! -f "$root/workstation/browser/$name.test.cjs" ]]; then complain "no file workstation/browser/$name.test.cjs"; fi
 	done
 
+	# The local-first walkthrough runs in its own job: its rows must split
+	# exactly into scripted and unscripted ones, every scripted row must run in
+	# one of local_first_runs, and a workflow job must run it.
+	if ! node "$root/workstation/browser/local-first.test.cjs" --check-rows $local_first_runs >&2; then
+		complain "the local-first walkthrough's row check failed (above)"
+	fi
+	if ! grep -q 'bash scripts/ci-studio-browser.sh local-first' "$root/.github/workflows/ci.yml" 2>/dev/null; then
+		complain "no workflow job runs scripts/ci-studio-browser.sh local-first"
+	fi
+
 	if [[ "$problems" -gt 0 ]]; then
 		echo "$problems problem(s)" >&2
 		return 1
 	fi
-	echo "studio browser shards: ${#defined[@]} segments, ${#declared[@]} suites, each suite in exactly one of $shard_count shards"
+	echo "studio browser shards: ${#defined[@]} segments, ${#declared[@]} suites, each suite in exactly one of $shard_count shards; local-first in its own job"
 }
 
 # --- helpers used by segments ---------------------------------------------
@@ -249,7 +265,7 @@ stop_studio() {
 # device is opened. It sets studio_pid to the workstation. stop_synthetic_studio
 # stops all three processes.
 synthetic_pids=()
-# Studios a segment starts itself (seg_local_first runs several at once); the
+# Studios a run starts itself (local_first_parts runs several at once); the
 # EXIT trap stops them too.
 extra_pids=()
 start_synthetic_studio() {
@@ -757,7 +773,7 @@ local_first_parts() {
 	local run fixture part tag port pid status=0
 	local -a tags=() walks=()
 	export CICADA_LOCAL_FIRST_PROOF_DIR="$PWD/build/studio-local-first-proof"
-	for run in scene:1/3 scene:2/3 scene:3/3 placement:1/1; do
+	for run in $local_first_runs; do
 		fixture="${run%%:*}" part="${run#*:}"
 		tag="$fixture-${part%/*}of${part#*/}"
 		tags+=("$tag")
@@ -1113,7 +1129,19 @@ run_local_first() {
 	mkdir -p "$browser_root" build
 	ran_file="$browser_root/ran-suites.txt"
 	: > "$ran_file"
-	local_first_parts
+	local status=0 run missing=0
+	local_first_parts || status=$?
+	# A part whose command was deleted or skipped leaves no record: fail.
+	for run in $local_first_runs; do
+		run="local-first@${run%%:*}-$(sed 's#/#of#' <<<"${run#*:}")"
+		if ! grep -qxF -- "$run" "$ran_file"; then
+			echo "FAIL: the local-first job did not run $run" >&2
+			missing=1
+		fi
+	done
+	if [[ "$missing" == 1 ]]; then return 1; fi
+	echo "local-first ran all $(wc -l < "$ran_file") recorded parts"
+	return "$status"
 }
 
 case "${1:-}" in

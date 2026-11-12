@@ -49,6 +49,26 @@
  * every time. Waits are conditions, never fixed sleeps; the hold limit and a
  * background row's watch are bounded, and both are part of the measurement.
  *
+ * Known limits (review of #353; each is for a later pull request):
+ *   - R by construction (F3): 12 rows can only measure R, because their check
+ *     reads a server signal. checks.replied (the step's own reply) is the
+ *     result for S1, S2, S3, C9, Rc4, Rc7 and G11, and checks.playing (the
+ *     1 s transport readout) for T1, T2, T3, T5 and T6. A change that makes
+ *     one of them local must also change its check to the visible result.
+ *     Fifteen rows check only that the saved revision changed (G5, G6, G7,
+ *     M2, M4, M5, C4, L3, L4, Au3, Au4, U3, A7, A9, A13), not the edited value.
+ *   - Gaps in the hold and the log (F6): a request already in flight when the
+ *     hold starts, and an open stream, are not held; a WebSocket opened during
+ *     the hold still completes its handshake (its frames are held); service
+ *     workers are not blocked; img, script, link, media and worker requests
+ *     are not in the request log. Studio on main uses none of these for a
+ *     step's result; a score engine in a worker (design 3.3) will.
+ *   - Generous classifier (F7): a held paint up to 1,500 ms counts as local.
+ *     A later change that paints after a ~1 s client timeout would still read
+ *     L or B; the table marks every held paint after 250 ms "slow".
+ *   - No rerun of a mismatch (F10): a step is retried only when it throws; a
+ *     row whose kind differs from the expectation fails the run at once.
+ *
  * node workstation/browser/local-first.test.cjs --write-fixture <new-score> [scene|placement]
  * ./build/cicada studio <new-score> --audio null --listen 127.0.0.1:8190 > <log>
  * CICADA_STUDIO_URL=http://127.0.0.1:8190 CICADA_STUDIO_STARTUP_LOG=<log> \
@@ -97,6 +117,27 @@ const REPORT_MS = 250;
 const HOLD_FRAMES = env('CICADA_LOCAL_FIRST_HOLD_FRAMES', 8);
 const OPEN_MS = env('CICADA_LOCAL_FIRST_OPEN_MS', 15_000);
 const ATTEMPTS = env('CICADA_LOCAL_FIRST_ATTEMPTS', 2);
+// A step that has not finished after STEP_MS is abandoned (a frozen page);
+// a page.evaluate after EVALUATE_MS.
+const STEP_MS = 60_000;
+const EVALUATE_MS = 10_000;
+
+// deadline settles like promise, or rejects after ms. An abandoned promise's
+// later rejection is swallowed, so it cannot end the process.
+async function deadline(promise, ms, what) {
+  let timer;
+  Promise.resolve(promise).catch(() => {});
+  try {
+    return await Promise.race([promise, new Promise((resolve, reject) => { timer = setTimeout(() => reject(new Error(`${what} did not finish within ${ms} ms (a frozen page?)`)), ms); })]);
+  } finally { clearTimeout(timer); }
+}
+
+// boundEvaluate makes every page.evaluate on page give up after EVALUATE_MS:
+// on a frozen main thread an evaluate never returns.
+function boundEvaluate(page) {
+  const evaluate = page.evaluate.bind(page);
+  page.evaluate = (...args) => deadline(evaluate(...args), EVALUATE_MS, 'page.evaluate');
+}
 
 // CICADA_LOCAL_FIRST_PART=k/n runs the fixture's steps whose part is k of n
 // (a step's part field, 1 by default, taken modulo n), so CI can run the parts
@@ -320,23 +361,27 @@ function localFirstProbe() {
   }
 
   function begin(start) {
-    lf.sample = {start, frames: 0, seen: null, error: null};
+    lf.sample = {start, frames: 0, seen: null, markAt: null, error: null};
     requestAnimationFrame(tick);
   }
   function tick(timestamp) {
     const sample = lf.sample;
     if (!sample || lf.result) return;
     sample.frames++;
+    const markMs = () => (sample.markAt == null ? null : sample.markAt - sample.start);
     if (sample.seen != null) {
-      lf.result = {painted: true, start: sample.start, firstFrameMs: sample.seen - sample.start, ms: timestamp - sample.start, frames: sample.frames, error: sample.error};
+      lf.result = {painted: true, start: sample.start, firstFrameMs: sample.seen - sample.start, ms: timestamp - sample.start, frames: sample.frames, markMs: markMs(), error: sample.error};
       return;
     }
+    // An immediate mark (a prediction the page paints before the server
+    // answers) is timed on its own; it is not the step's result.
+    if (lf.markCheck && sample.markAt == null) { try { if (lf.markCheck(lf.spec.args, lf.base)) sample.markAt = now(); } catch {} }
     let ok = false;
     try { ok = !!lf.check(lf.spec.args, lf.base); } catch (error) { sample.error = String(error && error.message || error).slice(0, 200); }
     const at = now();
     if (ok) { sample.seen = at; requestAnimationFrame(tick); return; }
     if (at - sample.start >= lf.spec.limitMs && sample.frames >= lf.spec.limitFrames) {
-      lf.result = {painted: false, start: sample.start, firstFrameMs: null, ms: null, waitedMs: at - sample.start, frames: sample.frames, error: sample.error};
+      lf.result = {painted: false, start: sample.start, firstFrameMs: null, ms: null, waitedMs: at - sample.start, frames: sample.frames, markMs: markMs(), error: sample.error};
       return;
     }
     requestAnimationFrame(tick);
@@ -350,9 +395,10 @@ function localFirstProbe() {
   for (const type of ['pointerdown', 'pointerup', 'pointermove', 'keydown', 'wheel']) {
     window.addEventListener(type, event => { if (accepts(event)) begin(event.timeStamp); }, {capture: true, passive: true});
   }
-  lf.arm = (spec, check, snapshot) => {
+  lf.arm = (spec, check, snapshot, markCheck) => {
     lf.spec = spec;
     lf.check = check;
+    lf.markCheck = markCheck || null;
     lf.base = snapshot ? snapshot(spec.args) : null;
     lf.result = null;
     lf.sample = null;
@@ -441,6 +487,21 @@ const STEPS = {
     snapshot: snapshots.position,
     finish: ctx => ctx.stop(),
   },
+  T4: {
+    // Broken on main: the block's form sends no scene (ws/arrangement.go:47;
+    // ws/actions.go:380 passes it on empty), and the service answers 422
+    // "song block is no longer in this position"
+    // (cmd/cicada/studio_transport.go:1443). The step records "broken" while
+    // that answer comes back; a fix turns it R and fails the expectation until
+    // local-first.expected.json is updated.
+    fixture: 'scene', input: {type: 'pointerdown'},
+    broken: {path: /^\/__actions\/transport$/, status: 422},
+    prepare: async ctx => { await ctx.open(SCENE); await ctx.stop(); await ctx.view('arrange'); },
+    act: ctx => ctx.tap('#view-panel-arrange button[name=action][value=playFrom]'),
+    check: checks.replied,
+    args: {path: '/__actions/transport'},
+    finish: ctx => ctx.stop(),
+  },
   T7: {
     fixture: 'scene', input: {type: 'none'}, background: {method: 'GET', path: /^\/api\/transport$/, count: 1, ms: 2500},
     prepare: ctx => ctx.open(SCENE),
@@ -457,10 +518,20 @@ const STEPS = {
 
   // --- Grid and notes (Clip dock) ------------------------------------------
   G1: {
+    // The result is the committed cell: no pending mark is left on it. The
+    // shell first paints a prediction (data-pending-paint, data-workspace-
+    // pending; ws/engine/shell_edits_js.go:162-190) and puts the old state
+    // back if the service refuses (:195-206). That prediction is timed as the
+    // immediate mark, not taken as the result, as for L1, L2, U1 and U2. So
+    // G1 measures R where the audit, which counted the prediction, says B.
     part: 3, fixture: 'scene', input: {type: 'pointerdown'},
     prepare: async ctx => { await ctx.open(SCENE); await ctx.dock('clip'); return {cell: await ctx.inactiveCell()}; },
     act: (ctx, args) => ctx.tap(args.cell),
-    check: args => document.querySelector(args.cell)?.getAttribute('data-active') === 'true',
+    check: args => {
+      const cell = document.querySelector(args.cell);
+      return cell?.getAttribute('data-active') === 'true' && !cell.closest('[data-workspace-pending], [data-pending-paint]');
+    },
+    mark: args => document.querySelector(args.cell)?.getAttribute('data-active') === 'true',
   },
   G3: {
     part: 3, fixture: 'scene', input: {type: 'pointerdown'},
@@ -1184,8 +1255,9 @@ const STEPS = {
   },
   V7: {
     // After an edit, hidden update regions are stale and the shell reads them
-    // when shown or after 250 ms idle. The edit itself (a piano-roll cell, row
-    // G1) paints at once; the step watches for the region read.
+    // when shown or after 250 ms idle. V7's result is that read; the cell
+    // edit (row G1) is only its trigger, so the check accepts the cell's
+    // immediate mark to know the input landed.
     part: 2, fixture: 'scene', input: {type: 'pointerdown'}, background: {method: 'GET', path: /^\/__studio\/regions$/, count: 1, ms: 2500},
     prepare: async ctx => { await ctx.open(SCENE); await ctx.view('arrange'); await ctx.dock('clip'); return {cell: await ctx.inactiveCell()}; },
     act: (ctx, args) => ctx.tap(args.cell),
@@ -1364,7 +1436,6 @@ const STEPS = {
 // Rows the walkthrough does not script yet, each with the reason. The totals
 // count them with the audit's class and say so.
 const UNSCRIPTED = {
-  T4: 'the Play-from button fails on main: its form sends no scene, so the service answers 422 "song block is no longer in this position" (ws/arrangement.go:47, ws/actions.go:367, cmd/studio_transport.go:1420)',
   G2: 'neither fixture has a drum track, so no drum lane renders',
   G9: 'neither fixture has performance notes, so the performance note forms do not render',
   G10: 'neither fixture has performance notes, so the gesture, time, pitch-shape and group forms do not render',
@@ -1494,14 +1565,19 @@ async function tap(page, selector) {
 function checkSource(fn) { return `(${fn.toString()})`; }
 
 async function runStep(ctx, step, pass) {
+  // An attempt abandoned at its deadline must not hold the network or act on
+  // the next attempt's page if it wakes up later.
+  const generation = ctx.generation;
+  const current = () => { if (ctx.generation !== generation) throw new Error('abandoned attempt'); };
   const record = {row: step.id, pass, fixture: ctx.fixture};
   const args = {...(step.args || {}), ...((step.prepare ? await step.prepare(ctx, pass) : null) || {})};
   const {page, net} = ctx; // prepare opens the page on the first step
   await settle(page);
   const spec = {id: step.id, input: step.input, args, limitMs: pass === 'held' ? HOLD_MS : OPEN_MS, limitFrames: pass === 'held' ? HOLD_FRAMES : 0};
-  const mark = await page.evaluate(`(() => { window.__lf.arm(${JSON.stringify(spec)}, ${checkSource(step.check)}, ${step.snapshot ? checkSource(step.snapshot) : 'null'}); return window.__lf.mark; })()`);
+  const mark = await page.evaluate(`(() => { window.__lf.arm(${JSON.stringify(spec)}, ${checkSource(step.check)}, ${step.snapshot ? checkSource(step.snapshot) : 'null'}, ${step.mark ? checkSource(step.mark) : 'null'}); return window.__lf.mark; })()`);
   const documentsBefore = net.documents.length;
   const nodeStart = Date.now();
+  current();
   if (pass === 'held') await net.hold();
   let result;
   try {
@@ -1516,6 +1592,7 @@ async function runStep(ctx, step, pass) {
   record.firstFrameMs = result.firstFrameMs == null ? null : +result.firstFrameMs.toFixed(1);
   record.ms = result.ms == null ? null : +result.ms.toFixed(1);
   record.frames = result.frames;
+  record.markMs = result.markMs == null ? null : +result.markMs.toFixed(1);
   if (result.error) record.checkError = result.error;
   if (pass === 'held') {
     // Recovery: with the network back, the result must arrive.
@@ -1545,7 +1622,7 @@ async function runStep(ctx, step, pass) {
   const entries = await page.evaluate(mark => window.__lf.net.slice(mark), mark);
   const paintAt = result.painted ? result.start + result.firstFrameMs : null;
   const windowEnd = paintAt ?? result.start + (result.waitedMs ?? 0);
-  const describe = entry => ({kind: entry.kind, method: entry.method, path: entry.path + (entry.search || ''), atMs: +(entry.t - result.start).toFixed(1), background: backgroundRow(entry)});
+  const describe = entry => ({kind: entry.kind, method: entry.method, path: entry.path + (entry.search || ''), atMs: +(entry.t - result.start).toFixed(1), status: entry.status ?? null, background: backgroundRow(entry)});
   const started = entries.filter(entry => entry.t >= result.start - 1);
   record.requests_in_window = started.filter(entry => entry.t <= windowEnd + 1).map(describe);
   const documents = net.documents.slice(documentsBefore).map(doc => ({kind: 'document', method: doc.method, path: doc.path, atMs: doc.at - nodeStart, background: null}));
@@ -1562,19 +1639,68 @@ async function runStep(ctx, step, pass) {
     };
     record.own_requests = [...started.filter(own).map(describe), ...documents];
   }
+  if (step.broken) record.broken = started.some(entry => step.broken.path.test(entry.path) && entry.status === step.broken.status);
   if (step.finish) await step.finish(ctx, args);
   return record;
 }
 
 function kindOf(open, held) {
   if (!open || !held) return null;
+  if (open.broken) return 'broken';
   if (!held.painted) return 'R';
   return open.own_requests.length > 0 ? 'B' : 'L';
 }
 
 // ---------------------------------------------------------------------------
 
-test('local-first walkthrough: does each interaction wait on the server?', {timeout: 600_000}, async t => {
+// node local-first.test.cjs --check-rows RUN... checks the row bookkeeping
+// without a browser; scripts/ci-studio-browser.sh check runs it with CI's runs
+// (fixture:part, for example scene:1/3). A removed or misplaced row fails here.
+function checkRows(runs) {
+  const problems = [];
+  const ids = ROWS.map(row => row.id);
+  if (new Set(ids).size !== ids.length) problems.push('ROWS has a repeated id');
+  const audit = {R: 0, B: 0, L: 0};
+  for (const row of ROWS) audit[row.audit] = (audit[row.audit] || 0) + 1;
+  if (ROWS.length !== 109 || audit.R !== 72 || audit.B !== 19 || audit.L !== 18) problems.push(`ROWS must hold the audit's 109 rows (72 R, 19 B, 18 L); it holds ${ROWS.length} (${audit.R} R, ${audit.B} B, ${audit.L} L)`);
+  for (const id of Object.keys(STEPS)) if (!ids.includes(id)) problems.push(`STEPS has ${id}, which is not a row`);
+  for (const id of Object.keys(UNSCRIPTED)) if (!ids.includes(id)) problems.push(`UNSCRIPTED has ${id}, which is not a row`);
+  for (const id of ids) {
+    const scripted = !!STEPS[id], listed = Object.hasOwn(UNSCRIPTED, id);
+    if (scripted && listed) problems.push(`${id} is both scripted and listed as unscripted`);
+    if (!scripted && !listed) problems.push(`${id} is neither scripted nor listed as unscripted with a reason`);
+    if (listed && (typeof UNSCRIPTED[id] !== 'string' || UNSCRIPTED[id].trim().length < 20)) problems.push(`${id} is unscripted without a reason`);
+  }
+  let expected = {};
+  try { expected = JSON.parse(fs.readFileSync(path.join(__dirname, 'local-first.expected.json'), 'utf8')).rows || {}; } catch (error) { problems.push(`local-first.expected.json: ${error.message}`); }
+  for (const id of Object.keys(STEPS)) if (!Object.hasOwn(expected, id)) problems.push(`${id} is scripted but has no expected kind`);
+  for (const [id, kind] of Object.entries(expected)) {
+    if (!STEPS[id]) problems.push(`local-first.expected.json has ${id}, which is not scripted`);
+    if (!['R', 'B', 'L', 'broken'].includes(kind)) problems.push(`local-first.expected.json gives ${id} the kind ${kind}`);
+  }
+  const parsed = runs.map(run => {
+    const match = /^(\w+):(\d+)\/(\d+)$/.exec(run);
+    if (!match || !FIXTURES[match[1]]) { problems.push(`CI run ${run} is not fixture:k/n`); return null; }
+    return {run, fixture: match[1], index: Number(match[2]), of: Number(match[3])};
+  }).filter(Boolean);
+  if (!parsed.length) problems.push('give the CI runs, for example scene:1/3 placement:1/1');
+  const selects = (run, id) => STEPS[id].fixture === run.fixture && (STEPS[id].part || 1) % run.of === run.index % run.of;
+  for (const id of Object.keys(STEPS)) {
+    const by = parsed.filter(run => selects(run, id)).map(run => run.run);
+    if (parsed.length && by.length !== 1) problems.push(`${id} (fixture ${STEPS[id].fixture}, part ${STEPS[id].part || 1}) runs in ${by.length ? by.join(' and ') : 'no CI run'}; it must run in exactly one`);
+  }
+  for (const run of parsed) if (!Object.keys(STEPS).some(id => selects(run, id))) problems.push(`CI run ${run.run} runs no step`);
+  return problems;
+}
+
+if (process.argv[2] === '--check-rows') {
+  const problems = checkRows(process.argv.slice(3));
+  for (const problem of problems) console.error(`FAIL: ${problem}`);
+  if (!problems.length) console.log(`local-first rows: ${ROWS.length} rows, ${Object.keys(STEPS).length} scripted, ${Object.keys(UNSCRIPTED).length} unscripted with reasons, each scripted row in one CI run and in local-first.expected.json`);
+  process.exit(problems.length ? 1 : 0);
+}
+
+test('local-first walkthrough: does each interaction wait on the server?', {timeout: 240_000}, async t => {
   assert.ok(process.env.CICADA_STUDIO_URL, 'set CICADA_STUDIO_URL to a disposable Studio');
   const base = new URL(process.env.CICADA_STUDIO_URL);
   assert.ok(['127.0.0.1', 'localhost', '[::1]'].includes(base.hostname), 'use a local disposable Studio');
@@ -1617,6 +1743,7 @@ test('local-first walkthrough: does each interaction wait on the server?', {time
     if (!page) {
       page = await context.newPage();
       page.setDefaultTimeout(15_000);
+      boundEvaluate(page);
       page.on('pageerror', error => errors.push(`${ctx.current || 'startup'}: ${error.message}`));
     }
     // Reuse the page while it still shows the selection the path names; a
@@ -1747,52 +1874,73 @@ test('local-first walkthrough: does each interaction wait on the server?', {time
     await until(() => page.evaluate(want => window.__lf.position() === want, `BAR ${stopped.bar} STEP ${stopped.step}`), 'the position readout did not settle after Stop');
   };
 
+  // A frozen page must not hang the suite past its 240 s limit (and the 420 s
+  // kill in scripts/ci-studio-browser.sh): each step has a deadline, a failed
+  // attempt gets a new page, and the report is written whatever happens.
   const records = [];
   const failures = [];
-  for (const pass of ['open', 'held']) {
-    for (const step of steps) {
-      ctx.current = `${step.id} (${pass})`;
-      let record = null, failure = null;
-      for (let attempt = 1; attempt <= ATTEMPTS && !record; attempt++) {
-        const began = Date.now();
-        try {
-          record = await runStep(ctx, step, pass);
-          record.attempt = attempt;
-          record.elapsedMs = Date.now() - began;
-        } catch (error) {
-          failure = `${step.id} ${pass} attempt ${attempt}: ${error.message.split('\n').filter(Boolean).slice(0, 4).join(' | ')}`;
-          console.error(`local-first: ${failure}`);
-          ctx.loaded = null; // the next attempt and the next step start on a fresh page
-          if (net.holding) await net.release().catch(() => {});
-          await page?.setViewportSize({width: 1440, height: 900}).catch(() => {});
-          await ctx.stop().catch(() => {});
+  let report = null, recovery = 'not checked (no step ran)';
+  try {
+    for (const pass of ['open', 'held']) {
+      for (const step of steps) {
+        ctx.current = `${step.id} (${pass})`;
+        let record = null, failure = null;
+        for (let attempt = 1; attempt <= ATTEMPTS && !record; attempt++) {
+          const began = Date.now();
+          try {
+            record = await deadline(runStep(ctx, step, pass), STEP_MS, `step ${step.id} (${pass})`);
+            record.attempt = attempt;
+            record.elapsedMs = Date.now() - began;
+          } catch (error) {
+            failure = `${step.id} ${pass} attempt ${attempt}: ${error.message.split('\n').filter(Boolean).slice(0, 4).join(' | ')}`;
+            console.error(`local-first: ${failure}`);
+            ctx.generation = (ctx.generation || 0) + 1;
+            if (net.holding) await net.release().catch(() => {});
+            // The next attempt and the next step start on a new page: a page
+            // that stopped answering cannot be reloaded.
+            const old = page;
+            page = undefined;
+            ctx.loaded = null;
+            if (old) await deadline(old.close(), 5_000, 'closing the page').catch(() => {});
+            await ctx.stop().catch(() => {});
+          }
+        }
+        if (!record) { failures.push(failure); continue; }
+        records.push(record);
+        // The recovery check: with the network back, the held step must reach its result.
+        if (pass === 'held' && record.recovered === false) {
+          failures.push(`${step.id} held: the result did not arrive after the network was released${record.recoveryNote ? `; ${record.recoveryNote.join(', ')}` : ''}`);
         }
       }
-      if (record) records.push(record); else failures.push(failure);
     }
+
+    // After the held pass: the page still answers, and a reload shows the
+    // score the server holds.
+    ctx.current = 'recovery';
+    if (page || records.length) {
+      await ctx.open('/studio?tab=arrange', {force: true});
+      recovery = await page.evaluate(() => !!document.querySelector('#studio-shell[data-shell-actions=ready]')) ? 'the page reloads and its engines mount' : 'the page did not mount';
+    }
+  } catch (error) {
+    failures.push(`walkthrough stopped: ${error.message.split('\n')[0]}`);
+    recovery = `not checked: ${error.message.split('\n')[0]}`;
+  } finally {
+    report = summarize(steps, records, failures, fixtureName, browser.version(), recovery, errors);
+    const dir = process.env.CICADA_LOCAL_FIRST_PROOF_DIR || path.join(__dirname, '..', '..', 'build', 'local-first');
+    fs.mkdirSync(dir, {recursive: true});
+    report.part = part.label;
+    fs.writeFileSync(path.join(dir, `local-first-${fixtureName}${part.of > 1 ? `-${part.index}of${part.of}` : ''}.json`), JSON.stringify(report, null, 1) + '\n');
+    console.log(table(report));
+    const combined = combine(dir);
+    if (combined) console.log(combined);
   }
 
-  // After the held pass: the page still answers, and a reload shows the score
-  // the server holds.
-  ctx.current = 'recovery';
-  let recovery = 'not checked (no step ran)';
-  if (page) {
-    await ctx.open('/studio?tab=arrange', {force: true});
-    recovery = await page.evaluate(() => !!document.querySelector('#studio-shell[data-shell-actions=ready]')) ? 'the page reloads and its engines mount' : 'the page did not mount';
-  }
-
-  const report = summarize(steps, records, failures, fixtureName, browser.version(), recovery, errors);
-  const dir = process.env.CICADA_LOCAL_FIRST_PROOF_DIR || path.join(__dirname, '..', '..', 'build', 'local-first');
-  fs.mkdirSync(dir, {recursive: true});
-  report.part = part.label;
-  fs.writeFileSync(path.join(dir, `local-first-${fixtureName}${part.of > 1 ? `-${part.index}of${part.of}` : ''}.json`), JSON.stringify(report, null, 1) + '\n');
-  console.log(table(report));
-  const combined = combine(dir);
-  if (combined) console.log(combined);
-
-  assert.deepEqual(failures, [], 'steps that failed twice');
+  assert.deepEqual(failures, [], 'steps that failed (each was tried twice), or held steps that did not recover');
   if (compare) {
     const expected = JSON.parse(fs.readFileSync(path.join(__dirname, 'local-first.expected.json'), 'utf8'));
+    // Every expected row of this fixture and part was measured.
+    const unmeasured = steps.filter(step => !report.rows.some(row => row.id === step.id && row.kind)).map(step => step.id);
+    assert.deepEqual(unmeasured, [], 'expected rows of this part that were not measured');
     const mismatches = report.rows.filter(row => row.kind !== expected.rows[row.id]).map(row =>
       `${row.id}: measured ${row.kind}, expected ${expected.rows[row.id] ?? '(none)'}${row.kind === 'R' ? ' (waited on the server)' : ''}`);
     assert.deepEqual(mismatches, [], 'a row changed kind: update workstation/browser/local-first.expected.json in the change that moved it');
@@ -1810,6 +1958,7 @@ function summarize(steps, records, failures, fixture, browserVersion, recovery, 
       requests_in_window: open ? open.requests_in_window.length : null,
       painted_while_held: held ? held.painted : null,
       time_to_paint_ms: open ? open.ms : null,
+      immediate_mark_ms: open ? open.markMs : null,
       first_frame_ms: open ? open.firstFrameMs : null,
       held_paint_ms: held && held.painted ? held.ms : null,
       held_within_250_ms: held && held.painted ? held.ms <= REPORT_MS : null,
@@ -1834,10 +1983,11 @@ function summarize(steps, records, failures, fixture, browserVersion, recovery, 
 function table(report) {
   const lines = [`local-first walkthrough, fixture ${report.fixture} (report mode; a row painted while held if it painted within ${report.holdMs} ms and ${report.holdFrames} frames with every request held)`,
     `in-window: requests and frames the page started between input and paint (polls included); own: those the kind counts; held-ms: the held paint, "slow" past ${report.reportMs} ms`,
-    'row   kind  audit  in-window  own  painted-held  held-ms   paint-ms  recovered'];
+    'mark-ms: an immediate mark (a prediction before the result), for steps that name one',
+    'row   kind    audit  in-window  own  painted-held  held-ms   paint-ms  mark-ms  recovered'];
   for (const row of report.rows) {
     const held = row.held_paint_ms == null ? '-' : `${row.held_paint_ms}${row.held_within_250_ms ? '' : ' slow'}`;
-    lines.push(`${row.id.padEnd(5)} ${String(row.kind ?? '-').padEnd(5)} ${row.audit.padEnd(5)} ${String(row.requests_in_window ?? '-').padStart(10)} ${String(row.own_requests?.length ?? '-').padStart(4)}  ${String(row.painted_while_held ?? '-').padEnd(12)}  ${held.padEnd(8)}  ${String(row.time_to_paint_ms ?? '-').padStart(8)}  ${row.recovered ?? '-'}`);
+    lines.push(`${row.id.padEnd(5)} ${String(row.kind ?? '-').padEnd(7)} ${row.audit.padEnd(5)} ${String(row.requests_in_window ?? '-').padStart(10)} ${String(row.own_requests?.length ?? '-').padStart(4)}  ${String(row.painted_while_held ?? '-').padEnd(12)}  ${held.padEnd(8)}  ${String(row.time_to_paint_ms ?? '-').padStart(8)}  ${String(row.immediate_mark_ms ?? '-').padStart(7)}  ${row.recovered ?? '-'}`);
   }
   lines.push(`waited_on_server ${report.waited_on_server} of ${report.rows.length} steps; ${report.recovery}`);
   return lines.join('\n');
@@ -1855,7 +2005,8 @@ function combine(dir) {
   const disagree = [];
   for (const row of ROWS) {
     count.audit[row.audit]++;
-    const kind = measured.get(row.id);
+    // A broken row (T4) waits on the server for its refusal: R in the totals.
+    const kind = measured.get(row.id) === 'broken' ? 'R' : measured.get(row.id);
     if (kind) {
       count.measured[kind] = (count.measured[kind] || 0) + 1;
       if (kind !== row.audit) disagree.push(`${row.id} measured ${kind}, audit ${row.audit}`);
@@ -1864,7 +2015,7 @@ function combine(dir) {
   }
   const unscripted = ROWS.filter(row => !measured.has(row.id)).map(row => `${row.id} (${UNSCRIPTED[row.id] || 'not run'})`);
   return [`local-first totals over ${ROWS.length} rows: R ${count.total.R}, B ${count.total.B}, L ${count.total.L} (audit: R ${count.audit.R}, B ${count.audit.B}, L ${count.audit.L})`,
-    `measured ${measured.size} rows: R ${count.measured.R}, B ${count.measured.B}, L ${count.measured.L}`,
+    `measured ${measured.size} rows: R ${count.measured.R}, B ${count.measured.B}, L ${count.measured.L} (broken rows, counted as R: ${[...measured].filter(([, kind]) => kind === 'broken').map(([id]) => id).join(', ') || 'none'})`,
     `disagreements with the audit: ${disagree.length ? disagree.join('; ') : 'none'}`,
     `not scripted (${unscripted.length}): ${unscripted.join('; ')}`].join('\n');
 }

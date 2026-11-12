@@ -812,6 +812,9 @@ jobs:
   # and a skipped required check counts as passing.
   m0:
     name: M0 language and kernel
+    # local-first (the Studio local-first walkthrough) is required here. If it
+    # fails on main twice for a reason that is not a product change, it goes
+    # to report-only until fixed.
     needs: [changes, commit-hygiene, repo-checks, m0-core, m0-kernel, m0-wasm, m0-render-paths, workstation, local-first]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
