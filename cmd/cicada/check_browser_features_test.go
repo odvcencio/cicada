@@ -80,7 +80,8 @@ func TestBrowserCheckNamesEachExtraReverbReturn(t *testing.T) {
 			t.Fatalf("missing %q:\n%s", want, text)
 		}
 	}
-	if strings.Contains(text, "tank is reverb return") || strings.Contains(text, "portable images hold one reverb return") {
+	// The encoder's own refusal says "this score routes more (room, plate)".
+	if strings.Contains(text, "tank is reverb return") || strings.Contains(text, "this score routes more") {
 		t.Fatalf("the first reverb or the encoder's refusal was reported:\n%s", text)
 	}
 }
