@@ -43,7 +43,7 @@ func ReadScoreRevision(path string) (string, error) {
 // before publication. It uses the same absolute-path overrides as ReadSources
 // and does not open sample payloads or validate a render.
 func ReadScoreRevisionWithOverrides(path string, overrides map[string][]byte) (string, error) {
-	sources, err := readSourcesMode(path, overrides, nil, true)
+	sources, err := readSourcesMode(OSFiles{}, path, overrides, nil, true)
 	if err != nil {
 		return "", err
 	}
