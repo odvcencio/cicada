@@ -828,7 +828,11 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 							return report, fmt.Errorf("too many pending gate events in render block")
 						}
 						for _, event := range eventBuf[:n] {
-							if event.Kind == seq.NoteOff {
+							// A note that glides into the next pattern keeps sounding
+							// until the target note starts, which a swung odd step
+							// delays past the slide's own overlap release; the engine
+							// skips that release the same way (processPatternEvents).
+							if event.Kind == seq.NoteOff && !(tracks[ti].slideFrom != 0 && event.NoteID == tracks[ti].slideFrom && event.Sample <= tracks[ti].slideAt) {
 								events = append(events, scheduled{track: ti, generation: tracks[ti].pendingGen, event: event})
 							}
 						}
@@ -1541,9 +1545,16 @@ func sceneTransitionFor(source, target *seq.Pattern, track, sourceSlot, targetSl
 	targetIndex := uint8(targetStep % int64(target.Len))
 	next, err := seq.UnpackStep(target.Steps[targetIndex])
 	carry := err == nil && target.Chords[targetIndex].Count == 0 && next.Gate && !next.Tie && seq.ProbabilityHit(next.Probability, target.Seed, track, targetSlot, targetStep/int64(target.Len), targetIndex)
+	// The target note starts late by the target pattern's swing when the bar
+	// line falls on an odd step of its grid (1/2t, 1/3, 1/1), as in the
+	// engine's switchOnsetSample.
+	targetTick := boundaryTick
+	if targetStep&1 != 0 {
+		targetTick += (target.GridTicks()*int64(target.SwingPermille) + 500) / 1000
+	}
 	return sceneTransition{
 		valid: true, carry: carry, sourceNoteID: sourceNoteID,
-		boundarySample: sampleAt(boundaryTick), targetSample: sampleAt(boundaryTick),
+		boundarySample: sampleAt(boundaryTick), targetSample: sampleAt(targetTick),
 		release: seq.Event{Kind: seq.NoteOff, NoteID: sourceNoteID, Tick: offTick, Sample: sampleAt(offTick), Track: track},
 	}
 }
