@@ -56,9 +56,13 @@ func TestAgentFrontDoorIsCurrent(t *testing.T) {
 	}
 }
 
-// countOfCatalog matches a count of catalog entries, such as "68 edit intents"
-// or "76 diagnostic codes": a number that changes whenever a catalog does.
-var countOfCatalog = regexp.MustCompile(`\b\d[\d,]* (commands|edit intents|intents|intent kinds|diagnostic codes|diagnostics|codes|effect routes|effect kinds|routes)\b`)
+// countOfCatalog matches a count of catalog entries, such as "68 edit
+// intents", "76 diagnostic codes" or "intents: 75": a number that changes
+// whenever a catalog does.
+var countOfCatalog = regexp.MustCompile(`\b\d[\d,]* (commands|edit intents|intents|intent kinds|kinds|diagnostic codes|diagnostics|codes|error codes|effect routes|effect kinds|routes|schemas|formats|tools)\b|\b(commands|intents|kinds|codes|diagnostics|routes|tools)\s*[:=(]\s*\d`)
+
+// schemaName matches a JSON format name such as cicada.check.v1.
+var schemaName = regexp.MustCompile(`\bcicada\.[a-z_]+\.v\d+\b`)
 
 // TestFrontDoorReadsOnlyStableInputs proves the rule for what the front door
 // commits: a committed generated file has only inputs that change rarely, so
@@ -67,10 +71,12 @@ var countOfCatalog = regexp.MustCompile(`\b\d[\d,]* (commands|edit intents|inten
 //
 //  1. A folder that holds only frontDoorInputs builds the same bytes as the
 //     repository, so Build reads no other page.
-//  2. No committed file holds a diagnostic code, an intent kind, an effect
-//     kind or a count of catalog entries, unless the quick start (an input)
-//     holds it too, so no catalog of the binary reaches them. Those live in
-//     cicada agents reference, which the binary builds when asked.
+//  2. No committed file holds a diagnostic code, an intent or effect kind (as
+//     a whole word), a format name or a count of catalog entries, unless the
+//     quick start (an input) holds it too, so no catalog of the binary reaches
+//     them. Those live in cicada agents reference, which the binary builds
+//     when asked. Command names and the apply and render error codes are in
+//     package main; cmd/cicada.TestFrontDoorNamesNoCommandTable checks them.
 func TestFrontDoorReadsOnlyStableInputs(t *testing.T) {
 	want, err := Build(Inputs{Root: repositoryRoot})
 	if err != nil {
@@ -104,15 +110,17 @@ func TestFrontDoorReadsOnlyStableInputs(t *testing.T) {
 		}
 	}
 
-	var tokens []string
+	// Codes as written; intent and effect kinds as whole words, with or
+	// without backticks.
+	var tokens []*regexp.Regexp
 	for _, code := range diagnostics.Catalog() {
-		tokens = append(tokens, code.Code)
+		tokens = append(tokens, regexp.MustCompile(regexp.QuoteMeta(code.Code)+`\b`))
 	}
 	for _, info := range edits.Catalog() {
-		tokens = append(tokens, "`"+info.Kind+"`")
+		tokens = append(tokens, regexp.MustCompile(`\b`+regexp.QuoteMeta(info.Kind)+`\b`))
 	}
 	for _, route := range edits.EffectRoutes() {
-		tokens = append(tokens, "`"+route.Kind+"`")
+		tokens = append(tokens, regexp.MustCompile(`\b`+regexp.QuoteMeta(route.Kind)+`\b`))
 	}
 	if len(tokens) < 100 {
 		t.Fatalf("only %d catalog names to look for; the catalogs did not load", len(tokens))
@@ -127,13 +135,18 @@ func TestFrontDoorReadsOnlyStableInputs(t *testing.T) {
 		}
 		text := string(want[path])
 		for _, token := range tokens {
-			if strings.Contains(text, token) && !strings.Contains(string(quickstart), token) {
-				t.Errorf("%s holds %s from a catalog of the binary; leave it to cicada agents reference", path, token)
+			if found := token.FindString(text); found != "" && !token.MatchString(string(quickstart)) {
+				t.Errorf("%s holds %s from a catalog of the binary; leave it to cicada agents reference", path, found)
 			}
 		}
 		for _, count := range countOfCatalog.FindAllString(text, -1) {
 			if !strings.Contains(string(quickstart), count) {
 				t.Errorf("%s holds the count %q, which changes with a catalog; leave it to cicada agents reference", path, count)
+			}
+		}
+		for _, schema := range schemaName.FindAllString(text, -1) {
+			if !strings.Contains(string(quickstart), schema) {
+				t.Errorf("%s names the format %s, which the quick start does not; leave it to cicada agents reference", path, schema)
 			}
 		}
 	}
