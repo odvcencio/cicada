@@ -5,6 +5,7 @@ import (
 	"math"
 	"sort"
 
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 	"m31labs.dev/cicada/kernel/seq"
 )
 
@@ -88,7 +89,7 @@ func midiGestureSamples(note Note, tempo []midiTempo, ppq uint16, budget *int) (
 	advance := func(at int64) {
 		now := midiSeconds(tempo, ppq, note.Tick+at)
 		if active.VibratoDepthCents != 0 && active.VibratoRateHz != 0 {
-			phase += (now - lastTime) * float64(active.VibratoRateHz)
+			phase += float64((now - lastTime) * float64(active.VibratoRateHz))
 			phase -= math.Floor(phase)
 		}
 		lastTime = now
@@ -100,7 +101,7 @@ func midiGestureSamples(note Note, tempo []midiTempo, ppq uint16, budget *int) (
 		*budget--
 		cents := float64(active.PitchCents)
 		if active.VibratoDepthCents != 0 && active.VibratoRateHz != 0 {
-			cents += float64(active.VibratoDepthCents) * math.Sin(2*math.Pi*phase)
+			cents += float64(float64(active.VibratoDepthCents) * detmath.Sin(2*math.Pi*phase))
 		}
 		peak = max(peak, math.Abs(cents))
 		result = append(result, midiGestureSample{tick: note.Tick + at, pitch: cents, pressure: float64(active.Pressure), timbre: float64(active.Timbre)})

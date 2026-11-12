@@ -3,7 +3,8 @@ package keyboard
 
 import (
 	"fmt"
-	"math"
+
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 )
 
 var Names = [...]string{"tine_ep", "tine_bell", "tine_bark", "tine_tremolo", "reed_ep", "reed_tremolo", "clav", "clav_muted", "clav_hollow", "tonewheel_organ", "organ_jazz", "organ_full", "organ_soft", "fm_ep", "bell_keys", "fm_bass", "brass_stab", "soft_pad", "poly_keys", "sync_lead", "string_machine"}
@@ -108,4 +109,4 @@ func Parameters(name string) []Parameter {
 const PianoLevelTrimDB = 12.97
 
 // PianoLevelTrim is PianoLevelTrimDB as a linear factor.
-var PianoLevelTrim = float32(math.Pow(10, PianoLevelTrimDB/20))
+var PianoLevelTrim = float32(detmath.Pow(10, PianoLevelTrimDB/20))

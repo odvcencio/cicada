@@ -10,13 +10,22 @@ import (
 // real-time gate has Min, and a count gate has Exact, which takes no margin.
 type Gate struct {
 	Step   string
-	Metric string // median_ms, realtime, syntheses or peak_rss_mb
+	Metric string // median_ms, realtime, syntheses, peak_rss_mb, speedup or same_audio
 	Max    float64
 	Min    float64
 	Exact  *int
 }
 
 func exactly(n int) *int { return &n }
+
+// speedupGate is the least speed-up of the large song's first bars with
+// --jobs 4 over --jobs 1. A ratio does not take the 2x margin of a time
+// gate, which would accept a render that lanes made slower. On a 20-CPU
+// host pinned to 4 CPUs and loaded (load 6 to 10), the first 8 bars ran
+// 1.63 times faster (pull request for plan.cicada.speed row F2,
+// 2026-11-10); the gate sits below that, so it fails when lanes stop
+// paying, not when a runner is slow.
+const speedupGate = 1.25
 
 // gates are twice what the CI runner class (GitHub ubuntu-24.04, 4 CPUs)
 // measured, or half for real time, taking the slower runner (medians of 5,
@@ -45,6 +54,12 @@ var gates = []Gate{
 	{Step: "render:large", Metric: "realtime", Min: 1.65},
 	{Step: "loudness:medium", Metric: "syntheses", Exact: exactly(1)},
 	{Step: "audition:large", Metric: "peak_rss_mb", Max: 466},
+	// Render lanes (plan.cicada.speed, row F2): the large song's first bars
+	// with --jobs 4 against --jobs 1, both measured in the same job. speedup
+	// is the jobs 1 median over the jobs 4 median; same_audio is 1 when every
+	// run of both wrote the same WAV bytes, and takes no margin.
+	{Step: "render-jobs4:large", Metric: "speedup", Min: speedupGate},
+	{Step: "render-jobs4:large", Metric: "same_audio", Exact: exactly(1)},
 }
 
 // GateOutcome is a gate checked against a measured value.
@@ -74,6 +89,12 @@ func checkGates(results []Result) ([]GateOutcome, bool) {
 				continue
 			}
 			value := metric(result, gate.Metric)
+			switch gate.Metric {
+			case "speedup":
+				value = speedup(result, results)
+			case "same_audio":
+				value = sameAudio(result, results)
+			}
 			outcome := GateOutcome{Step: gate.Step, Metric: gate.Metric, Value: value}
 			switch {
 			case gate.Exact != nil:
@@ -108,6 +129,41 @@ func metric(r Result, name string) float64 {
 		return r.PeakRSSMB
 	}
 	return math.NaN()
+}
+
+// serialStep is the render-jobs1 step of the score a render-jobsN step renders.
+func serialStep(r Result, results []Result) (Result, bool) {
+	_, size, _ := strings.Cut(r.Step, ":")
+	for _, serial := range results {
+		if serial.Step == "render-jobs1:"+size && serial.Bars == r.Bars {
+			return serial, true
+		}
+	}
+	return Result{}, false
+}
+
+// speedup is the render-jobs1 median over a render-jobsN median for the same
+// score and bars, or NaN when the serial step did not run.
+func speedup(r Result, results []Result) float64 {
+	serial, ok := serialStep(r, results)
+	if !ok || r.MedianMS <= 0 {
+		return math.NaN()
+	}
+	return serial.MedianMS / r.MedianMS
+}
+
+// sameAudio is 1 when every run of a render-jobsN step and of its
+// render-jobs1 step wrote the same WAV bytes, 0 when they did not, and NaN
+// when the serial step did not run.
+func sameAudio(r Result, results []Result) float64 {
+	serial, ok := serialStep(r, results)
+	if !ok {
+		return math.NaN()
+	}
+	if r.SHA256 != "" && r.SHA256 == serial.SHA256 {
+		return 1
+	}
+	return 0
 }
 
 // loudnessRatio is a loudness render's median wall time over the median of

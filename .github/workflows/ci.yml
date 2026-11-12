@@ -68,6 +68,8 @@ jobs:
       m2: ${{ steps.classify.outputs.m2 }}
       m2_gates: ${{ steps.classify.outputs.m2_gates }}
       bench: ${{ steps.classify.outputs.bench }}
+      wav_sweep: ${{ steps.classify.outputs.wav_sweep }}
+      lane_stress: ${{ steps.classify.outputs.lane_stress }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -129,9 +131,8 @@ jobs:
       - name: No fused multiply-adds with Go 1.27.3 (arm64 and GOAMD64=v3)
         run: |
           set -euo pipefail
-          GOARCH=arm64 go build -gcflags='m31labs.dev/cicada/...=-d=fmahash=vy' ./kernel/... ./render/... 2>&1 | { grep -E 'fmahash triggered' || true; } | tee "$RUNNER_TEMP/go127-fma.log"
-          GOARCH=amd64 GOAMD64=v3 go build -gcflags='m31labs.dev/cicada/...=-d=fmahash=vy' ./kernel/... ./render/... 2>&1 | { grep -E 'fmahash triggered' || true; } | tee -a "$RUNNER_TEMP/go127-fma.log"
-          if [ -s "$RUNNER_TEMP/go127-fma.log" ]; then echo "The compiler would fuse the multiply-adds listed above (kernel/, render/ or a package they import). Round each product with float32(...) or float64(...); see docs/audio/mix-chain.md." >&2; exit 1; fi
+          GOARCH=arm64 scripts/check-fma.sh
+          GOARCH=amd64 GOAMD64=v3 scripts/check-fma.sh
       - name: Shards cover every test once
         run: make test-cmd-shard-check SHARDS=3
       - name: Native tests, every package but cmd/cicada
@@ -263,18 +264,28 @@ jobs:
           set -euo pipefail
           test "$(go env GOARCH)" = amd64
           make test-parity
-      - name: Require the master-chain digests, and no fused multiply-adds in kernel or render, with GOAMD64=v3
+      - name: Require the master-chain digests, and no fused multiply-adds on the render path, with GOAMD64=v3
         run: |
           set -euo pipefail
-          GOAMD64=v3 go test ./kernel/dsp/detmath ./kernel/fx/... ./kernel/mix ./kernel/loudness -run '^Test([A-Za-z]*Digest[A-Za-z]*|TruePeakWindowIsBlackman|SpecialValues|TrigOutOfRange|RenderPathAvoidsMathLibrary)$' -count=1
-          GOAMD64=v3 go build -gcflags='m31labs.dev/cicada/...=-d=fmahash=vy' ./kernel/... ./render/... 2>&1 | { grep -E 'fmahash triggered' || true; } | tee "$RUNNER_TEMP/v3-fma.log"
-          if [ -s "$RUNNER_TEMP/v3-fma.log" ]; then echo "The compiler would fuse the multiply-adds listed above (kernel/, render/ or a package they import). Round each product with float32(...) or float64(...); see docs/audio/mix-chain.md." >&2; exit 1; fi
+          GOAMD64=v3 go test ./kernel/dsp/detmath ./kernel/fx/... ./kernel/mix ./kernel/loudness -run '^Test([A-Za-z0-9]*Digest[A-Za-z0-9]*|TruePeakWindowIsBlackman|SpecialValues|TrigOutOfRange|RenderPathAvoidsMathLibrary|[A-Za-z0-9]*FastPathExhaustive)$' -count=1
+          GOAMD64=v3 scripts/check-fma.sh
       # The arm64 job compares its exported WAV files with these hashes.
       - name: Hash the WAV files cicada render writes for the parity subset
         run: |
           set -euo pipefail
           CICADA_WAV_PARITY_OUT="$PWD/build/parity/wav-hashes.txt" go test -timeout=20m ./cmd/cicada -run '^TestExampleWAVParity$' -count=1 -v | tee build/parity/wav-parity.txt
           grep -q -- '^--- PASS: TestExampleWAVParity ' build/parity/wav-parity.txt
+      - name: Race-check the render lanes
+        run: |
+          set -euo pipefail
+          # Render lanes must stay bit-identical to the serial render; a data
+          # race between lanes would be a determinism bug, so the lane tests
+          # run under the race detector with every segment on every lane.
+          go test -race ./internal/renderlanes ./kernel/engine -run '^Test(OfflineParallel|RunRendersEveryTrackOnce|LightSegmentsStaySerial|PanicInALaneReachesTheCaller|PanicInTheCallersLane|BudgetLimitsConcurrentPools|LaneCountChangesBetweenSegments|ForcedLanesRenderEachSegmentOnce)' -count=3 -v | tee "$RUNNER_TEMP/lanes-race.log"
+          go test -race ./render -run '^Test(DirectLanes|AudioClipLanes)' -count=1 -v | tee -a "$RUNNER_TEMP/lanes-race.log"
+          for name in TestOfflineParallelRenderIsBitIdentical TestOfflineParallelFaultMatchesSerial TestRunRendersEveryTrackOnce TestDirectLanesAreBitIdentical TestDirectLanesFaultMatchesSerial TestAudioClipLanesAreBitIdentical TestLaneCountChangesBetweenSegments TestForcedLanesRenderEachSegmentOnce; do
+            grep -q -- "^--- PASS: $name " "$RUNNER_TEMP/lanes-race.log" || { echo "No PASS line for $name" >&2; exit 1; }
+          done
       - name: Save amd64 PCM and the tested kernel
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
@@ -355,19 +366,20 @@ jobs:
           test "$(go env GOARCH)" = arm64
           go test ./kernel/modulate -count=1 -v | tee build/parity/modulate.txt
           go test ./cmd/cicada-kernel-wasm -run '^TestDetailVectors$' -count=1 -v | tee -a build/parity/modulate.txt
-          go test ./kernel/dsp/detmath ./kernel/fx/... ./kernel/mix ./kernel/loudness -run '^Test([A-Za-z]*Digest[A-Za-z]*|TruePeakWindowIsBlackman|Accuracy|PowAccuracy|SpecialValues|TrigOutOfRange)$' -count=1 -v | tee "$RUNNER_TEMP/arm64-digests.log"
+          go test ./kernel/dsp/detmath ./kernel/fx/... ./kernel/mix ./kernel/loudness -run '^Test([A-Za-z0-9]*Digest[A-Za-z0-9]*|TruePeakWindowIsBlackman|[A-Za-z0-9]*Accuracy|SpecialValues|TrigOutOfRange|[A-Za-z0-9]*FastPathExhaustive)$' -count=1 -v | tee "$RUNNER_TEMP/arm64-digests.log"
           go test ./cmd/cicada -run '^TestExportLoudness' -count=1 -v | tee -a "$RUNNER_TEMP/arm64-digests.log"
           cat "$RUNNER_TEMP/arm64-digests.log" >> build/parity/modulate.txt
           # A product that feeds an addition must be rounded first; the compiler
           # lists every one it would fuse into a multiply-add on this machine, also
           # where it is inlined ("<autogenerated>:1:0; kernel/fx/...").
-          go build -gcflags='m31labs.dev/cicada/...=-d=fmahash=vy' ./kernel/... ./render/... 2>&1 | { grep -E 'fmahash triggered' || true; } | tee "$RUNNER_TEMP/arm64-fma.log"
-          if [ -s "$RUNNER_TEMP/arm64-fma.log" ]; then echo "The compiler would fuse the multiply-adds listed above (kernel/, render/ or a package they import). Round each product with float32(...) or float64(...); see docs/audio/mix-chain.md." >&2; exit 1; fi
+          scripts/check-fma.sh
           # go test exits 0 when -run matches nothing, for example after a rename.
           missing=0
           for name in TestEQDigestIsIdenticalOnEveryTarget TestMeterDigestIsIdenticalOnEveryTarget TestTruePeakWindowIsBlackman TestExportLoudnessWithoutLimiterKeepsCrestPreservingGain \
             TestIdentityDigest TestAccuracy TestPowAccuracy TestSpecialValues TestCompressorDigest TestDeesserDigest TestDelayDigest TestDriveDigest TestReverbDigest \
-            TestLimiterDigest TestTransientDigest TestWidthDigest TestRoomDigest TestChainDigest TestNormalizeDigest TestChorusDigest TestConvolutionDigest TestTapeDigest TestMixDigest TestAmpcabOutputDigest TestTrigOutOfRange; do
+            TestLimiterDigest TestTransientDigest TestWidthDigest TestRoomDigest TestChainDigest TestNormalizeDigest TestChorusDigest TestConvolutionDigest TestTapeDigest TestMixDigest TestAmpcabOutputDigest TestTrigOutOfRange TestTanh32FastPathExhaustive \
+            TestTanh32Digest TestAtanDigest TestAtanAccuracy TestSinPiDigest TestSinPiAccuracy TestLog1pDigest TestLog1pAccuracy \
+            TestNearDigest TestTanhNearAccuracy TestSinPiNearAccuracy TestFilterCoefficientDigest TestTanPi32FastPathExhaustive TestOneMinusExpNeg2Pi32FastPathExhaustive; do
             if ! grep -q -- "^--- PASS: $name " "$RUNNER_TEMP/arm64-digests.log"; then
               echo "No PASS line for $name; was it renamed or skipped?" >&2
               missing=1
@@ -384,6 +396,12 @@ jobs:
           CICADA_WAV_PARITY_REFERENCE="$PWD/build/amd64-reference/parity/wav-hashes.txt" go test -timeout=20m ./cmd/cicada -run '^(TestExampleWAVParity|TestExampleWAVPins)$' -count=1 -v | tee build/parity/wav-parity.txt
           grep -q -- '^--- PASS: TestExampleWAVParity ' build/parity/wav-parity.txt
           grep -q -- '^--- PASS: TestExampleWAVPins ' build/parity/wav-parity.txt
+      - name: Require every render job count to write the serial render's bytes on arm64
+        run: |
+          set -euo pipefail
+          test "$(go env GOARCH)" = arm64
+          go test ./cmd/cicada -run '^TestParallelRenderIdentity$' -count=1 -v | tee build/parity/parallel-identity.txt
+          grep -q -- '^--- PASS: TestParallelRenderIdentity ' build/parity/parallel-identity.txt
       - name: Save arm64 parity report
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -393,14 +411,20 @@ jobs:
           path: |
             build/parity/report.txt
             build/parity/modulate.txt
+            build/parity/parallel-identity.txt
             build/parity/wav-parity.txt
 
   # Nightly: every score under examples/, rendered four ways on amd64 and on
   # arm64, compared byte for byte (TestExampleWAVParity with
-  # CICADA_WAV_PARITY_ALL=1). Pull requests render only the parity subset above.
+  # CICADA_WAV_PARITY_ALL=1), and every pinned render including the songs
+  # (TestExampleWAVPins). Pull requests run it too when they change the
+  # deterministic math or the WAV parity test (the wav_sweep group of
+  # scripts/ci-changes.sh); other pull requests render only the parity subset
+  # above.
   wav-parity-sweep-amd64:
     name: WAV parity sweep, every example (amd64)
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    needs: changes
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && needs.changes.outputs.wav_sweep == 'true') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -428,8 +452,8 @@ jobs:
 
   wav-parity-sweep-arm64:
     name: WAV parity sweep, every example (arm64 against amd64)
-    needs: wav-parity-sweep-amd64
-    if: ${{ !cancelled() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
+    needs: [changes, wav-parity-sweep-amd64]
+    if: ${{ !cancelled() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && needs.changes.outputs.wav_sweep == 'true')) }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 60
     env:
@@ -571,8 +595,40 @@ jobs:
           if-no-files-found: warn
           path: build/render-identity.log
 
+  # The direct mixer and the scheduled engine must play the same notes and
+  # write the same bytes at 44.1 kHz (TestRenderPathsAgree, job m0-render-paths
+  # on every pull request in the root group). Nightly, the same scores are
+  # compared at 48 kHz. The step reports and never fails: the log names each
+  # score that differs and by how much.
+  render-paths-audio:
+    name: Render paths, audio comparison report
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Compare
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          make test-render-paths-audio | tee build/render-paths-audio.log
+      - name: Save the report
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: render-paths-audio
+          if-no-files-found: warn
+          path: build/render-paths-audio.log
+
   # M0 ran as one job of about 29 minutes. It is now three parallel jobs and an
   # aggregate. Every command that was in the single job is in exactly one part.
+  # A fourth part, m0-render-paths, was added later.
   m0-core:
     name: M0 grammar and Go tests
     needs: changes
@@ -602,6 +658,32 @@ jobs:
           name: m0-core-reports
           if-no-files-found: error
           path: build/grammar-doctor.txt
+
+  # Renders every example score the direct mixer can render, whole, and the
+  # targeted scores in render/paths_agree_test.go through the direct mixer and
+  # the scheduled engine, and fails when their note events or audio bytes
+  # differ outside the listed known differences. It runs only here:
+  # `make test-ci-core` skips it, so the two Go test jobs do not wait for it.
+  m0-render-paths:
+    name: M0 render paths agree
+    needs: changes
+    if: ${{ needs.changes.outputs.root == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Compare the direct mixer and the scheduled engine
+        run: |
+          set -euo pipefail
+          make test-render-paths | tee "$RUNNER_TEMP/render-paths.log"
+          # go test exits 0 when -run matches nothing, for example after a rename.
+          grep -q -- '^--- PASS: TestRenderPathsAgree ' "$RUNNER_TEMP/render-paths.log" || { echo "No PASS line for TestRenderPathsAgree; was it renamed or skipped?" >&2; exit 1; }
 
   m0-kernel:
     name: M0 kernel, golden, realtime, CLI and generator
@@ -710,6 +792,8 @@ jobs:
           make test-kernel-wasm | tee build/kernel-wasm-report.txt
           make test-sampler-wasm | tee build/sampler-wasm-report.txt
           make test-keys-wasm | tee build/keys-wasm-report.txt
+      - name: Deterministic-math and processor digests compiled by TinyGo for WebAssembly
+        run: make test-tinygo-digests
       - name: Save gate reports
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -720,6 +804,7 @@ jobs:
             build/kernel-wasm-report.txt
             build/sampler-wasm-report.txt
             build/keys-wasm-report.txt
+            build/tinygo-digests.txt
             build/cicada-loudness.wasm
 
   # The required status check. See the comment above `concurrency:`. This job
@@ -727,7 +812,7 @@ jobs:
   # and a skipped required check counts as passing.
   m0:
     name: M0 language and kernel
-    needs: [changes, commit-hygiene, repo-checks, m0-core, m0-kernel, m0-wasm, workstation]
+    needs: [changes, commit-hygiene, repo-checks, m0-core, m0-kernel, m0-wasm, m0-render-paths, workstation]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -745,6 +830,7 @@ jobs:
           CORE_RESULT: ${{ needs.m0-core.result }}
           KERNEL_RESULT: ${{ needs.m0-kernel.result }}
           WASM_RESULT: ${{ needs.m0-wasm.result }}
+          RENDER_PATHS_RESULT: ${{ needs.m0-render-paths.result }}
           RUN_WORKSTATION: ${{ needs.changes.outputs.workstation }}
           WORKSTATION_RESULT: ${{ needs.workstation.result }}
         run: |
@@ -752,7 +838,7 @@ jobs:
           # Expected result of each needed job:
           #   changes                    success on every event
           #   commit-hygiene, repo-checks  success on pull_request, skipped otherwise
-          #   m0-core/kernel/wasm        success when root=true, skipped when root=false
+          #   m0-core/kernel/wasm/render-paths  success when root=true, skipped when root=false
           #   workstation                success when workstation=true, skipped otherwise
           #                              (its go generate enforces the UI engine size limit)
           # Anything else (failure, cancelled, or a skip that should not happen)
@@ -785,6 +871,7 @@ jobs:
           check m0-core "$CORE_RESULT" "$part_expected"
           check m0-kernel "$KERNEL_RESULT" "$part_expected"
           check m0-wasm "$WASM_RESULT" "$part_expected"
+          check m0-render-paths "$RENDER_PATHS_RESULT" "$part_expected"
           if [[ "$RUN_WORKSTATION" == true ]]; then
             check workstation "$WORKSTATION_RESULT" success
           else
@@ -1270,6 +1357,124 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
           path: build/native-*.log
+
+  # Every example score, rendered in full with --jobs 1 and with 2, 4, 8 and
+  # the automatic job count, plain and at -14 LUFS, must write the same bytes
+  # (render lanes). Pull requests run a short subset on amd64 (cmd/cicada
+  # tests) and arm64 (parity-arm64); this is the whole sweep, nightly, on both
+  # architectures, followed by the subset under the race detector.
+  parallel-identity:
+    name: Render lanes identity sweep (${{ matrix.arch }})
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Sweep
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          test "$(go env GOARCH)" = "$EXPECTED_ARCH"
+          mkdir -p build
+          make test-parallel-identity | tee build/parallel-identity.log
+          grep -q -- '^--- PASS: TestParallelRenderIdentity ' build/parallel-identity.log
+      - name: Subset under the race detector
+        run: |
+          set -euo pipefail
+          go test -race -timeout=40m ./cmd/cicada -run '^TestParallelRenderIdentity$' -count=1 -v | tee build/parallel-identity-race.log
+          grep -q -- '^--- PASS: TestParallelRenderIdentity ' build/parallel-identity-race.log
+      - name: Save the sweep log
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: parallel-identity-${{ matrix.arch }}
+          if-no-files-found: warn
+          path: |
+            build/parallel-identity.log
+            build/parallel-identity-race.log
+
+  # The render lanes under the race detector with the lanestress hook, which
+  # delays or yields at seeded hand-off points of the lane protocol
+  # (make test-lane-stress). The forced-lane tests and the identity subset run
+  # with every segment on every lane and more jobs than processors. Pull
+  # requests that touch the lanes (lane_stress in scripts/ci-changes.sh) run a
+  # short version at GOMAXPROCS 2: the quick sets (renderlanes, render), which
+  # hold the catches of the three lane bugs found so far, three times, and the
+  # engine tests and identity subset once. This job is not part of the
+  # required check; it becomes required when --jobs defaults to auto.
+  lane-stress-pr:
+    name: Render lanes under scheduling stress (short)
+    needs: changes
+    if: ${{ github.event_name == 'pull_request' && needs.changes.outputs.lane_stress == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Stress the lanes under the race detector
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          make test-lane-stress LANE_STRESS_PROCS=2 LANE_STRESS_COUNT=3 LANE_STRESS_HEAVY_COUNT=1 2>&1 | tee build/lane-stress.log
+          scripts/ci-lane-stress-check.sh build/lane-stress.log
+
+  # The full stress run, nightly: -count=10 at GOMAXPROCS 2, 3 and every CPU,
+  # one runner each. At GOMAXPROCS 2 one repetition of all four sets took 228 s
+  # on this runner class (pull request #334's short job: renderlanes 6 s,
+  # render 11 s, engine 82 s, identity subset 129 s), so a setting should take
+  # about 40 minutes.
+  lane-stress:
+    name: Render lanes under scheduling stress (GOMAXPROCS ${{ matrix.procs }})
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        procs: ['2', '3', 'all']
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Stress the lanes under the race detector
+        env:
+          PROCS: ${{ matrix.procs }}
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          make test-lane-stress LANE_STRESS_PROCS="$PROCS" LANE_STRESS_COUNT=10 LANE_STRESS_HEAVY_COUNT=10 2>&1 | tee build/lane-stress.log
+          scripts/ci-lane-stress-check.sh build/lane-stress.log
+      - name: Save the stress log
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: lane-stress-${{ matrix.procs }}
+          if-no-files-found: warn
+          path: build/lane-stress.log
 
   macos-desktop-full:
     name: macOS desktop exhaustive (${{ matrix.arch }})
