@@ -1017,6 +1017,150 @@ export loud { loudness = -9LUFS true_peak = -1dBTP normalize = off }
 }
 ```
 
+## params --json and explain --json
+
+`cicada params --json` lists every sound control Cicada has: those of each
+built-in voice, keyboard patch, library patch, sampler and kit lane, of each
+effect kind, and of the track, bus and master strips (`cicada.params.v1`).
+Each control has:
+
+- `id`, `<owner>.<name>`, such as `fm_bass.op2_level`; `owner` and `name`.
+- `type`: `number`, `integer`, `enum`, `toggle` or `name`; `unit`; `min` and
+  `max`, which are null when the language sets no range; `default`; `example`,
+  a value in source form; `values`, the words it takes.
+- `set_in`: where a score sets it (`track`, `instrument`, `effect`, `sampler`,
+  `bus`, `master`, `score`, `pattern`, `scene`, `automation`, `modulation`), and
+  `live`, true when it can change while the song plays.
+- `meaning`: what it does, in one line.
+- `directions`: which way it moves what `cicada audition --json` measures for
+  the track when the control rises. `property` is `level`, `brightness`,
+  `attack` or `decay` (the track's `rms_dbfs`, `centroid_hz`, `attack_ms` and
+  `decay20_ms`); `change` is `up`, `down`, `mixed` or `none`; `basis` is
+  `stated` (certain from the signal path, such as an output gain) or
+  `measured`. A measured direction also gives `at`, the low, default and high
+  values the probe rendered, and `measured`, the property at each, in `unit`.
+  A control with no direction has none known.
+
+The measurements come from a probe that renders two bars of a fixed phrase at
+each of the three values. They are checked in, so `params` answers at once;
+`cicada explain <control> --probe --json` measures again (`cicada.probe.v1`).
+
+Filters keep part of the list, and combine: `--voice <voice>` one voice or
+patch, such as `acid` or `fm_bass`, or one family, such as `fm`;
+`--scope <kind>` one owner kind, such as `effect`; and a last argument the
+controls whose `id` starts with it. `--index` lists only the owners, with the
+`scopes` and `families` the filters take (`cicada.params_index.v1`). A filter
+that selects nothing fails with `no_match`; a scope that is not an owner kind
+with `usage`. `cicada params` without arguments prints the live-parameter
+registry, a JSON array of the paths scenes, automation and modulation reach,
+as it always has.
+
+`cicada explain <owner>.<name> --json` gives one control and its owner, and
+`cicada explain <owner> --json` an owner and its controls (`cicada.explain.v1`,
+with `kind` `control` or `owner`). `cicada explain track:<track> <score> --json`
+gives what one track takes (`kind` `track`): the controls of its voice and of
+its mixer strip, each with its current `value`, `value_source` (`track`,
+`preset`, `instrument` or `default`) and `overridden`, true when the track block sets it.
+
+`setparam` takes every control that `explain track:` lists for the track, as
+`param:<track>.<name>`. A value outside the range is refused with reason
+`value_out_of_range`, and `range` names the control, the value given, `min`,
+`max` and `unit`.
+
+The acid bass's cutoff, with what the probe measured: raising it from 300Hz
+to 1200Hz moves the bass's brightness from 1741Hz to 3456Hz and leaves its
+level where it was.
+
+<!-- agent-example: params --json --voice acid acid.cutoff -->
+
+```json
+{
+  "schema": "cicada.params.v1",
+  "filter": {"voice": "acid", "control": "acid.cutoff"},
+  "counts": {"owners": 1, "controls": 1, "directions": {"stated": 0, "measured": 1, "unknown": 0}},
+  "owners": [{"name": "acid", "kind": "voice", "controls": 21}],
+  "controls": [
+    {
+      "id": "acid.cutoff",
+      "type": "number",
+      "unit": "Hz",
+      "min": 20,
+      "max": 8000,
+      "default": 600,
+      "example": "600Hz",
+      "set_in": ["track", "scene", "automation", "modulation"],
+      "live": true,
+      "meaning": "resting cutoff frequency of the filter, before the envelope opens it",
+      "directions": [
+        {"property": "level", "change": "none", "basis": "measured", "at": [300, 600, 1200], "measured": [-47.5, -47.6, -47.6], "unit": "dB"},
+        {"property": "brightness", "change": "up", "basis": "measured", "at": [300, 600, 1200], "measured": [1741, 2547, 3456], "unit": "Hz"}
+      ]
+    }
+  ]
+}
+```
+
+What the bass track of the example score takes, after the edit above set its
+cutoff (the list goes on with the rest of the acid's controls and the mixer
+strip's):
+
+<!-- agent-example: explain track:bass song.cicada --json -->
+
+```json
+{
+  "schema": "cicada.explain.v1",
+  "kind": "track",
+  "score": "song.cicada",
+  "track": {
+    "track": "bass",
+    "kind": "acid",
+    "owner": "acid",
+    "owner_kind": "voice",
+    "controls": [
+      {"id": "acid.tune"},
+      {"id": "acid.fine"},
+      {"id": "acid.wave"},
+      {"id": "acid.pw"},
+      {"id": "acid.detune"},
+      {"id": "acid.sub"},
+      {"id": "acid.cutoff", "value": 900, "written": "900Hz", "value_source": "track", "overridden": true}
+    ]
+  }
+}
+```
+
+A cutoff above the range is refused with the range as data:
+
+<!-- agent-example-file: too-bright.json -->
+
+```json
+{"version": 1, "intents": [
+  {"kind": "setparam", "entity": "param:bass.cutoff", "value": "12kHz"}
+]}
+```
+
+<!-- agent-example: apply song.cicada too-bright.json --json exit=1 -->
+
+```json
+{
+  "schema": "cicada.apply.v1",
+  "score": "song.cicada",
+  "ok": false,
+  "written": false,
+  "dry_run": false,
+  "changed": false,
+  "intents": [{"index": 0, "kind": "setparam"}],
+  "diff": "",
+  "error": {
+    "code": "intent_refused",
+    "message": "cutoff 12kHz is above the maximum 8000Hz (range 20Hz to 8000Hz)",
+    "field": "value",
+    "reason": "value_out_of_range",
+    "range": {"parameter": "cutoff", "value": "12kHz", "min": 20, "max": 8000, "unit": "Hz"}
+  }
+}
+```
+
 ## The MCP server
 
 `cicada mcp [--root <dir>] [--allow-user-library]` serves the read-only tools
@@ -1097,4 +1241,10 @@ built from the catalog's examples, `render --json` to −14 LUFS and
 `audition --json`. It then drives `cicada mcp` through the protocol in both
 eras and requires every tool to return, by value, the document its command
 prints, and each guide resource to be the text `cicada agents` prints. It
-also runs the examples on this page and on the quick start. CI runs it on every pull request; it must finish in under two minutes.
+also runs the examples on this page and on the quick start, and the task "make
+this bass brighter without clipping" on `examples/keys/fm_bass.cicada`: it
+reads the bass track's controls from `explain track:keys --json`, picks the one
+whose measured brightness rises most without raising the level, checks its
+range with `params --json --voice fm_bass`, sets it with `setparam`, and
+requires the track's `centroid_hz` in `audition --json` to rise by a quarter,
+with no clipped samples and the true peak under its ceiling at −14 LUFS. CI runs it on every pull request; it must finish in under two minutes.

@@ -474,6 +474,14 @@ func TestDocumentedExamplesDecode(t *testing.T) {
 		checkSchema:        func() any { return &checkDocument{} },
 		applySchema:        func() any { return &applyDocument{} },
 		renderSchema:       func() any { return &renderDocument{} },
+		paramsSchema:       func() any { return &paramsDocument{} },
+		paramsIndexSchema:  func() any { return &paramsIndexDocument{} },
+	}
+	// cicada.explain.v1 has one shape for each kind of thing explained.
+	explainKinds := map[string]func() any{
+		"control": func() any { return &explainControlDocument{} },
+		"owner":   func() any { return &explainOwnerDocument{} },
+		"track":   func() any { return &explainTrackDocument{} },
 	}
 	fence := strings.Repeat("`", 3)
 	lines := strings.Split(string(data), "\n")
@@ -493,11 +501,15 @@ func TestDocumentedExamplesDecode(t *testing.T) {
 		body := []byte(strings.Join(lines[start+1:end], "\n"))
 		var header struct {
 			Schema string `json:"schema"`
+			Kind   string `json:"kind"`
 		}
 		if err := json.Unmarshal(body, &header); err != nil {
 			t.Fatalf("agents.md:%d: %v", i+1, err)
 		}
 		make, ok := formats[header.Schema]
+		if header.Schema == explainSchema {
+			make, ok = explainKinds[header.Kind]
+		}
 		if !ok {
 			t.Errorf("agents.md:%d: unknown schema %q", i+1, header.Schema)
 			continue
