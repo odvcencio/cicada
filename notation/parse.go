@@ -12,6 +12,7 @@ import (
 
 	gts "github.com/odvcencio/gotreesitter"
 	"github.com/odvcencio/gotreesitter/taproot/walk"
+	"m31labs.dev/cicada/internal/applycount"
 	"m31labs.dev/cicada/kernel/seq"
 )
 
@@ -40,6 +41,9 @@ func parseSyntax(src []byte) (*gts.Tree, *walk.Walker, error) {
 	parsers, err := syntaxParsers()
 	if err != nil {
 		return nil, nil, err
+	}
+	if applycount.Enabled {
+		applycount.SyntaxParse(len(src))
 	}
 	tree, err := parsers.Parse(src)
 	if err != nil {
@@ -169,6 +173,9 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 		for i := 0; i < root.NamedChildCount(); i++ {
 			n := root.NamedChild(i)
 			kind := w.Type(n)
+			if applycount.Enabled && kind != "comment" && kind != "integer" {
+				applycount.ItemsLowered(1)
+			}
 			switch kind {
 			case "title_decl", "tempo_decl", "key_decl", "seed_decl", "song_decl", "master_decl", "live_decl", "midi_decl", "arrange_decl":
 				if first, exists := seenDeclarations[kind]; exists {
