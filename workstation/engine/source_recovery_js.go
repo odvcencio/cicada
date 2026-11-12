@@ -138,9 +138,8 @@ func (u *workspaceUI) checkpointSources() {
 			response, err := nativeRequest{Method: methodPost, Path: "/__actions/source-checkpoint", Body: data, Timeout: 5 * time.Second, Limit: 4096, Headers: map[string]string{
 				"Content-Type": "application/json", "Accept": "application/json", "X-CSRF-Token": u.props.CSRF,
 			}}.do(u.ctx)
-			// 409 is Studio refusing a checkpoint that a Save or Discard which
-			// knew this edit has already finished: an expected answer, not a
-			// fault, so it is not logged below.
+			// 409: Studio refuses a checkpoint whose copy is already closed at
+			// or after this edit (see below).
 			refused := err == nil && response.Status == statusConflict
 			if err == nil && response.Status != statusOK {
 				err = fmt.Errorf("recovery returned %d", response.Status)
@@ -167,10 +166,23 @@ func (u *workspaceUI) checkpointSources() {
 			if copy := u.sources[file]; copy == nil || copy.id != snapshot.id || copy.sequence != snapshot.sequence {
 				continue
 			}
-			if err != nil {
-				if !refused {
-					consoleWarn("Code recovery checkpoint", err)
+			if refused {
+				// A Save, a Discard or an editor back at the file's text closed
+				// this copy at or after this edit; one window's checkpoint is
+				// refused for nothing else. That happens to a checkpoint in
+				// flight while this window saves. The copy is finished, so this
+				// edit is not sent again and nothing failed; an edit typed after
+				// it has a higher sequence and is kept.
+				current.dirty = false
+				if workspacePresent(current.control) && current.control.Get("value").String() == current.control.Get("defaultValue").String() {
+					u.sourceStatus("No unsaved Code edits.")
+				} else {
+					u.sourceStatus("This recovery copy was closed by a Save or Discard. Your next edit keeps a new one.")
 				}
+				continue
+			}
+			if err != nil {
+				consoleWarn("Code recovery checkpoint", err)
 				u.sourceStatus("Recovery could not save. Keep this window open; another attempt will follow.")
 				continue
 			}
