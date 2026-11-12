@@ -387,6 +387,27 @@ func hasSerialTrackEffects(score *notation.Score) bool {
 	return false
 }
 
+// laneStepNotes gives every step of a drum lane pattern its lane number as the
+// note, as the engine's lane patterns carry it (packProjectStep in
+// project/runtime.go). The scheduler seeds each hit's humanize offset with the
+// step's note (seq.HumanizeVelocity), so with the General MIDI pitch that
+// project.CompilePattern writes for check, the direct mixer drew different
+// velocities from the engine, and `cicada render` differed from Studio. The
+// direct mixer plays a hit by its lane, never by this note.
+func laneStepNotes(p *seq.Pattern, lane uint8) error {
+	for i := 0; i < int(p.Len); i++ {
+		step, err := seq.UnpackStep(p.Steps[i])
+		if err != nil {
+			return err
+		}
+		step.Note = lane
+		if p.Steps[i], err = seq.PackStep(step); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // hasTapeEcho reports whether the score declares a tape echo. The direct WAV
 // mixer has no tape return, so such a score renders through the engine.
 func hasTapeEcho(score *notation.Score) bool {
@@ -1215,6 +1236,9 @@ func compileTracksAll(score *notation.Score, semantic *project.Project, sampleRa
 					for lane, name := range drum.Names {
 						if part.Lane == name {
 							p := part.Pattern
+							if err := laneStepNotes(&p, uint8(lane)); err != nil {
+								return nil, fmt.Errorf("pattern %s lane %s: %w", pattern.Name, name, err)
+							}
 							lanes[lane] = &p
 							break
 						}

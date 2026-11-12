@@ -79,17 +79,9 @@ type pathsKnown struct {
 // pathsKnownDifferences can only shrink: delete an entry in the pull request
 // that fixes its difference.
 var pathsKnownDifferences = []pathsKnown{
-	// Drum humanize: the velocity draw takes the step's note as an input
-	// (kernel/seq/schedule.go:168). The engine's lane steps carry the lane
-	// number (project/runtime.go:408, packProjectStep), as
-	// kernel/seq/schedule.go:73-78 documents; the direct mixer's carry the
-	// General MIDI pitch (project/compile.go:268-274, drumNotes at
-	// compile.go:36), so every humanized hit gets a different velocity. Every
-	// other input (seed, track, slot, iteration, step) agrees.
-	{"targeted: drum humanize with accents and chance steps", "drum pattern with humanize", "every humanized hit has a different velocity", "none yet (root cause in pull request #344)",
-		"49 only direct, 49 only engine, notes fbe68979", "353019 frames differ, first at frame 0 (0.000 s), last at frame 353019; renders direct 84ebd736, engine 3b088b12"},
-	{"targeted: drum humanize across two scenes", "drum pattern with humanize", "every humanized hit has a different velocity", "none yet (root cause in pull request #344)",
-		"66 only direct, 66 only engine, notes fc471b29", "529420 frames differ, first at frame 0 (0.000 s), last at frame 529419; renders direct 82bad56c, engine cecb340b"},
+	// None: the two drum humanize entries went with the fix that gives every
+	// direct-mixer drum lane step its lane as its note (render/wav.go,
+	// laneStepNotes), as the engine does.
 }
 
 // pathsEngineOnly lists every example score that only the engine can render,
@@ -294,15 +286,6 @@ func pathsRender(score *notation.Score, scheduled bool, assetRoot string, bars, 
 	return tapped, "", err
 }
 
-// pathsLaneOf maps a drum's General MIDI pitch to its lane.
-var pathsLaneOf = func() map[uint8]uint8 {
-	m := map[uint8]uint8{}
-	for lane, note := range drum.MIDINotes {
-		m[note] = uint8(lane)
-	}
-	return m
-}()
-
 func pathsDrumTracks(score *notation.Score, rate int) map[int]bool {
 	drums := map[int]bool{}
 	if p, _ := project.FromScore(score); p != nil {
@@ -330,11 +313,13 @@ func pathsNotes(tapped []pathsTapped, drums map[int]bool, endTick int64) map[str
 		ev := tp.event
 		if drums[tp.track] {
 			if ev.Kind == seq.NoteOn {
-				// The engine taps a drum hit with its lane in Note, the direct
-				// mixer with its General MIDI pitch; the sound is the same.
+				// Both paths tap a drum hit with its lane in Note. A note that
+				// is not a lane (a General MIDI pitch, say) gets a key of its
+				// own, so the path that taps it fails the comparison by name.
 				lane := ev.Note
-				if l, ok := pathsLaneOf[lane]; ok {
-					lane = l
+				if drum.Lane(lane) >= drum.LaneCount {
+					keys[fmt.Sprintf("track %d tick %d drum hit with note %d, which is not a lane", tp.track, ev.Tick, lane)]++
+					continue
 				}
 				keys[fmt.Sprintf("track %d tick %d lane %d vel %d accent %v", tp.track, ev.Tick, lane, ev.Velocity, ev.Accent)]++
 			}
