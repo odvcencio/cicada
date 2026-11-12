@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"m31labs.dev/cicada/notation"
 )
 
 func TestReadOutputTakesTheRenderSummary(t *testing.T) {
@@ -113,6 +115,46 @@ func TestWriteIntentsSetsTrackLevels(t *testing.T) {
 	text := string(data)
 	if strings.Count(text, `"kind":"setparam"`) != 3 || !strings.Contains(text, `"param:bass.level"`) || !strings.Contains(text, `"param:drums.level"`) {
 		t.Fatalf("intents: %s", text)
+	}
+}
+
+func TestDecayStepScoresParse(t *testing.T) {
+	for _, step := range []string{"render:held", "render:silent"} {
+		if err := validStep(step); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := validStep("check:held"); err == nil {
+		t.Fatal("check:held: want an error, the generated scores are for renders")
+	}
+	large, err := os.ReadFile(filepath.Join("..", "..", defaultScores["large"]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	silent, err := silentScore(large, silentBars)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(silent)
+	if strings.Contains(text, "\nautomate ") || strings.Count(text, "\nsong {") != 1 || !strings.Contains(text, "  bench_silent*16\n") {
+		t.Fatalf("silent score keeps automation or the old song:\n%s", text[max(0, len(text)-600):])
+	}
+	_, scene, _ := strings.Cut(text, "\nscene bench_silent {\n")
+	scene, _, _ = strings.Cut(scene, "}")
+	tracks := trackPattern.FindAllStringSubmatch(string(large), -1)
+	if len(tracks) < 2 || strings.Count(scene, " = off\n") != len(tracks) {
+		t.Fatalf("%d tracks, %d turned off", len(tracks), strings.Count(scene, " = off\n"))
+	}
+	for name, source := range map[string]string{"held": heldScore, "silent": text} {
+		_, diagnostics := notation.Parse([]byte(source))
+		for _, d := range diagnostics {
+			if d.Severity == "error" {
+				t.Errorf("%s score: %v", name, d)
+			}
+		}
+	}
+	if _, err := silentScore([]byte("cicada 2\ntrack a acid {}\n"), 4); err == nil {
+		t.Fatal("a score without a song block: want an error")
 	}
 }
 

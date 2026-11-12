@@ -16,6 +16,7 @@ import (
 
 	"m31labs.dev/cicada/kernel/dsp/fastmath"
 	"m31labs.dev/cicada/kernel/dsp/halfband"
+	"m31labs.dev/cicada/kernel/dsp/subnormal"
 	"m31labs.dev/cicada/kernel/expression"
 )
 
@@ -98,6 +99,7 @@ type Voice struct {
 	oscA, oscB, oscSub                          oscillatorSelection
 	diode, ladder                               filterState
 	fault                                       bool
+	frames                                      uint32 // Next calls since New or Reset, for flushControls
 }
 
 func New(sampleRate int) (*Voice, error) {
@@ -267,6 +269,30 @@ func (v *Voice) Reset() {
 	v.diode, v.ladder = filterState{}, filterState{}
 	v.up.Reset()
 	v.down.Reset()
+	v.frames = 0
+}
+
+// flushControls replaces a subnormal smoothed control with a zero of the same
+// sign (kernel/dsp/subnormal). Resonance glides to its live target and the
+// savage blend to 0 when the switch is off, and zero is a legal target for
+// each; there each stalls at a subnormal number and slows every sample. A
+// stalled savage blend also keeps the voice off the resting diode path and
+// runs the savage saturation every sample. Each reaches the output only
+// through sums with normal values, which absorb it, so the filter paths with
+// a subnormal value and with zero agree. The resting diode shape is prepared
+// again when the resonance is flushed, since it holds 17 times the resonance.
+//
+// Envelope modulation and accent stall the same way but are not flushed:
+// they feed the cutoff through fastmath.Exp2, which returns exactly 1 for 0
+// and 1.0000000755 for any tiny nonzero argument, so a flush would change the
+// cutoff and the output. That fix belongs in the consumer.
+func (v *Voice) flushControls() {
+	p := &v.params
+	v.savageBlend = subnormal.Flush64(v.savageBlend)
+	if resonance := subnormal.Flush64(p.Resonance); resonance != p.Resonance {
+		p.Resonance = resonance
+		v.prepareRestingDiode()
+	}
 }
 
 func (v *Voice) Render(output []float32) {
@@ -307,6 +333,10 @@ func (v *Voice) Next() float32 {
 		savageTarget = 1
 	}
 	v.savageBlend += float64((savageTarget - v.savageBlend) * v.switchAlpha)
+	v.frames++
+	if v.frames%subnormal.SweepFrames == 0 {
+		v.flushControls()
+	}
 	if v.gate {
 		if v.attacking {
 			v.vca += 1 / (.003 * v.sampleRate)

@@ -101,7 +101,9 @@ build-core:
 
 # Times an agent's loop with build/cicada on the reference scores and checks
 # the speed gates in cmd/cicada-bench/gates.go; BENCH_ARGS=--enforce fails on
-# a gate. The large song's render and audition cover its first 8 bars.
+# a gate. The large song's render and audition cover its first 8 bars. It also
+# renders a piano chord held through a reverb and the large song with every
+# track off (render:held, render:silent), reported without a gate.
 .PHONY: bench-agent-loop test-render-identity
 BENCH_ARGS ?=
 bench-agent-loop: build-core
@@ -111,6 +113,25 @@ bench-agent-loop: build-core
 # and compares the bytes: plain, normalized, and at -14 and -9 LUFS.
 test-render-identity:
 	CICADA_RENDER_IDENTITY_SWEEP=1 go test ./cmd/cicada -run '^TestRenderCacheIdentity$$' -count=1 -timeout=110m -v
+
+# Checks that flushing subnormal numbers (kernel/dsp/subnormal) leaves the
+# 24-bit files cicada render writes unchanged: renders the WAV parity subset
+# and the flush cases (cmd/cicada/testdata/flush) in a build with the tag
+# cicada_noflush, where Flush returns its argument, and requires the same
+# bytes as the ordinary build in every mode. FLUSH_REFERENCE names hashes the
+# ordinary build already wrote (CICADA_WAV_PARITY_OUT), as CI's amd64 parity
+# job does; without it the target renders them first.
+.PHONY: test-flush-identity
+FLUSH_REFERENCE ?=
+test-flush-identity:
+	mkdir -p build/flush-identity
+	bash -o pipefail -c 'set -e; reference="$(FLUSH_REFERENCE)"; \
+	  if [ -z "$$reference" ]; then \
+	    reference="$$PWD/build/flush-identity/flush.txt"; \
+	    CICADA_WAV_PARITY_OUT="$$reference" go test -timeout=20m ./cmd/cicada -run "^TestExampleWAVParity$$" -count=1; \
+	  fi; \
+	  CICADA_WAV_PARITY_REFERENCE="$$reference" go test -tags cicada_noflush -timeout=20m ./cmd/cicada -run "^TestExampleWAVParity$$" -count=1 -v | tee build/flush-identity/report.txt; \
+	  grep -q -- "^--- PASS: TestExampleWAVParity " build/flush-identity/report.txt'
 
 # Regenerates the committed agent front door (llms.txt, AGENTS.md's generated
 # region, the quick start the binary embeds, examples/first-song/AGENTS.md),
