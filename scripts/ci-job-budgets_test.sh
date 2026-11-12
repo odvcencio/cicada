@@ -48,7 +48,7 @@ printf '9\tpr\tAlpha (shard */2)\n17\tpr\tBeta\n5\tpr\tGamma\n30\tnightly\tNight
 cat >"$tmp/ok.json" <<'JSON'
 {"total_count": 6, "jobs": [
   {"name": "Alpha (shard 1/2)", "status": "completed", "conclusion": "success", "started_at": "2026-11-12T10:00:00Z", "completed_at": "2026-11-12T10:08:59Z"},
-  {"name": "Alpha (shard 2/2)", "status": "completed", "conclusion": "failure", "started_at": "2026-11-12T10:00:00Z", "completed_at": "2026-11-12T10:12:00Z"},
+  {"name": "Alpha (shard 2/2)", "status": "completed", "conclusion": "failure", "created_at": "2026-11-12T09:15:00Z", "started_at": "2026-11-12T10:00:00Z", "completed_at": "2026-11-12T10:12:00Z"},
   {"name": "Beta", "status": "completed", "conclusion": "skipped", "started_at": "2026-11-12T10:00:00Z", "completed_at": "2026-11-12T10:00:00Z"},
   {"name": "Gamma", "status": "in_progress", "conclusion": null, "started_at": "2026-11-12T10:10:00Z", "completed_at": null},
   {"name": "Nightly", "status": "completed", "conclusion": "success", "started_at": "2026-11-12T10:00:00Z", "completed_at": "2026-11-12T10:29:00Z"},
@@ -58,6 +58,8 @@ JSON
 python3 "$script" check-run "$tmp/budgets.tsv" "$tmp/ok.json" 2026-11-12T10:12:00Z >"$tmp/out" || fail "check-run failed a run within its limits: $(cat "$tmp/out")"
 grep -Eq "^ok +8m59s \(warn above 9m, fail above 20m\)  Alpha \(shard 1/2\) \(success\)$" "$tmp/out" || fail "no per-job line with both limits: $(cat "$tmp/out")"
 grep -q "^::warning::Alpha (shard 2/2) took 12m00s, over its budget of 9 minutes" "$tmp/out" || fail "no warning above the budget: $(cat "$tmp/out")"
+grep -Eq "^warn +12m00s \(warn above 9m, fail above 20m; queued 45m00s\)  Alpha \(shard 2/2\)" "$tmp/out" || fail "no queue time on the job line: $(cat "$tmp/out")"
+grep -q "^Longest wait in the queue: 45m00s (Alpha (shard 2/2)). Queue time is not judged." "$tmp/out" || fail "no longest-queue line: $(cat "$tmp/out")"
 grep -q "not judged (skipped, no time)  Beta" "$tmp/out" || fail "a skipped job is not reported as not judged: $(cat "$tmp/out")"
 grep -q "not judged (queued, no time)  Beta" "$tmp/out" || fail "a queued job is not reported as not judged: $(cat "$tmp/out")"
 grep -Eq "^ok +29m00s \(warn above 30m, fail above 30m\)  Nightly" "$tmp/out" || fail "a nightly job's limit is not its budget: $(cat "$tmp/out")"

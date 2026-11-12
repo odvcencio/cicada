@@ -14,8 +14,9 @@
       project's rule), when a nightly job ran longer than its budget, or when a
       job has no budget. A running job is judged by how long it has run so
       far, a cancelled one (a timeout ends that way) by how long it ran; a job
-      that never started is printed as not judged. NOW (ISO 8601, for tests)
-      replaces the current time.
+      that never started is printed as not judged. Each job's wait in the
+      queue (started_at minus created_at) is printed but not judged. NOW
+      (ISO 8601, for tests) replaces the current time.
 
 Uses only the Python standard library, so it runs on any hosted runner.
 """
@@ -111,6 +112,7 @@ def check_run(budgets_path, jobs_path, now=None):
         return 1
     now = parse_time(now) if now else datetime.datetime.now(datetime.timezone.utc)
     warnings, failures = [], []
+    longest_queue = (0, "")
     for job in sorted(jobs, key=lambda j: j["name"]):
         name, conclusion = job["name"], job.get("conclusion")
         matches = [b for b in budgets if fnmatch.fnmatchcase(name, b[2])]
@@ -148,7 +150,16 @@ def check_run(budgets_path, jobs_path, now=None):
             )
         else:
             verdict = "ok"
-        print(f"{verdict:4s} {clock(seconds):>7s} ({limits})  {name} ({state})")
+        # Time in the queue is reported, not judged: it comes from the
+        # account's limit on concurrent hosted jobs, not from the job.
+        queued = ""
+        if job.get("created_at"):
+            wait = (parse_time(job["started_at"]) - parse_time(job["created_at"])).total_seconds()
+            queued = f"; queued {clock(max(wait, 0))}"
+            longest_queue = max(longest_queue, (wait, name))
+        print(f"{verdict:4s} {clock(seconds):>7s} ({limits}{queued})  {name} ({state})")
+    if longest_queue[1]:
+        print(f"Longest wait in the queue: {clock(longest_queue[0])} ({longest_queue[1]}). Queue time is not judged.")
     for warning in warnings:
         print(f"::warning::{warning}")
     for failure in failures:
