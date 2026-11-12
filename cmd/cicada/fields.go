@@ -3,7 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"os"
+	"io"
 	"strings"
 	"text/tabwriter"
 
@@ -11,13 +11,21 @@ import (
 	"m31labs.dev/cicada/project"
 )
 
-func explain(name string, asJSON bool) error {
+// explainSchema names the format of cicada explain <construct> --json.
+const explainSchema = "cicada.explain.v1"
+
+// explain prints a language construct, one of its fields, or a graph
+// operation (graph.<name>) to w, as text or as a cicada.explain.v1 document.
+func explain(w io.Writer, name string, asJSON bool) error {
 	if strings.HasPrefix(name, "graph.") {
 		if operation, ok := instrument.Operation(strings.TrimPrefix(name, "graph.")); ok {
 			if asJSON {
-				return json.NewEncoder(os.Stdout).Encode(operation)
+				return writeExplainJSON(w, struct {
+					Schema string `json:"schema"`
+					instrument.OperationInfo
+				}{explainSchema, operation})
 			}
-			fmt.Printf("%s\n%s\n", operation.Signature, operation.Meaning)
+			fmt.Fprintf(w, "%s\n%s\n", operation.Signature, operation.Meaning)
 			return nil
 		}
 	}
@@ -43,43 +51,51 @@ func explain(name string, asJSON bool) error {
 			return fmt.Errorf("unknown semantic field %q", name)
 		}
 		if asJSON {
-			var value any = fields[0]
-			if len(parts) == 1 {
-				value = struct {
-					Construct project.ConstructRecord `json:"construct"`
-					Fields    []project.Field         `json:"fields"`
-				}{construct, fields}
+			if len(parts) == 2 {
+				return writeExplainJSON(w, struct {
+					Schema string `json:"schema"`
+					project.Field
+				}{explainSchema, fields[0]})
 			}
-			data, err := json.MarshalIndent(value, "", "  ")
-			if err != nil {
-				return err
-			}
-			fmt.Println(string(data))
-			return nil
+			return writeExplainJSON(w, struct {
+				Schema    string                  `json:"schema"`
+				Construct project.ConstructRecord `json:"construct"`
+				Fields    []project.Field         `json:"fields"`
+			}{explainSchema, construct, fields})
 		}
 		if len(parts) == 2 {
 			field := fields[0]
-			fmt.Printf("%s.%s: %s\nType: %s\n", field.Construct, field.Name, field.Meaning, field.Type)
+			fmt.Fprintf(w, "%s.%s: %s\nType: %s\n", field.Construct, field.Name, field.Meaning, field.Type)
 			if field.Unit != nil {
-				fmt.Printf("Unit: %s\n", *field.Unit)
+				fmt.Fprintf(w, "Unit: %s\n", *field.Unit)
 			}
 			if field.Range != nil {
-				fmt.Printf("Range: %s\n", *field.Range)
+				fmt.Fprintf(w, "Range: %s\n", *field.Range)
 			}
 			if field.Variant != "" {
-				fmt.Printf("Variant: %s\n", field.Variant)
+				fmt.Fprintf(w, "Variant: %s\n", field.Variant)
 			}
 			return nil
 		}
-		fmt.Printf("%s (%s, %s)\n", construct.Name, construct.Layer, construct.Profile)
-		w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-		fmt.Fprintln(w, "FIELD\tTYPE\tUNIT\tRANGE\tREQUIRED\tDEFAULT\tMEANING")
+		fmt.Fprintf(w, "%s (%s, %s)\n", construct.Name, construct.Layer, construct.Profile)
+		table := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+		fmt.Fprintln(table, "FIELD\tTYPE\tUNIT\tRANGE\tREQUIRED\tDEFAULT\tMEANING")
 		for _, field := range fields {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%t\t%s\t%s\n", field.Name, field.Type, optionalText(field.Unit), optionalText(field.Range), field.Required, optionalText(field.Default), field.Meaning)
+			fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%t\t%s\t%s\n", field.Name, field.Type, optionalText(field.Unit), optionalText(field.Range), field.Required, optionalText(field.Default), field.Meaning)
 		}
-		return w.Flush()
+		return table.Flush()
 	}
 	return fmt.Errorf("unknown semantic construct %q", parts[0])
+}
+
+// writeExplainJSON writes one explain document, indented as it always was.
+func writeExplainJSON(w io.Writer, document any) error {
+	data, err := json.MarshalIndent(document, "", "  ")
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintln(w, string(data))
+	return err
 }
 
 func optionalText(value *string) string {
