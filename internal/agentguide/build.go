@@ -83,6 +83,7 @@ var llmsSections = []struct {
 	{"Sound and delivery", []llmsPage{
 		{"docs/manual/exporting.md", "Exporting", "WAV, stems and MIDI"},
 		{"docs/manual/audition.md", "Audition", "the listening report: key, chords, levels, brightness, rhythm"},
+		{"docs/manual/audition-measures.md", "Audition measures", "how audition measures loudness, band owners, activity and peaks; its limits and cost"},
 		{"docs/audio/mix-chain.md", "Opt-in mix chain", "track inserts, sends, master effects and loudness targets"},
 		{"docs/manual/parameter-ranges.md", "Parameter ranges", "the allowed range of every voice, drum and effect setting"},
 	}},
@@ -102,7 +103,6 @@ var llmsSections = []struct {
 		{"docs/manual/modulation.md", "Modulation", "modulation sources and their routes"},
 		{"docs/manual/engine-host.md", "Hosting the engine", "the Go and TinyGo audio engine in another program"},
 		{"docs/manual/engine-metrics.md", "Engine measurements", "CPU and render costs of synthetic sessions"},
-		{"docs/manual/audition-measures.md", "Audition measures", "how audition measures loudness, band owners, activity and peaks; its limits and cost"},
 	}},
 }
 
