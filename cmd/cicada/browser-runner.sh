@@ -46,16 +46,21 @@ profile="$profile_root/profile"
 chrome_log=build/m2-browser-chrome.log
 chrome_pid=
 # cleanup signals only the Chrome this script started. setsid makes Chrome
-# the leader of a new process group whose ID is chrome_pid. chrome_pid is
-# this script's own child and is not reaped before the wait below, so no other
-# process can hold that PID or lead that group. Until setsid has run, the
-# group does not exist and only the child is signaled. Do not read the group
-# from ps: before setsid runs it is this script's own group, which a CI step's
-# shell, make and the runner's worker share (browser-runner_test.sh).
+# the leader of a new process group whose ID is chrome_pid. bash reaps a
+# background child as soon as it exits, so after a Chrome crash chrome_pid may
+# belong to another process. The cleanup therefore signals only while
+# "jobs -rp" still lists chrome_pid, that is, while bash has not reaped it.
+# (The job can still exit between that check and the kill; the window is
+# microseconds.) Until setsid has run, the group does not exist and only the
+# child is signaled. Do not read the group from ps: before setsid runs it is
+# this script's own group, which a CI step's shell, make and the runner's
+# worker share (browser-runner_test.sh).
 cleanup() {
   trap - EXIT INT TERM
   if [[ -n "$chrome_pid" ]]; then
-    kill -TERM -- "-$chrome_pid" 2>/dev/null || kill -TERM "$chrome_pid" 2>/dev/null || true
+    if [[ " $(jobs -rp) " == *" $chrome_pid "* ]]; then
+      kill -TERM -- "-$chrome_pid" 2>/dev/null || kill -TERM "$chrome_pid" 2>/dev/null || true
+    fi
     wait "$chrome_pid" 2>/dev/null || true
   fi
   rm -rf "$profile_root"
