@@ -107,7 +107,15 @@ error that names the limit that bound. The WAV from the best pass is still
 written (Studio keeps it as a separate shortfall file). When even a render
 that breaks a limit is too quiet for the target, and the best render is within
 0.5 dB of the reduction maximum, the search stops instead of using all six
-passes: more gain into the last limiter would only limit harder. The render
+passes: more gain into the last limiter would only limit harder.
+
+Every missed target names the limit that stopped it. Besides the two guard
+rails and the true-peak ceiling, there are two more: without a limiter the
+gain never exceeds +24 dB, so a very quiet mix stops there
+(`loudness_shortfall_at_gain_maximum`: raise the mix level), and the search
+stops after six passes (`loudness_target_missed_at_pass_limit`: the message
+gives the tolerance that would accept the best pass). When a louder pass broke
+a limit, the message says which, at what gain and loudness. The render
 summary reports the applied gain, the gain stage (`before_last_limiter` when
 the chain has a limiter, `post_chain` when it has none or there is no chain),
 the last limiter's largest gain reduction, and the largest gain reduction of

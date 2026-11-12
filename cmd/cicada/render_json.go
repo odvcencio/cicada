@@ -122,7 +122,8 @@ var renderErrorCodes = []string{
 	"usage", "unreadable_score", "invalid_score", "export_settings", "output_exists",
 	"sampler_memory", "render_failed", "true_peak_and_dc_unmet", "loudness_unmeasurable",
 	"true_peak_over_ceiling", "limiter_reduction_over_maximum", "loudness_shortfall_at_limiter_maximum",
-	"loudness_shortfall_at_input_gain_cap", "loudness_shortfall_at_true_peak_ceiling", "loudness_target_missed",
+	"loudness_shortfall_at_input_gain_cap", "loudness_shortfall_at_true_peak_ceiling", "loudness_shortfall_at_gain_maximum",
+	"loudness_target_missed_at_pass_limit", "loudness_target_missed",
 }
 
 // takeJSONFlag removes --json from a command's flags and reports whether it

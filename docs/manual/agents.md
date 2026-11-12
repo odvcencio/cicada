@@ -739,8 +739,10 @@ command prints and, when the documentation gives a fix for that cause, a
 - `limiter_reduction_over_maximum`: the master chain's last limiter would reduce more than 6 dB.
 - `loudness_shortfall_at_limiter_maximum`: the target needs more than the 6 dB maximum of the master chain's last limiter.
 - `loudness_shortfall_at_input_gain_cap`: the target needs more than +12 dB of gain into the master chain's last limiter.
-- `loudness_shortfall_at_true_peak_ceiling`: without a master limiter, the gain stops at the true-peak ceiling.
-- `loudness_target_missed`: the best pass is outside the tolerance for another reason.
+- `loudness_shortfall_at_true_peak_ceiling`: the gain stops at the true-peak ceiling: without a master limiter at the best pass, or, with one, a louder pass went over the ceiling while still too quiet.
+- `loudness_shortfall_at_gain_maximum`: without a master limiter, the gain reached the +24 dB maximum export gain and the mix is still too quiet.
+- `loudness_target_missed_at_pass_limit`: the search used all six passes before it came within the tolerance; the message names the nearest louder pass that broke a limit, if one did.
+- `loudness_target_missed`: the best pass is outside the tolerance and none of the limits above stopped the search; the search's rules do not produce it today.
 <!-- /render-error-codes -->
 
 After a shortfall the best pass is still written and listed in `outputs`.
