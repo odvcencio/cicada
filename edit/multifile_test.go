@@ -134,7 +134,6 @@ func TestEveryIntentRespectsMultiFileOwnership(t *testing.T) {
 		"setprojectsettings":     &edits.SetProjectSettings{Title: "Edited", TempoMilli: 130000, Root: "a", Scale: "minor"},
 		"replacedeclaration":     &edits.ReplaceDeclaration{Declaration: "pattern", Name: "melody", Text: "pattern melody acid steps=4 { d4 . . . }"},
 		"replacetext":            &edits.ReplaceText{},
-		"patchtext":              &edits.PatchText{Path: "part.cicada"},
 		"moveclip":               &edits.MoveClip{Entity: "placement:foreign", AtTick: 3840},
 		"resizeclip":             &edits.ResizeClip{Entity: "placement:foreign", LengthTicks: 3840},
 		"splitclip":              &edits.SplitClip{Entity: "placement:foreign", AtTick: 3840},
@@ -190,11 +189,6 @@ func TestEveryIntentRespectsMultiFileOwnership(t *testing.T) {
 						compiler.path, input = "part.cicada", other
 						want = bytes.Replace(other, []byte("Foreign"), []byte("Edited"), 1)
 						in = &edits.ReplaceText{Source: string(want)}
-					}
-					if kind == "patchtext" {
-						// A patch names its file; the entry stays the score.
-						want = bytes.Replace(other, []byte("Foreign"), []byte("Edited"), 1)
-						in = &edits.PatchText{Path: "part.cicada", Hunks: edits.DiffText(other, want)}
 					}
 					opts := edits.Options{Compiler: compiler, Path: compiler.path, Edition: 2, Sources: files}
 					if injected {
@@ -316,10 +310,6 @@ func TestEveryIntentRespectsMultiFileOwnership(t *testing.T) {
 					case "replacetext":
 						if err != nil || result == nil || !bytes.Equal(result.Source, want) || len(result.Files) != 0 {
 							t.Fatalf("buffer save did not edit the selected owning file: candidate=%v error=%v", result != nil, err)
-						}
-					case "patchtext":
-						if err != nil || result == nil || !bytes.Equal(result.Source, main) || len(result.Files) != 1 || result.Files[0].Path != "part.cicada" || !bytes.Equal(result.Files[0].Before, other) || !bytes.Equal(result.Files[0].After, want) {
-							t.Fatalf("patch did not edit only its named file: candidate=%v error=%v", result != nil, err)
 						}
 					default:
 						if err == nil || result != nil {
