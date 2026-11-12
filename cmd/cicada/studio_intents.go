@@ -148,6 +148,17 @@ func (s *studio) editOptions(source []byte, files map[string][]byte) (edits.Opti
 		return edits.Options{}, err
 	}
 	opts := edits.Options{Compiler: &studioCompiler{path: s.path}, RenderCheck: s.renderCheck, Path: s.path, Edition: editionNumber, ManifestPath: manifestPath, Sources: sources.Files, Now: time.Now, UpgradeEdition: s.upgradeEdition(manifestPath), MixerGuard: s.mixerCaptureGuard, CaptureGuard: s.automationCaptureGuard}
+	// The structural intents name every problem cicada check finds in a
+	// change.
+	opts.Diagnose = func(candidate []byte, files map[string][]byte) ([]notation.Diagnostic, error) {
+		staged := make(map[string][]byte, len(files)+1)
+		for path, data := range files {
+			staged[path] = data
+		}
+		staged[absolute] = candidate
+		inspection, err := inspectScoreWith(s.path, staged)
+		return inspection.diagnostics, err
+	}
 	if manifestPath != "" {
 		var supplied bool
 		opts.Manifest, supplied = overrides[manifestPath]
@@ -231,6 +242,15 @@ func intentErrorResponse(err error) map[string]any {
 	if errors.As(err, &refusal) {
 		response["code"], response["reason"], response["note"] = "CICADA-NOTES", refusal.Code, refusal.Note()
 	}
+	// A refusal with a reason gives its code and its uses, as cicada apply
+	// --json does.
+	var reason *edits.ReasonError
+	if errors.As(err, &reason) {
+		response["reason"] = reason.Reason
+		if len(reason.Uses) > 0 {
+			response["uses"] = reason.Uses
+		}
+	}
 	return response
 }
 
@@ -305,11 +325,19 @@ func sourceConflictMessage(env edits.Envelope, message string) string {
 }
 
 // intentDiff includes auxiliary changes so a dry run shows the whole batch.
-func intentDiff(before []byte, result *edits.Result, name string) string {
+// intentDiff writes the batch's unified diff: the entry under name, and each
+// other file by its path relative to the entry's folder (root), the folder
+// the project's relative paths are read from.
+func intentDiff(before []byte, result *edits.Result, name string, root ...string) string {
 	diff := studioUnifiedDiff(before, result.Source)
 	diff = strings.Replace(diff, "--- a/score.cicada\n+++ b/score.cicada\n", "--- a/"+name+"\n+++ b/"+name+"\n", 1)
 	for _, file := range result.Files {
 		name := filepath.Base(file.Path)
+		if len(root) > 0 {
+			if relative, err := filepath.Rel(root[0], file.Path); err == nil && !strings.HasPrefix(relative, "..") {
+				name = filepath.ToSlash(relative)
+			}
+		}
 		fileDiff := studioUnifiedDiff(file.Before, file.After)
 		fileDiff = strings.Replace(fileDiff, "--- a/score.cicada\n+++ b/score.cicada\n", "--- a/"+name+"\n+++ b/"+name+"\n", 1)
 		diff += fileDiff
@@ -346,6 +374,7 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 	}
 	if s.history != nil {
 		bar, step := s.historyPosition()
+		s.history.setMultiFile(studioProjectHasSeveralFiles(s.path))
 		s.history.observe(current, bar, step)
 	}
 	if studioRevision(current) != edit.Revision {
@@ -371,6 +400,11 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 		}
 	}
 	env.Version, env.Revision = edits.EnvelopeVersion, edit.Revision
+	// Other files the intents were computed against, as cicada apply checks.
+	if err := checkFileRevisions(opts, env.Revisions); err != nil {
+		studioJSON(w, http.StatusConflict, map[string]any{"error": err.Error(), "code": "revision_mismatch", "revision": studioRevision(current), "revisions": fileRevisions(opts)})
+		return
+	}
 	if env.Author == "" {
 		env.Author = edit.Author
 	}
@@ -423,7 +457,7 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 		}
 	}
 	if env.DryRun {
-		response := map[string]any{"diff": intentDiff(current, result, "score.cicada"), "revision": studioRevision(current), "valid": true, "dryRun": true}
+		response := map[string]any{"diff": intentDiff(current, result, "score.cicada", filepath.Dir(s.path)), "revision": studioRevision(current), "valid": true, "dryRun": true}
 		if envelopeConverts(env) {
 			response["convertible"] = true
 		}
@@ -443,6 +477,21 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 	if err != nil {
 		studioJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		return
+	}
+	// Changes a flag accepted (reseed, through /api/intents) are listed in
+	// the reply's warnings, as cicada apply --json lists them per intent; no
+	// page shows them yet.
+	var warnings []string
+	for _, list := range result.Warnings {
+		warnings = append(warnings, list...)
+	}
+	if len(warnings) > 0 {
+		response := map[string]any{}
+		for key, value := range result.Response {
+			response[key] = value
+		}
+		response["warnings"] = warnings
+		result.Response = response
 	}
 	mutation := studioMutation{Source: result.Source, Response: result.Response, Files: files, RenderChecked: result.RenderChecked, RenderIdentity: result.RenderIdentity, RenderRecheck: result.RenderRecheck}
 	outcome := s.commitMutationLocked(edit, current, mutation, beforeSwap, studioHistoryWriteNew, 0, commitHook{envelope: &env, compiled: compiler.compiled(result.Source, result.Files)})
