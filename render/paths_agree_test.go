@@ -55,16 +55,6 @@ type pathsKnown struct {
 // pathsKnownDifferences can only shrink: delete an entry in the pull request
 // that fixes its difference.
 var pathsKnownDifferences = []pathsKnown{
-	// The engine drops the first note of a pattern that a scene binds after
-	// bar 1 when the track's events are rebuilt in the frame of the scene switch
-	// (a pattern-to-pattern switch, a held note into the bar line, a scene tempo
-	// change). Each score below loses one note start at bar 3 on the engine.
-	// Assumed: pull request #338 fixes all four, so its merge makes these entries
-	// stale and the test then asks for their removal.
-	{"gen/seed-0017.cicada", "pattern-to-pattern scene switch", "the engine drops the note that starts at bar 3", "#338 (open)", "start: 1 only direct, 0 only engine"},
-	{"keys/soft_pad.cicada", "pattern-to-pattern scene switch", "the engine drops the note that starts at bar 3", "#338 (open)", "start: 1 only direct, 0 only engine"},
-	{"keys/string_machine.cicada", "pattern-to-pattern scene switch", "the engine drops the note that starts at bar 3", "#338 (open)", "start: 1 only direct, 0 only engine"},
-	{"targeted: tied first note at a tempo change", "scene tempo change on a track that keeps its pattern", "the engine drops the note that starts at bar 3", "#338 (open)", "start: 1 only direct, 0 only engine"},
 	// Slide (~) on the last step of a pattern, into the first note of the next
 	// scene. With sixteenth-note steps both paths glide; with quarter-note
 	// steps the engine glides and the direct mixer plays a plain note. Probable
