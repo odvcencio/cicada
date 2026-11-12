@@ -140,8 +140,7 @@ A batch is checked whole and written as one revision, or not at all:
   `pattern:<name>`, `step:<pattern>/<index>` (from 0), or on drums
   `step:<pattern>/<lane>/<index>`.
 - When no intent fits, `replacedeclaration` replaces one declaration
-  (`declaration` is `pattern`, `track_decl`, `scene_decl` or `song_decl`),
-  `patchtext` whole lines (`hunks`, each `line`, `old`, `new`) and
+  (`declaration` is `pattern`, `track_decl`, `scene_decl` or `song_decl`) and
   `replacetext` the whole score (`source`).
 
 ## Reading a refusal

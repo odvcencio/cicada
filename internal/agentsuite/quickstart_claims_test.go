@@ -20,7 +20,7 @@ import (
 // lists, on the project's score at revision, and returns the new revision.
 func (q *quickStart) envelopeClaims(revision string) string {
 	q.t.Helper()
-	q.uses("entity", "param:<track>.<control>", "pattern:<name>", "step:<pattern>/<index>", "step:<pattern>/<lane>/<index>", "replacedeclaration", "declaration", "pattern", "track_decl", "scene_decl", "song_decl", "patchtext", "hunks", "line", "old", "new", "replacetext", "source")
+	q.uses("entity", "param:<track>.<control>", "pattern:<name>", "step:<pattern>/<index>", "step:<pattern>/<lane>/<index>", "replacedeclaration", "declaration", "pattern", "track_decl", "scene_decl", "song_decl", "replacetext", "source")
 	var catalog struct {
 		Intents []struct {
 			Example map[string]any `json:"example"`
@@ -58,14 +58,6 @@ func (q *quickStart) envelopeClaims(revision string) string {
 	revision = q.edit("replacetext with the whole score as source", revision, map[string]any{"kind": "replacetext", "source": strings.Replace(string(q.read("main.cicada")), "tempo 120", "tempo 118", 1)})
 	if !strings.Contains(string(q.read("main.cicada")), "tempo 118") {
 		q.t.Fatal("replacetext did not write its source")
-	}
-	// patchtext replaces whole lines, named by line (from 1), old and new.
-	score := string(q.read("main.cicada"))
-	at := strings.LastIndex(score[:strings.Index(score, "tempo 118")], "\n") + 1
-	end := at + strings.Index(score[at:], "\n") + 1
-	revision = q.edit("patchtext with one hunk", revision, map[string]any{"kind": "patchtext", "hunks": []any{map[string]any{"line": strings.Count(score[:at], "\n") + 1, "old": score[at:end], "new": strings.Replace(score[at:end], "tempo 118", "tempo 116", 1)}}})
-	if got := string(q.read("main.cicada")); got != strings.Replace(score, "tempo 118", "tempo 116", 1) {
-		q.t.Fatalf("patchtext wrote %q", got)
 	}
 
 	var patternSettings struct {
