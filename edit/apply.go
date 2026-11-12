@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -98,6 +99,10 @@ func (c *Context) afterIntents(check func(*Context) error) {
 	}
 	c.final = append(c.final, finalCheck{index: c.running, kind: kind, check: check})
 }
+
+// MeterMap places the edited song's bar and beat lines. A score cannot declare
+// a meter yet, so it is the 4/4 map.
+func (c *Context) MeterMap() seq.MeterMap { return seq.MeterMap{} }
 
 // Parse parses the working buffer. Recording token writers can retain the
 // complete project context when the buffer owns only part of the score.

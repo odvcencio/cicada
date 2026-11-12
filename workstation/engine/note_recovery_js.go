@@ -7,8 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"strconv"
 	"strings"
 	"syscall/js"
@@ -114,23 +112,9 @@ func (u *liveUI) checkpointNotes() {
 // A committed/discarded performance must not reappear as an unfinished take.
 func (u *liveUI) checkRestoredTake() error {
 	id := u.takeID
-	origin := js.Global().Get("location").Get("origin").String()
-	request, err := http.NewRequestWithContext(u.ctx, http.MethodGet, origin+"/api/note-recovery/"+id, nil)
+	response, err := nativeRequest{Method: methodGet, Path: "/api/note-recovery/" + id, Timeout: 2 * time.Second, Limit: 16 << 20}.do(u.ctx)
 	if err != nil {
 		return err
-	}
-	response, err := (&http.Client{Timeout: 2 * time.Second}).Do(request)
-	if err != nil {
-		return err
-	}
-	defer response.Body.Close()
-	if response.StatusCode == http.StatusNotFound {
-		u.checkingTake = false
-		u.syncControls()
-		return nil
-	}
-	if response.StatusCode != http.StatusOK {
-		return fmt.Errorf("recovery unavailable")
 	}
 	var saved struct {
 		State          string              `json:"state"`
@@ -138,8 +122,14 @@ func (u *liveUI) checkRestoredTake() error {
 		Sequence       uint64              `json:"sequence"`
 		Takes          []control.Recording `json:"takes"`
 	}
-	if err = json.NewDecoder(io.LimitReader(response.Body, 16<<20)).Decode(&saved); err != nil {
+	found, err := noteRecoveryResult(response, &saved)
+	if err != nil {
 		return err
+	}
+	if !found {
+		u.checkingTake = false
+		u.syncControls()
+		return nil
 	}
 	if u.closed.Load() || u.takeID != id {
 		return nil

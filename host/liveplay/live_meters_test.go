@@ -9,7 +9,6 @@ import (
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/fx"
 	"m31labs.dev/cicada/kernel/graph"
-	"m31labs.dev/cicada/kernel/seq"
 )
 
 // loudScore plays a full-scale sine, optionally through the music-bus
@@ -177,7 +176,7 @@ func TestRangeReplacementKeepsStereoMeterSeparation(t *testing.T) {
 	}
 	defer p.Close()
 	replacement := meterScore(t, "replacement", -6)
-	r := PlaybackRange{StartTick: 0, EndTick: 2 * seq.TicksPerBar, Loop: true}
+	r := PlaybackRange{StartTick: 0, EndTick: 2 * ticksPerBar, Loop: true}
 	replacement.Range = &r
 	if err := p.Offer(replacement); err != nil {
 		t.Fatal(err)

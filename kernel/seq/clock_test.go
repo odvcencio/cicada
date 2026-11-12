@@ -29,7 +29,7 @@ func TestTickSampleRoundTrip(t *testing.T) {
 
 func TestTempoReanchor(t *testing.T) {
 	c, _ := NewClock(48000, 138000)
-	boundary := 17 * TicksPerBar
+	boundary := 17 * ticksPerBar
 	before := c.SampleAtTick(boundary)
 	c, err := c.Reanchor(boundary, 140000)
 	if err != nil {

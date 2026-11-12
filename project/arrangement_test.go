@@ -2,6 +2,7 @@ package project
 
 import (
 	"bytes"
+	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
 	"testing"
 )
@@ -17,15 +18,15 @@ arrange {
   marker chorus { at = @5.1.1 }
 }
 `)
-	moved, err := notation.SetPlacementField(source, "bass-1", "at", "@3.1.1")
+	moved, err := notation.SetPlacementField(seq.MeterMap{}, source, "bass-1", "at", "@3.1.1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	restored, err := notation.SetPlacementField(moved, "bass-1", "at", "@2.3.4")
+	restored, err := notation.SetPlacementField(seq.MeterMap{}, moved, "bass-1", "at", "@2.3.4")
 	if err != nil || !bytes.Equal(source, restored) {
 		t.Fatal("move failed exact source round-trip", err)
 	}
-	trimmed, err := notation.SetPlacementField(moved, "bass-1", "length", "240ticks")
+	trimmed, err := notation.SetPlacementField(seq.MeterMap{}, moved, "bass-1", "length", "240ticks")
 	if err != nil {
 		t.Fatal(err)
 	}

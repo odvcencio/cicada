@@ -9,7 +9,6 @@ import (
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/fx"
 	"m31labs.dev/cicada/kernel/mix"
-	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/render"
 )
 
@@ -117,7 +116,7 @@ func offlineReference(t *testing.T, s scenario) ([]float32, []float32, int) {
 	// looping and queues scene launches ahead; the reference must exclude the
 	// next phrase while draining linear-phase drive and limiter latency.
 	n.scenes = false
-	if s.scenes && !n.engine.Push(cmd.Command{Op: cmd.OpLaunchScene, Track: 0xff, Index: 1, Tick: seq.TicksPerBar}) {
+	if s.scenes && !n.engine.Push(cmd.Command{Op: cmd.OpLaunchScene, Track: 0xff, Index: 1, Tick: ticksPerBar}) {
 		t.Fatal("reference scene launch rejected")
 	}
 	var left, right [256]float32

@@ -297,7 +297,7 @@ func TestStepPatchLandsAtNextStepForEveryKindAcrossLoopAndLaunch(t *testing.T) {
 					launchTick = s.Tick
 				}
 			}
-			if launchTick == 0 || launchTick%seq.TicksPerBar != 0 {
+			if launchTick == 0 || launchTick%ticksPerBar != 0 {
 				t.Fatalf("launch did not land on a bar: %+v", whole.switched)
 			}
 			editedHits, loopHits := 0, 0
@@ -309,7 +309,7 @@ func TestStepPatchLandsAtNextStepForEveryKindAcrossLoopAndLaunch(t *testing.T) {
 					firstEdited = n.Tick
 				}
 				editedHits++
-				if n.Tick >= 3*seq.TicksPerBar {
+				if n.Tick >= 3*ticksPerBar {
 					loopHits++
 				}
 				if n.Tick >= launchTick {

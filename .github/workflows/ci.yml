@@ -208,9 +208,11 @@ jobs:
       - name: Tests that read every tracked file, the docs, or the README
         run: |
           set -euo pipefail
-          tests='TestDocumentationHygiene TestPublicHygieneRejectsViolations TestCommitHygiene TestExperimentalPolyphonyDocumentationContainsNoVerificationSnapshot TestDocumentationCicadaExamples TestDocumentationExamplesUseEditionTwo TestDocumentationEBNFMatchesGrammarDSL TestManualMixingExampleWorksInFreshProject TestWritingMusicOpeningScoreIsFormatted TestRecordKitManualMatchesTheCommand TestRecordKitManualStatesTheFrameBudget TestRecordKitManualStatesWhichDoubleStrikesTheCommandWarnsAbout TestRecordKitManualStatesWhereASliceStartsAndWhatTheRoomIs TestAcceptedMasteringCheckRenderAndVerify TestParameterRangesDocIsCurrent TestBuiltInTrackParameterCatalogMatchesTable TestBrushDocExamplesRenderAndKeepTheirBlockIndependence TestSamplerReportsStayOutsideRepository TestDocumentedCodesExist TestDiagnosticsReferenceIsCurrent TestNotesReasonsMatchTheEditor'
+          tests='TestAgentFrontDoorIsCurrent TestAgentGuideBudgets TestLLMsFullFitsItsBudget TestDocumentationHygiene TestPublicHygieneRejectsViolations TestCommitHygiene TestExperimentalPolyphonyDocumentationContainsNoVerificationSnapshot TestDocumentationCicadaExamples TestDocumentationExamplesUseEditionTwo TestDocumentationEBNFMatchesGrammarDSL TestManualMixingExampleWorksInFreshProject TestWritingMusicOpeningScoreIsFormatted TestRecordKitManualMatchesTheCommand TestRecordKitManualStatesTheFrameBudget TestRecordKitManualStatesWhichDoubleStrikesTheCommandWarnsAbout TestRecordKitManualStatesWhereASliceStartsAndWhatTheRoomIs TestAcceptedMasteringCheckRenderAndVerify TestParameterRangesDocIsCurrent TestBuiltInTrackParameterCatalogMatchesTable TestBrushDocExamplesRenderAndKeepTheirBlockIndependence TestSamplerReportsStayOutsideRepository TestDocumentedCodesExist TestDiagnosticsReferenceIsCurrent TestNotesReasonsMatchTheEditor'
           regex="^($(echo "$tests" | tr ' ' '|'))\$"
-          go test -v -count=1 ./cmd/cicada ./project ./render ./host/instrumentpack ./internal/diagnostics -run "$regex" | tee "$RUNNER_TEMP/repo-checks.log"
+          # TestLLMsFullFitsItsBudget builds llms-full.txt, which is not committed,
+          # checks its budget on that output, and writes it for the artifact below.
+          CICADA_LLMS_FULL_OUT="$RUNNER_TEMP/llms-full.txt" go test -v -count=1 ./cmd/cicada ./project ./render ./host/instrumentpack ./internal/diagnostics ./internal/agentguide -run "$regex" | tee "$RUNNER_TEMP/repo-checks.log"
           # go test exits 0 when -run matches nothing, for example after a rename.
           missing=0
           for name in $tests; do
@@ -220,6 +222,13 @@ jobs:
             fi
           done
           exit "$missing"
+      - name: Save llms-full.txt (built, not committed)
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: llms-full
+          if-no-files-found: error
+          path: ${{ runner.temp }}/llms-full.txt
       # The agent task suite (make test-agent-surface) drives the built binary
       # through one task with JSON output only. The M0 kernel job runs it when
       # the root group is on (any Go change, cmd/cicada and edit included).
@@ -718,7 +727,7 @@ jobs:
   # and a skipped required check counts as passing.
   m0:
     name: M0 language and kernel
-    needs: [changes, commit-hygiene, repo-checks, m0-core, m0-kernel, m0-wasm]
+    needs: [changes, commit-hygiene, repo-checks, m0-core, m0-kernel, m0-wasm, workstation]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -736,12 +745,16 @@ jobs:
           CORE_RESULT: ${{ needs.m0-core.result }}
           KERNEL_RESULT: ${{ needs.m0-kernel.result }}
           WASM_RESULT: ${{ needs.m0-wasm.result }}
+          RUN_WORKSTATION: ${{ needs.changes.outputs.workstation }}
+          WORKSTATION_RESULT: ${{ needs.workstation.result }}
         run: |
           set -euo pipefail
           # Expected result of each needed job:
           #   changes                    success on every event
           #   commit-hygiene, repo-checks  success on pull_request, skipped otherwise
           #   m0-core/kernel/wasm        success when root=true, skipped when root=false
+          #   workstation                success when workstation=true, skipped otherwise
+          #                              (its go generate enforces the UI engine size limit)
           # Anything else (failure, cancelled, or a skip that should not happen)
           # fails this job. A skip must never pass on its own.
           if [[ "$CHANGES_RESULT" != success ]]; then
@@ -772,6 +785,11 @@ jobs:
           check m0-core "$CORE_RESULT" "$part_expected"
           check m0-kernel "$KERNEL_RESULT" "$part_expected"
           check m0-wasm "$WASM_RESULT" "$part_expected"
+          if [[ "$RUN_WORKSTATION" == true ]]; then
+            check workstation "$WORKSTATION_RESULT" success
+          else
+            check workstation "$WORKSTATION_RESULT" skipped
+          fi
           exit "$status"
 
   workstation:
@@ -814,6 +832,11 @@ jobs:
           CICADA_SIZE_AUDIT_MANIFEST="$PWD/workstation/dist/build.json" go test -race ./internal/buildaudit -count=1
           git diff --exit-code -- tools/gosx-size
           git diff --exit-code -- workstation/ui
+      # What fills the UI engine WebAssembly, logged on every run. It reports;
+      # the limit is enforced by go generate above.
+      - name: UI engine size report (does not fail the job)
+        continue-on-error: true
+        run: make engine-size-report
       - name: Windows workstation and desktop
         run: |
           set -euo pipefail
@@ -827,6 +850,7 @@ jobs:
           path: |
             workstation/dist/build.json
             build/workstation-gosx-size.json
+            workstation/build/engine-size.json
 
   # Builds what the Studio browser suites run against once, so each shard does
   # not rebuild it. The tar keeps file modes (build/cicada stays executable).
@@ -938,6 +962,8 @@ jobs:
             build/studio-notes-report.txt
             build/studio-notes-server.log
             build/studio-notes-proof/
+            build/studio-engine-requests-report.txt
+            build/studio-engine-requests-server.log
             build/studio-column-report.txt
             build/studio-column-server.log
             build/studio-column-proof/

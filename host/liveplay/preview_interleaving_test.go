@@ -733,10 +733,10 @@ func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation
 				model.rangeLoop = op.kind == "range-loop"
 				if model.rangeLoop {
 					model.seek = 0
-					failure = p.PlayRange(PlaybackRange{StartTick: 0, EndTick: 2 * seq.TicksPerBar, Loop: true})
+					failure = p.PlayRange(PlaybackRange{StartTick: 0, EndTick: 2 * ticksPerBar, Loop: true})
 				} else {
 					model.seek = 1
-					failure = p.PlayRange(PlaybackRange{StartTick: seq.TicksPerBar, EndTick: 3 * seq.TicksPerBar, Loop: true})
+					failure = p.PlayRange(PlaybackRange{StartTick: ticksPerBar, EndTick: 3 * ticksPerBar, Loop: true})
 				}
 				counts.rangeSeeks++
 			case "scene":
