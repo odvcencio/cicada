@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"m31labs.dev/cicada/internal/benchscore/applybench"
@@ -15,6 +16,11 @@ import (
 // a fresh folder.
 func songSession(t testing.TB) *applybench.Session {
 	t.Helper()
+	if runtime.GOOS == "js" {
+		// As REF-L: the portable limits refuse it ("project exceeds 32
+		// allocated voices"), so it is measured natively only.
+		t.Skip("the portable limits refuse anywhere-you-are under js")
+	}
 	dir := t.TempDir()
 	songs := filepath.Join("..", "..", "..", "examples", "songs")
 	score, err := os.ReadFile(filepath.Join(songs, "anywhere-you-are.cicada"))
