@@ -34,7 +34,7 @@ shard_count=4
 shard_segments() {
 	case "$1" in
 	1) echo "print_sources placements performance_pitch performance_sources placement_commands code_recovery pattern_machine portable_midi macro_controls preset_save" ;;
-	2) echo "pattern_song precision first_song gestures portable_song sound_context continuity modulation_source collaboration columns midi_pickup shared_capture vocals vocal_levels dock_fit" ;;
+	2) echo "pattern_song precision first_song gestures portable_song sound_context continuity modulation_source collaboration columns midi_pickup shared_capture vocals vocal_levels dock_fit local_first" ;;
 	3) echo "owner_session page_stall scene_launch_keys pattern_grid tempo_editor recording_sources autoscroll arrangement_sources solo_clock mixer_strips navigation sampler_waveform export_sources library_recording midi_binding studio_edits recording_setup recording_levels meter_performance performance amp_automation" ;;
 	4) echo "shutdown_proof live_write grid_sources shell direct_variation placement_variation editor performance_time startup tempo_clock export_stems chorus observation_clock note_editor" ;;
 	*) echo "unknown shard: $1" >&2; return 1 ;;
@@ -110,6 +110,7 @@ segment_runs() {
 	performance) echo performance@capacity performance@buffer ;;
 	amp_automation) echo amp-automation ;;
 	scene_launch_keys) echo scene-launch-keys ;;
+	local_first) echo local-first@scene-1of3 local-first@scene-2of3 local-first@scene-3of3 local-first@placement-1of1 ;;
 	live_write) echo live-write live-write-uncertain@reject live-write-uncertain@lost live-write-uncertain@timeout live-write-uncertain@late ;;
 	*) return 1 ;;
 	esac
@@ -246,6 +247,9 @@ stop_studio() {
 # device is opened. It sets studio_pid to the workstation. stop_synthetic_studio
 # stops all three processes.
 synthetic_pids=()
+# Studios a segment starts itself (seg_local_first runs several at once); the
+# EXIT trap stops them too.
+extra_pids=()
 start_synthetic_studio() {
 	local score="$1" name="$2" manifest backend token _
 	manifest="$PWD/build/studio-$name-manifest.json"
@@ -731,6 +735,48 @@ seg_scene_launch_keys() { # new; about 10 s locally
 	stop_studio
 }
 
+seg_local_first() { # new; four parts side by side, about 60 s in all
+	# Report mode: prints, per interaction, whether the result waits on the
+	# server, and fails only when a row's measured kind differs from
+	# workstation/browser/local-first.expected.json. Each part gets its own
+	# fresh Studio and fixture (the walkthrough edits the score), and the parts
+	# run at the same time so the segment stays near one minute.
+	local run fixture part tag port pid status=0
+	local -a tags=() walks=()
+	export CICADA_LOCAL_FIRST_PROOF_DIR="$PWD/build/studio-local-first-proof"
+	for run in scene:1/3 scene:2/3 scene:3/3 placement:1/1; do
+		fixture="${run%%:*}" part="${run#*:}"
+		tag="$fixture-${part%/*}of${part#*/}"
+		tags+=("$tag")
+		if [[ "${CICADA_STUDIO_DRY_RUN:-}" == 1 ]]; then
+			run_suite "local-first@$tag" true
+			continue
+		fi
+		mkdir -p "$browser_root/local-first-$tag"
+		node workstation/browser/local-first.test.cjs --write-fixture "$browser_root/local-first-$tag/main.cicada" "$fixture"
+		port="$(node -e 'const server=require("node:net").createServer(); server.listen(0,"127.0.0.1",()=>{process.stdout.write(String(server.address().port));server.close()})')"
+		./build/cicada studio "$browser_root/local-first-$tag/main.cicada" --audio null --listen "127.0.0.1:$port" > "build/studio-local-first-$tag-server.log" 2>&1 &
+		pid=$!
+		extra_pids+=("$pid")
+		for _ in $(seq 1 100); do
+			if curl --silent --fail "http://127.0.0.1:$port/" > /dev/null; then break; fi
+			kill -0 "$pid"
+			sleep 0.1
+		done
+		CICADA_STUDIO_URL="http://127.0.0.1:$port" CICADA_STUDIO_STARTUP_LOG="/proc/$pid/fd/1" \
+			run_suite "local-first@$tag" env CICADA_LOCAL_FIRST_FIXTURE="$fixture" CICADA_LOCAL_FIRST_PART="$part" node --test workstation/browser/local-first.test.cjs > "build/studio-local-first-$tag-report.txt" 2>&1 &
+		walks+=($!)
+	done
+	for pid in "${walks[@]}"; do wait "$pid" || status=1; done
+	if [[ "${CICADA_STUDIO_DRY_RUN:-}" != 1 ]]; then
+		for tag in "${tags[@]}"; do cat "build/studio-local-first-$tag-report.txt"; done
+	fi
+	for pid in "${extra_pids[@]}"; do kill "$pid" 2>/dev/null || true; done
+	for pid in "${extra_pids[@]}"; do wait "$pid" 2>/dev/null || true; done
+	extra_pids=()
+	return "$status"
+}
+
 seg_live_write() { # new; about 3 minutes locally, most of it the harness build and five Studio starts
 	# These suites need a synthetic microphone: build the harness test binary
 	# once, then start it with a score that has no amp_drive curve.
@@ -1010,7 +1056,7 @@ run_shard() {
 		export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require=$PWD/workstation/browser/owner-session.cjs"
 		studio_port="$(node -e 'const server=require("node:net").createServer(); server.listen(0,"127.0.0.1",()=>{process.stdout.write(String(server.address().port));server.close()})')"
 		export CICADA_STUDIO_URL="http://127.0.0.1:$studio_port"
-		trap 'kill "${studio_pid:-}" "${synthetic_pids[@]}" 2>/dev/null || true; wait "${studio_pid:-}" "${synthetic_pids[@]}" 2>/dev/null || true' EXIT
+		trap 'kill "${studio_pid:-}" "${synthetic_pids[@]}" "${extra_pids[@]}" 2>/dev/null || true; wait "${studio_pid:-}" "${synthetic_pids[@]}" "${extra_pids[@]}" 2>/dev/null || true' EXIT
 	fi
 	mkdir -p "$browser_root" build
 	song_root="$browser_root/song"

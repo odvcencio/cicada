@@ -1039,6 +1039,9 @@ jobs:
             build/studio-amp-automation-proof/
             build/studio-scene-launch-keys-report.txt
             build/studio-scene-launch-keys-server.log
+            build/studio-local-first-*-report.txt
+            build/studio-local-first-*-server.log
+            build/studio-local-first-proof/
             build/studio-live-write-*
             build/studio-shared-capture-*-report.txt
             build/studio-shared-capture-*-server.log
