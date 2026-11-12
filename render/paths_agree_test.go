@@ -322,12 +322,9 @@ func pathsNotes(tapped []pathsTapped, drums map[int]bool, endTick int64) map[str
 		ev := tp.event
 		if drums[tp.track] {
 			if ev.Kind == seq.NoteOn {
-				// The engine taps a drum hit with its lane in Note, the direct
-				// mixer with its General MIDI pitch; the sound is the same.
+				// Both paths tap a drum hit with its lane in Note, so a
+				// difference here is a real one.
 				lane := ev.Note
-				if l, ok := pathsLaneOf[lane]; ok {
-					lane = l
-				}
 				keys[fmt.Sprintf("track %d tick %d lane %d vel %d accent %v", tp.track, ev.Tick, lane, ev.Velocity, ev.Accent)]++
 			}
 			continue
