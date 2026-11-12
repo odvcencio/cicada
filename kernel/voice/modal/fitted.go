@@ -1,6 +1,10 @@
 package modal
 
-import "math"
+import (
+	"math"
+
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+)
 
 // MaxModes bounds fitted models as well as built-in profiles.
 const MaxModes = maxModes
@@ -75,14 +79,14 @@ func (v *FittedVoice) NoteOn(note, velocity uint8, slide bool) {
 		}
 		mode := &s.modes[s.count]
 		mode.freq, mode.active = freq, true
-		mode.radius = math.Exp(-math.Log(1000) / (m.T60 * v.rate))
-		mode.s, mode.c = math.Sincos(2 * math.Pi * freq / v.rate)
+		mode.radius = detmath.Exp(-detmath.Log(1000) / (m.T60 * v.rate))
+		mode.s, mode.c = detmath.Sincos(2 * math.Pi * freq / v.rate)
 		mode.c, mode.s = mode.c*mode.radius, mode.s*mode.radius
 		brightness := 1.0
 		if i > 0 {
 			brightness = .25 + float64(.75*vel*vel)
 		}
-		position := 1 + float64(.055*math.Sin(float64((i+1)*int(variation+1))*1.7))
+		position := 1 + float64(.055*detmath.Sin(float64((i+1)*int(variation+1))*1.7))
 		mode.gain = .9 * vel * math.Sqrt(vel) * m.Weight / weightSum * brightness * position
 		s.count++
 	}

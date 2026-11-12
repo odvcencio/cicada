@@ -526,6 +526,43 @@ step:
 }
 ```
 
+## song --json
+
+`cicada song --json` lists every score of the project with its `revision`.
+`cicada song --json <score>` gives the score's `revision` and, as `--include`
+asks (a comma-separated list), its `source` text (the default), the names it
+defines as `symbols` (each `kind`, `name`, `line` and `column`), and its
+compiled meaning as semantic JSON in `structure`. A score that cannot be read
+is refused with `unreadable_score`, and one that does not compile, when
+`symbols` or `structure` is asked for, with `invalid_score`.
+
+<!-- agent-example: song --json --include symbols song.cicada -->
+
+```json
+{
+  "schema": "cicada.song.v1",
+  "file": "song.cicada",
+  "revision": "a62c420996d8d6468a2dd2b27ef40cd8d3ea867e5c6a53b9746d4f841dedeca2",
+  "symbols": [
+    {
+      "kind": "track",
+      "name": "bass",
+      "line": 6,
+      "column": 7
+    }
+  ]
+}
+```
+
+`cicada lib list --json` lists the libraries a score can import, each with its
+`path` and `kind` (`std`, `project` or `user`), in `libraries`;
+`cicada lib show <path> --json` gives one in `library`: its `kind`, `root`,
+`sha256`, `manifest` text, `declarations` and `assets` (schema
+`cicada.library.v1`; an unknown library is refused with `unknown_library`).
+`cicada explain <construct> --json` and `cicada explain <construct>.<field>
+--json` add `"schema": "cicada.explain.v1"` to the construct and its fields,
+or to the one field.
+
 ## apply --json
 
 `cicada apply <score> <intents.json> --json` reports what the batch did:
@@ -729,6 +766,92 @@ to check whether reuse caused a difference you see.
 }
 ```
 
+`--jobs` lets a render synthesize tracks on several lanes at once. Without it
+the render is serial, as it is for every library caller that leaves
+`render.Options.Jobs` at zero; `--jobs auto` picks the smaller of 4 and half
+the CPUs (at least 1), and `--jobs N` is honoured up to the number of CPUs.
+Every value writes the same bytes: lanes only synthesize each track's own
+signal between notes and other control changes, and the tracks are always
+mixed in track order, so an agent can choose `--jobs` for speed alone. The
+document says what the render chose and what happened:
+
+- `jobs`: the most lanes allowed, after the CPU cap; `jobs_auto` is true when
+  `--jobs auto` chose it.
+- `lanes_requested`: the lanes asked for, before the CPU and track caps (the
+  `--jobs` count, the automatic choice, or 1 for serial).
+- `lanes`: the lanes the render set up, `jobs` capped at the song's tracks.
+- `lanes_peak`: the most lanes that rendered one segment at once. A segment is
+  a run of frames between control changes; one with too little work runs on
+  fewer lanes. The renders of one cicada process share `GOMAXPROCS` − 1 worker
+  lanes, and each render's own goroutine works as one more lane. Other
+  processes are not counted, so give each of several concurrent `cicada`
+  processes a smaller `--jobs`.
+- `segments` and `parallel_segments`: the segments offered to the lanes and
+  those that ran on two or more.
+- `serial_reason`, present when no segment ran on two or more lanes:
+
+<!-- render-serial-reasons -->
+- `jobs`: the job count is 1: no `--jobs`, `--jobs 1`, or `--jobs auto` on a machine with three CPUs or fewer.
+- `one_track`: the song has one track; lanes split tracks.
+- `graph_lfo`: a graph LFO shares the scheduled renderer's serial frame clock.
+- `replay`: the render replayed a stored mix and synthesized nothing.
+- `no_processor`: lanes were set up but no processor was free for them.
+- `light`: every segment had too little work to pay for waking a lane.
+<!-- /render-serial-reasons -->
+
+With a loudness target or `--normalize`, the counts describe the render that
+synthesized the song, not the passes that replayed it.
+
+<!-- agent-example: render song.cicada -o song-serial.wav --bars 2 --json -->
+
+```json
+{
+  "schema": "cicada.render.v1",
+  "command": "render",
+  "score": "song.cicada",
+  "ok": true,
+  "jobs": 1,
+  "lanes_requested": 1,
+  "lanes": 1,
+  "lanes_peak": 1,
+  "parallel_segments": 0,
+  "serial_reason": "jobs",
+  "outputs": [
+    {
+      "path": "song-serial.wav",
+      "role": "mix"
+    }
+  ]
+}
+```
+
+<!-- agent-example: render song.cicada -o song-two-lanes.wav --bars 2 --jobs 2 --json -->
+
+```json
+{
+  "schema": "cicada.render.v1",
+  "command": "render",
+  "score": "song.cicada",
+  "ok": true,
+  "from_bar": 1,
+  "bars": 2,
+  "jobs": 2,
+  "lanes_requested": 2,
+  "lanes": 2,
+  "outputs": [
+    {
+      "path": "song-two-lanes.wav",
+      "role": "mix",
+      "frames": 336000
+    }
+  ]
+}
+```
+
+A lane count above 1 is a request, not a promise: this two-track song is
+light, so a given machine may run it with `lanes_peak` 1 and `serial_reason`
+`light`.
+
 A render that fails carries `error`, with a stable `code`, the `message` the
 command prints and, when the documentation gives a fix for that cause, a
 `remedy`. The codes are:
@@ -892,6 +1015,72 @@ export loud { loudness = -9LUFS true_peak = -1dBTP normalize = off }
 }
 ```
 
+## The MCP server
+
+`cicada mcp [--root <dir>] [--allow-user-library]` serves the read-only tools
+and the guide to an agent host that speaks the Model Context Protocol (MCP).
+The host starts it as a subprocess and talks to it on standard input and
+output, one JSON-RPC message per line, for example with this entry in the
+host's server list:
+
+```text
+{"command": "cicada", "args": ["mcp", "--root", "my-song"]}
+```
+
+The server answers protocol revision 2026-07-28, which is stateless: each
+request carries `_meta` with `io.modelcontextprotocol/protocolVersion` and
+`io.modelcontextprotocol/clientCapabilities`, and `server/discover` lists the
+versions the server supports. An `initialize` request selects 2025-11-25 or
+2025-06-18 instead, for the rest of the stream. Another version is refused with
+error -32022, which lists the supported ones.
+
+**The root.** `--root` (default: the working folder) is the one folder the
+tools read, and every path in their documents is relative to it, with forward
+slashes. It must be a project's own folder: the server refuses to start when
+`--root` is a folder inside a project whose `cicada.mod` lies above it, when it
+is a library folder, or when its `cicada.mod` or `lib` folder leaves it through
+a symbolic link. The user library outside the root is not read: the server
+points `CICADA_LIBRARY` at an empty temporary folder, which it removes when it
+stops. `--allow-user-library` lets the tools read the user library; `library`
+then gives a user library's `root` as an empty string, so no folder outside
+the root is named.
+
+**Start here.** Two resources hold the guide, so an agent that has only the
+server can begin: `cicada://guide/quickstart` (what `cicada agents` prints)
+and `cicada://guide/reference` (what `cicada agents reference` prints), both
+`text/markdown`. `resources/list` gives each one's size in bytes. An unknown
+URI is error -32602 (-32002 after `initialize`).
+
+| Tool | Arguments | Returns, as the command line prints it |
+| --- | --- | --- |
+| `song` | `score`, `include` | `cicada.song.v1` (`song --json`) |
+| `check` | `score`, `profile` | `cicada.check.v1` (`check --json`) |
+| `intents` | `kinds`, up to 8 | `cicada.intents_index.v1` without kinds (`intents --json --index`), `cicada.intents.v1` with them |
+| `explain` | `diagnostic` or `construct` | `cicada.diagnostics.v1` (`diagnostics --json`) or `cicada.explain.v1` (`explain --json`) |
+| `library` | `path` | `cicada.library.v1` (`lib list --json`, `lib show --json`) |
+| `params` | none | `cicada.param_registry.v1`: the array `cicada params` prints, unchanged, as `params` (about 73 KB) |
+
+Every argument is optional except where the table says "or". A tool returns
+its document in `structuredContent` and the same JSON as the one text block.
+`isError` is true when the command would exit with an error, and the
+document's `error.code` says why, as on the command line. A score path that is
+absolute, contains `..`, leaves the root through a symbolic link or does not
+end in `.cicada` is refused with `path_outside_root`; a field a tool does not
+take, or a value that starts with `-`, with `usage`. A result over 256 KiB
+(262,144 bytes of JSON) is refused with `too_large`, in the tool's own format,
+and the message says how to narrow the request. An unknown tool, or arguments
+that are not an object, is a JSON-RPC error (-32602).
+
+Malformed input does not stop the server. A line that is not JSON gets -32700;
+JSON that is not a request object, an `id` that is not a string or a number,
+or a missing or non-string `method` gets -32600, with the request's `id` when
+it can be read; a line over 4 MiB is skipped and gets -32600. A tool that
+fails unexpectedly gets -32603 for that request alone, and its stack goes to
+standard error. The server writes nothing but its empty stand-in for the user
+library, opens no connection, and exits when its input closes. Editing,
+rendering and listening (`apply`, `render`, `audition`) are not served yet:
+run those commands directly.
+
 ## The agent task suite
 
 `make test-agent-surface` builds `build/cicada` and runs the agent task suite
@@ -903,5 +1092,7 @@ start. Then it copies `examples/first-acid.cicada` into an empty folder and
 drives the binary the way an agent does, reading only JSON: `help --json`,
 `intents --json`, `symbols --json`, `check --json`, an `apply` of two intents
 built from the catalog's examples, `render --json` to −14 LUFS and
-`audition --json`. It also runs the examples on this page and on the quick
-start. CI runs it on every pull request; it must finish in under two minutes.
+`audition --json`. It then drives `cicada mcp` through the protocol in both
+eras and requires every tool to return, by value, the document its command
+prints, and each guide resource to be the text `cicada agents` prints. It
+also runs the examples on this page and on the quick start. CI runs it on every pull request; it must finish in under two minutes.

@@ -5,6 +5,8 @@ import (
 	"math"
 	"slices"
 	"sort"
+
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 )
 
 // Options controls automatic slicing. Root is the fallback for unpitched hits;
@@ -203,7 +205,7 @@ const (
 )
 
 // dB converts an amplitude to dBFS, flooring silence.
-func dB(x float64) float64 { return 20 * math.Log10(max(1e-12, x)) }
+func dB(x float64) float64 { return 20 * detmath.Log10(max(1e-12, x)) }
 
 // mul rounds a product to float64 before anything is added to it. Go lets a
 // compiler fuse x*y+z into one instruction with a different last digit, and
@@ -441,7 +443,7 @@ func AnalyzeTakes(inputs []Audio, options Options) ([]Hit, []TakeReport, error) 
 			hit.LoudnessDB = dB(math.Sqrt(power / float64(measure)))
 			hit.PitchHz, hit.Confidence = estimatePitch(hit.PCM, a.Rate)
 			if options.AutoPitch && hit.Confidence >= .8 && hit.PitchHz > 0 {
-				midi := 69 + mul(12, math.Log2(hit.PitchHz/440))
+				midi := 69 + mul(12, detmath.Log2(hit.PitchHz/440))
 				hit.Root = max(12, min(95, int(math.Round(midi))))
 				hit.TuneCents = (float64(hit.Root) - midi) * 100
 			}
