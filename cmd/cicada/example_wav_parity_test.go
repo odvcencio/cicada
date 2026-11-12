@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -14,6 +15,10 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"m31labs.dev/cicada/host/kernelimage"
+	"m31labs.dev/cicada/host/schedule"
+	"m31labs.dev/cicada/project"
 )
 
 // TestExampleWAVParity checks the determinism contract at the level of the
@@ -25,6 +30,12 @@ import (
 // Each score renders four ways: plain, --normalize, -14 LUFS / -1 dBTP and
 // -9 LUFS / -1.5 dBTP. A render that fails is recorded with its exit status, so
 // a score that fails on one machine and not the other is a difference too.
+//
+// Every score under examples/ also records its compiled engine configuration
+// and its portable kernel image ("score config" and "score image"; see
+// compileHashes): the browser and the service exchange them, so they are
+// under the same contract as the audio. They take seconds, so pull requests
+// compare all of them, not only the subset.
 //
 // In CI the amd64 parity job writes the hashes (CICADA_WAV_PARITY_OUT) and
 // uploads them; the arm64 parity job compares its own renders with them
@@ -54,6 +65,9 @@ func TestExampleWAVParity(t *testing.T) {
 		scores = exampleScores(t, root)
 	}
 	got := renderWAVHashes(t, root, scores)
+	for key, hash := range compileHashes(t, root, exampleScores(t, root)) {
+		got[key] = hash
+	}
 	if t.Failed() {
 		return
 	}
@@ -185,6 +199,50 @@ func renderWAVHashes(t *testing.T, root string, scores []string) map[string]wavH
 			}
 		}
 	})
+	return got
+}
+
+// compileHashes returns, keyed "score config" and "score image", the SHA-256
+// of each score's compiled engine configuration (as JSON, the way
+// project.CompileEngine builds it at 48 kHz) and of its portable kernel image
+// (schedule.CompileResident, then kernelimage.Encode, the way `cicada check
+// --profile browser` builds it). Scores load with loadProject, as the cicada
+// command loads them. A step that fails records "none" with the step as its
+// status (1 load, 2 configuration, 3 image compile, 4 image encode), so a
+// score that fails differently on two machines differs too. Until #329 the
+// send levels in dB came from math.Pow, and the configurations of
+// anywhere-you-are and tidal-glass, and tidal-glass's image, differed between
+// amd64 and arm64 in their last bits while every WAV matched.
+func compileHashes(t *testing.T, root string, scores []string) map[string]wavHash {
+	t.Helper()
+	got := map[string]wavHash{}
+	sum := func(data []byte) string {
+		s := sha256.Sum256(data)
+		return hex.EncodeToString(s[:])
+	}
+	for _, score := range scores {
+		config, image := wavHash{sum: "none"}, wavHash{sum: "none"}
+		path := filepath.Join(root, filepath.FromSlash(score))
+		if semantic, err := loadProject(path); err != nil {
+			config.status, image.status = 1, 1
+		} else {
+			if cfg, err := project.CompileEngine(semantic, 48_000, 512); err != nil {
+				config.status = 2
+			} else if data, err := json.Marshal(cfg); err != nil {
+				t.Fatalf("%s: %v", score, err)
+			} else {
+				config.sum = sum(data)
+			}
+			if portable, err := schedule.CompileResident(semantic, filepath.Dir(path), 48_000, 128); err != nil {
+				image.status = 3
+			} else if data, err := kernelimage.Encode(portable); err != nil {
+				image.status = 4
+			} else {
+				image.sum = sum(data)
+			}
+		}
+		got[score+" config"], got[score+" image"] = config, image
+	}
 	return got
 }
 
