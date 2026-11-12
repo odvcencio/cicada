@@ -9,10 +9,13 @@ import (
 // ampcabDigest pins the amp and cabinet output bits and its float64 state for
 // an exact test programme, through each cabinet and a smoothed control change.
 // Its multiply-adds are rounded, and its Tanh, Exp, Cos and Pow come from
-// kernel/dsp/detmath, so the digest is the same on amd64, arm64 and WebAssembly
-// and runs on every target. (Until 2026-11-10 it called the math library, whose
+// kernel/dsp/detmath (the per-sample saturation on the second tier, TanhNear),
+// so the digest is the same on amd64, arm64 and WebAssembly and runs on every
+// target. (Until 2026-11-10 it called the math library, whose
 // last bits differ on arm64 and WebAssembly, and was pinned on amd64 only.)
-const ampcabDigest = "0ac013059d1035e55174e235496e3ac13bbed3f50960284360a29a5647d9b37e"
+// It moved on 2026-11-11 in #343, from 0ac013059d10…: TanhNear changes the
+// amp's float64 state, while its float32 output (ampcabOutputDigest) is unchanged.
+const ampcabDigest = "7b2999b557c5848120a298294676cea240f43400528b13af602051c8f637bdec"
 
 func TestAmpcabDigest(t *testing.T) {
 	d := bitdigest.New()

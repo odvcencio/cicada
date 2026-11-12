@@ -16,6 +16,7 @@ import (
 
 	"m31labs.dev/cicada/audioasset"
 	"m31labs.dev/cicada/host/instrumentpack"
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 )
 
 // KitFormat is the version tag every kit recipe carries.
@@ -766,7 +767,7 @@ func BuildKit(name string, recipe KitRecipe, takes fs.FS) (*Pack, KitReport, err
 			order = append(order, n)
 		}
 		sort.SliceStable(order, func(a, b int) bool { return hits[order[a]].LoudnessDB < hits[order[b]].LoudnessDB })
-		trim := math.Round(math.Pow(10, piece.GainDB/20)*1e6) / 1e6
+		trim := math.Round(detmath.Pow(10, piece.GainDB/20)*1e6) / 1e6
 		summary := KitPieceReport{Name: piece.Name, Note: piece.Note, Hits: len(order), Choke: piece.Choke, ChokeNote: piece.ChokeNote, Takes: pieceTakes[i]}
 		start := len(pack.Manifest.Zones)
 		for layer := 0; layer < piece.Layers; layer++ {
