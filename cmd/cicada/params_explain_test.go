@@ -3,7 +3,9 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -72,6 +74,99 @@ func TestParamsJSONListsEveryPatchControl(t *testing.T) {
 	}
 	if err := json.Unmarshal(stdout.Bytes(), &catalog); err != nil || len(catalog.Controls) != 12 {
 		t.Fatalf("filter fm_bass.op3 keeps operator 3's 12 controls: %d, %v", len(catalog.Controls), err)
+	}
+}
+
+// The filters: --voice keeps one voice or family, --scope one owner kind,
+// <control> an ID prefix, all of them together; --index lists the owners.
+func TestParamsFilters(t *testing.T) {
+	type document struct {
+		Schema string `json:"schema"`
+		Filter struct {
+			Voice   string `json:"voice"`
+			Scope   string `json:"scope"`
+			Control string `json:"control"`
+		} `json:"filter"`
+		Scopes   []string `json:"scopes"`
+		Families []string `json:"families"`
+		Owners   []struct {
+			Name     string `json:"name"`
+			Kind     string `json:"kind"`
+			Family   string `json:"family"`
+			Controls int    `json:"controls"`
+		} `json:"owners"`
+		Controls []catalogControl `json:"controls"`
+	}
+	run := func(args ...string) document {
+		t.Helper()
+		var stdout bytes.Buffer
+		if err := paramsCommand(append([]string{"--json"}, args...), &stdout); err != nil {
+			t.Fatalf("params --json %v: %v", args, err)
+		}
+		oneJSONDocument(t, "params", stdout.Bytes())
+		var d document
+		if err := json.Unmarshal(stdout.Bytes(), &d); err != nil {
+			t.Fatal(err)
+		}
+		return d
+	}
+	owners := func(d document) map[string]bool {
+		names := map[string]bool{}
+		for _, c := range d.Controls {
+			names[c.Owner] = true
+		}
+		return names
+	}
+
+	index := run("--index")
+	if index.Schema != paramsIndexSchema || len(index.Controls) != 0 || len(index.Owners) < 50 || !slices.Contains(index.Scopes, "patch") || !slices.Contains(index.Families, "fm") {
+		t.Fatalf("params --json --index: %+v", index)
+	}
+	for _, owner := range index.Owners {
+		if owner.Controls == 0 {
+			t.Errorf("the index lists %s with no controls", owner.Name)
+		}
+	}
+
+	voice := run("--voice", "fm_bass")
+	if voice.Schema != paramsSchema || voice.Filter.Voice != "fm_bass" || len(voice.Owners) != 1 || len(owners(voice)) != 1 || !owners(voice)["fm_bass"] {
+		t.Fatalf("--voice fm_bass keeps only fm_bass: %v", owners(voice))
+	}
+	family := run("--voice", "fm")
+	if got := owners(family); len(got) < 2 || !got["fm_bass"] || got["tine_ep"] {
+		t.Fatalf("--voice fm keeps the FM patches only: %v", got)
+	}
+	scope := run("--scope", "effect")
+	for _, owner := range scope.Owners {
+		if owner.Kind != "effect" {
+			t.Fatalf("--scope effect keeps %s, a %s", owner.Name, owner.Kind)
+		}
+	}
+	if !owners(scope)["delay"] || owners(scope)["fm_bass"] {
+		t.Fatalf("--scope effect: %v", owners(scope))
+	}
+	both := run("--voice", "fm", "--scope", "patch", "fm_bass.op2")
+	if len(both.Controls) != 12 || both.Filter.Control != "fm_bass.op2" {
+		t.Fatalf("--voice fm --scope patch fm_bass.op2 keeps operator 2's 12 controls: %d", len(both.Controls))
+	}
+
+	for _, tc := range []struct {
+		args []string
+		code string
+	}{
+		{[]string{"--voice", "delay"}, "no_match"},
+		{[]string{"--voice", "nosuch"}, "no_match"},
+		{[]string{"--scope", "nosuch"}, "usage"},
+		{[]string{"--voice", "fm_bass", "--scope", "effect"}, "no_match"},
+		{[]string{"--index", "--voice", "fm_bass"}, "usage"},
+		{[]string{"--voice"}, "usage"},
+	} {
+		var stdout bytes.Buffer
+		err := paramsCommand(append([]string{"--json"}, tc.args...), &stdout)
+		var coded *paramsError
+		if !errors.As(err, &coded) || coded.code != tc.code || errorCode(oneJSONDocument(t, "params", stdout.Bytes())) != tc.code {
+			t.Errorf("params --json %v: %v, want %s", tc.args, err, tc.code)
+		}
 	}
 }
 

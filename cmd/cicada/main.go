@@ -209,7 +209,8 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "params" {
 		if err := paramsCommand(os.Args[2:], os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			if err.Error() == paramsUsage {
+			var coded *paramsError
+			if errors.As(err, &coded) && coded.code == "usage" {
 				exitProcess(2)
 			}
 			exitProcess(1)

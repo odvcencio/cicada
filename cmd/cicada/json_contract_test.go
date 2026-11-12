@@ -157,6 +157,16 @@ func TestJSONFailuresPrintOneDocument(t *testing.T) {
 			status := exit(paramsCommand([]string{"--json", "--bogus"}, &stdout))
 			return outcome{stdout.Bytes(), status}
 		},
+		"params with an unknown scope": func() outcome {
+			var stdout bytes.Buffer
+			status := exit(paramsCommand([]string{"--json", "--scope", "nosuch"}, &stdout))
+			return outcome{stdout.Bytes(), status}
+		},
+		"params with a voice that is an effect": func() outcome {
+			var stdout bytes.Buffer
+			status := exit(paramsCommand([]string{"--json", "--voice", "delay"}, &stdout))
+			return outcome{stdout.Bytes(), status}
+		},
 		"explain an unknown name": func() outcome {
 			var stdout bytes.Buffer
 			status := exit(explainCommand([]string{"nosuch", "--json"}, &stdout))
@@ -197,27 +207,29 @@ func TestJSONFailuresPrintOneDocument(t *testing.T) {
 		code   string
 		status int
 	}{
-		"check usage":                        {"usage", 1},
-		"intents unknown kind":               {"unknown_kind", 1},
-		"intents usage":                      {"usage", 1},
-		"diagnostics unknown code":           {"unknown_code", 1},
-		"help unknown command":               {"unknown_command", 2},
-		"render without a score":             {"usage", 2},
-		"render without -o":                  {"usage", 2},
-		"stems with a loudness target":       {"usage", 2},
-		"stems into an existing folder":      {"output_exists", 1},
-		"audition of an invalid score":       {"invalid_score", 1},
-		"audition usage":                     {"usage", 1},
-		"apply usage":                        {"usage", 1},
-		"params with no match":               {"no_match", 1},
-		"params usage":                       {"usage", 1},
-		"explain an unknown name":            {"unknown_thing", 1},
-		"explain an unknown track":           {"unknown_track", 1},
-		"explain a track of a missing score": {"unreadable_score", 1},
-		"explain usage":                      {"usage", 1},
-		"explain probe of a mixer control":   {"not_probeable", 1},
-		"agents usage":                       {"usage", 2},
-		"intents index with a kind":          {"usage", 1},
+		"check usage":                           {"usage", 1},
+		"intents unknown kind":                  {"unknown_kind", 1},
+		"intents usage":                         {"usage", 1},
+		"diagnostics unknown code":              {"unknown_code", 1},
+		"help unknown command":                  {"unknown_command", 2},
+		"render without a score":                {"usage", 2},
+		"render without -o":                     {"usage", 2},
+		"stems with a loudness target":          {"usage", 2},
+		"stems into an existing folder":         {"output_exists", 1},
+		"audition of an invalid score":          {"invalid_score", 1},
+		"audition usage":                        {"usage", 1},
+		"apply usage":                           {"usage", 1},
+		"params with no match":                  {"no_match", 1},
+		"params usage":                          {"usage", 1},
+		"params with an unknown scope":          {"usage", 1},
+		"params with a voice that is an effect": {"no_match", 1},
+		"explain an unknown name":               {"unknown_thing", 1},
+		"explain an unknown track":              {"unknown_track", 1},
+		"explain a track of a missing score":    {"unreadable_score", 1},
+		"explain usage":                         {"usage", 1},
+		"explain probe of a mixer control":      {"not_probeable", 1},
+		"agents usage":                          {"usage", 2},
+		"intents index with a kind":             {"usage", 1},
 	}
 	for name, command := range run {
 		got := command()

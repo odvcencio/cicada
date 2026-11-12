@@ -1060,7 +1060,7 @@ URI is error -32602 (-32002 after `initialize`).
 | `intents` | `kinds`, up to 8 | `cicada.intents_index.v1` without kinds (`intents --json --index`), `cicada.intents.v1` with them |
 | `explain` | `diagnostic` or `construct` | `cicada.diagnostics.v1` (`diagnostics --json`) or `cicada.explain.v1` (`explain --json`) |
 | `library` | `path` | `cicada.library.v1` (`lib list --json`, `lib show --json`) |
-| `params` | none | `cicada.param_registry.v1`: the array `cicada params` prints, unchanged, as `params` (about 73 KB) |
+| `params` | `voice`, `scope`, `control` | `cicada.params_index.v1` without arguments (`params --json --index`, about 19 KB), `cicada.params.v1` with them (`params --json --voice <voice> --scope <kind> <control>`) |
 
 Every argument is optional except where the table says "or". A tool returns
 its document in `structuredContent` and the same JSON as the one text block.

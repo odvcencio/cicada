@@ -16,8 +16,8 @@ import (
 
 	"m31labs.dev/cicada/edition"
 	"m31labs.dev/cicada/internal/agentguide"
+	"m31labs.dev/cicada/internal/controls"
 	"m31labs.dev/cicada/internal/mcpwire"
-	"m31labs.dev/cicada/project"
 )
 
 const mcpUsage = "usage: cicada mcp [--root <dir>] [--allow-user-library]"
@@ -32,11 +32,6 @@ const (
 	mcpQuickStartURI = "cicada://guide/quickstart"
 	mcpReferenceURI  = "cicada://guide/reference"
 )
-
-// paramRegistrySchema names the format of the params tool: the registry
-// cicada params prints, as the params array of one object, because a tool
-// result is an object.
-const paramRegistrySchema = "cicada.param_registry.v1"
 
 // mcpCommand serves the Model Context Protocol on standard input and output
 // with the read-only tools and the guide resources. --root (default: the
@@ -206,9 +201,9 @@ func mcpToolTable() []mcpTool {
 		{mcpwire.Tool{Name: "library", Title: "List or show libraries", Description: "Without path: the libraries the project can import, each with where it resolves (cicada.library.v1). With path, such as std/drums: its manifest, declarations, audio files and content hash." + mcpCapNote,
 			InputSchema: inputSchema(map[string]any{"path": map[string]any{"type": "string"}}), OutputSchema: outputSchema(librarySchema), Annotations: readOnly()}, mcpLibrary, librarySchema,
 			"show one library at a time"},
-		{mcpwire.Tool{Name: "params", Title: "List the sound parameters", Description: "The live-parameter registry: every control of a track, voice, effect or the mixer, with its path, unit, range, default and whether it can change while playing. The array cicada params prints, as params in cicada.param_registry.v1; about 73 KB." + mcpCapNote,
-			InputSchema: inputSchema(map[string]any{}), OutputSchema: outputSchema(paramRegistrySchema), Annotations: readOnly()}, mcpParams, paramRegistrySchema,
-			"run cicada params instead"},
+		{mcpwire.Tool{Name: "params", Title: "List the sound controls", Description: "Without arguments: every voice, patch, effect and mixer strip that has controls, with its kind, family and number of controls (cicada.params_index.v1, about 19 KB). With voice (fm_bass, or a family such as fm), scope (an owner kind) or control (an ID or its start, such as fm_bass.op2): those controls with range, unit, default, meaning and which way each moves level, brightness, attack and decay (cicada.params.v1, as cicada params --json prints it; one patch is up to 70 KB)." + mcpCapNote,
+			InputSchema: inputSchema(map[string]any{"voice": map[string]any{"type": "string"}, "scope": map[string]any{"enum": controls.Scopes}, "control": map[string]any{"type": "string"}}), OutputSchema: outputSchema(paramsIndexSchema, paramsSchema), Annotations: readOnly()}, mcpParams, paramsSchema,
+			"give voice, such as fm_bass, or control; params without arguments lists the voices"},
 	}
 }
 
@@ -415,19 +410,24 @@ func mcpLibrary(arguments json.RawMessage) (any, bool) {
 	return document, false
 }
 
-// paramRegistryDocument is the params tool's result: the registry cicada
-// params prints, unchanged, in params.
-type paramRegistryDocument struct {
-	Schema string          `json:"schema"`
-	Params json.RawMessage `json:"params"`
-}
-
+// mcpParams is cicada params --json through paramsResult: without
+// arguments the index (--index), with voice, scope or control the controls
+// they select (--voice, --scope, <control>).
 func mcpParams(arguments json.RawMessage) (any, bool) {
-	var in struct{}
+	var in controls.Query
 	if err := mcpArguments(arguments, &in); err != nil {
-		return mcpRefusal(paramRegistrySchema, "usage", err)
+		return mcpRefusal(paramsSchema, "usage", err)
 	}
-	return paramRegistryDocument{Schema: paramRegistrySchema, Params: json.RawMessage(project.ParamsJSON())}, false
+	document, err := paramsResult(paramsRequest{index: in == (controls.Query{}), query: in})
+	if err != nil {
+		code := "params_failed"
+		var coded *paramsError
+		if errors.As(err, &coded) {
+			code = coded.code
+		}
+		return mcpRefusal(paramsSchema, code, err)
+	}
+	return document, false
 }
 
 // mcpResources lists the guide pages: the same text cicada agents and cicada

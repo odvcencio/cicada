@@ -13,6 +13,7 @@
 package controls
 
 import (
+	"fmt"
 	"math"
 	"sort"
 	"strconv"
@@ -185,6 +186,114 @@ func (c Catalog) Filter(filter string) Catalog {
 		}
 	}
 	return out
+}
+
+// Scopes are the owner kinds a Query's Scope takes, in catalog order.
+var Scopes = []string{KindVoice, KindPatch, KindLibraryPatch, KindAuthored, KindSampler, KindKitLane, KindEffect, KindMix, KindBus, KindMaster, KindGlobal}
+
+// sourceKinds are the owner kinds that make sound: what a Query's Voice
+// names.
+var sourceKinds = map[string]bool{KindVoice: true, KindPatch: true, KindLibraryPatch: true, KindAuthored: true, KindSampler: true, KindKitLane: true}
+
+// Query selects controls. Voice names a sound source (an owner of a kind in
+// sourceKinds, such as fm_bass, acid or round-bass) or a family of them (fm,
+// ep, organ, analog, clav, strings, modal, graph); Scope names an owner kind
+// (one of Scopes); Control is a control ID, the start of one, or an owner
+// name, as Filter takes it. Empty fields select everything; the fields that
+// are set must all hold.
+type Query struct {
+	Voice   string `json:"voice,omitempty"`
+	Scope   string `json:"scope,omitempty"`
+	Control string `json:"control,omitempty"`
+}
+
+// QueryError is a Query that selects nothing, with a stable code: usage for
+// a scope that is not an owner kind, no_match otherwise.
+type QueryError struct {
+	Code    string
+	Message string
+}
+
+func (e *QueryError) Error() string { return e.Message }
+
+// Families lists the families of the sound sources, sorted.
+func (c Catalog) Families() []string {
+	seen := map[string]bool{}
+	for _, owner := range c.Owners {
+		if owner.Family != "" && sourceKinds[owner.Kind] {
+			seen[owner.Family] = true
+		}
+	}
+	return sortedKeys(seen)
+}
+
+// Select returns the controls q selects and the owners they belong to.
+func (c Catalog) Select(q Query) (Catalog, error) {
+	if q.Scope != "" {
+		known := false
+		for _, scope := range Scopes {
+			known = known || scope == q.Scope
+		}
+		if !known {
+			return Catalog{}, &QueryError{"usage", fmt.Sprintf("scope %q is not an owner kind; use one of %s", q.Scope, strings.Join(Scopes, ", "))}
+		}
+	}
+	if q.Voice != "" {
+		matched := false
+		for _, owner := range c.Owners {
+			if sourceKinds[owner.Kind] && (owner.Name == q.Voice || owner.Family == q.Voice) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			if owner, ok := c.Owner(q.Voice); ok {
+				return Catalog{}, &QueryError{"no_match", fmt.Sprintf("%s is a %s, not a voice; select it with scope %s or control %s", q.Voice, owner.Kind, owner.Kind, q.Voice)}
+			}
+			return Catalog{}, &QueryError{"no_match", fmt.Sprintf("no voice or family %q; cicada params --json --index lists the voices and families", q.Voice)}
+		}
+	}
+	selected := c.Filter(q.Control)
+	kinds := map[string]Owner{}
+	for _, owner := range c.Owners {
+		kinds[owner.Name] = owner
+	}
+	var out Catalog
+	keep := map[string]bool{}
+	for _, control := range selected.Controls {
+		owner := kinds[control.Owner]
+		if q.Scope != "" && owner.Kind != q.Scope {
+			continue
+		}
+		if q.Voice != "" && (!sourceKinds[owner.Kind] || owner.Name != q.Voice && owner.Family != q.Voice) {
+			continue
+		}
+		out.Controls = append(out.Controls, control)
+		keep[control.Owner] = true
+	}
+	for _, owner := range c.Owners {
+		if keep[owner.Name] {
+			out.Owners = append(out.Owners, owner)
+		}
+	}
+	if len(out.Controls) == 0 {
+		return Catalog{}, &QueryError{"no_match", fmt.Sprintf("no control matches %s; cicada params --json --index lists the owners", q.describe())}
+	}
+	return out, nil
+}
+
+func (q Query) describe() string {
+	var parts []string
+	if q.Voice != "" {
+		parts = append(parts, "voice "+q.Voice)
+	}
+	if q.Scope != "" {
+		parts = append(parts, "scope "+q.Scope)
+	}
+	if q.Control != "" {
+		parts = append(parts, "control "+q.Control)
+	}
+	return strings.Join(parts, " and ")
 }
 
 func build() Catalog {

@@ -12,60 +12,153 @@ import (
 	"m31labs.dev/cicada/project"
 )
 
-// paramsSchema names the params --json document.
-const paramsSchema = "cicada.params.v1"
+// paramsSchema names the params --json document: the controls a filter
+// selects. paramsIndexSchema names params --json --index: the owners only.
+const (
+	paramsSchema      = "cicada.params.v1"
+	paramsIndexSchema = "cicada.params_index.v1"
+)
 
 // paramsDocument is what params --json prints: every control of every voice,
-// patch, effect and mixer strip, or those a filter selects.
+// patch, effect and mixer strip, or those the filter selects.
 type paramsDocument struct {
 	Schema   string             `json:"schema"`
-	Filter   string             `json:"filter"`
+	Filter   controls.Query     `json:"filter"`
 	Counts   controls.Counts    `json:"counts"`
 	Owners   []controls.Owner   `json:"owners"`
 	Controls []controls.Control `json:"controls"`
 }
 
-const paramsUsage = "usage: cicada params [<filter>] [--json]"
+// paramsIndexDocument is what params --json --index prints: every owner of
+// controls with its kind, family and number of controls, and the values the
+// voice and scope filters take.
+type paramsIndexDocument struct {
+	Schema   string           `json:"schema"`
+	Scopes   []string         `json:"scopes"`
+	Families []string         `json:"families"`
+	Owners   []controls.Owner `json:"owners"`
+}
+
+const paramsUsage = "usage: cicada params [--json] [--index | [--voice <voice>] [--scope <kind>] [<control>]]"
+
+// paramsError is a params failure with its stable code: usage, or no_match
+// when the filter selects nothing.
+type paramsError struct {
+	code string
+	err  error
+}
+
+func (e *paramsError) Error() string { return e.err.Error() }
+
+// paramsRequest is what one params call asks for. The command and the MCP
+// params tool both build one and pass it to paramsResult.
+type paramsRequest struct {
+	index bool
+	query controls.Query
+}
+
+// paramsResult returns the document params --json prints for request: the
+// index, or the controls its query selects.
+func paramsResult(request paramsRequest) (any, error) {
+	catalog := controls.All()
+	if request.index {
+		if request.query != (controls.Query{}) {
+			return nil, &paramsError{"usage", errors.New("--index takes no filter; " + paramsUsage)}
+		}
+		return paramsIndexDocument{Schema: paramsIndexSchema, Scopes: controls.Scopes, Families: catalog.Families(), Owners: catalog.Owners}, nil
+	}
+	selected, err := catalog.Select(request.query)
+	if err != nil {
+		var query *controls.QueryError
+		if errors.As(err, &query) {
+			return nil, &paramsError{query.Code, err}
+		}
+		return nil, err
+	}
+	return paramsDocument{Schema: paramsSchema, Filter: request.query, Counts: selected.Count(), Owners: selected.Owners, Controls: selected.Controls}, nil
+}
 
 // paramsCommand prints the control catalog. With no arguments it prints the
-// parameter registry as it always has; --json prints the whole catalog as one
-// document, and a filter keeps the controls whose ID starts with it, such as
-// fm_bass or fm_bass.op3.
+// live-parameter registry as it always has. --json prints the controls as one
+// document, --index the owners only, and the filters keep the controls of one
+// voice or family (--voice), one owner kind (--scope) or whose ID starts with
+// <control>, such as fm_bass.op3.
 func paramsCommand(args []string, stdout io.Writer) error {
-	asJSON, filter := false, ""
-	for _, arg := range args {
-		switch {
-		case arg == "--json" || arg == "--json=true":
-			asJSON = true
-		case strings.HasPrefix(arg, "-"):
-			return paramsFailure(stdout, asJSON || hasJSONFlag(args), "usage", errors.New(paramsUsage))
-		case filter != "":
-			return paramsFailure(stdout, asJSON || hasJSONFlag(args), "usage", errors.New(paramsUsage))
-		default:
-			filter = arg
-		}
+	asJSON := hasJSONFlag(args)
+	var request paramsRequest
+	usage := func(message string) error {
+		return paramsFailure(stdout, asJSON, &paramsError{"usage", errors.New(message)})
 	}
-	if !asJSON && filter == "" {
+	if len(args) == 0 {
 		_, err := fmt.Fprintln(stdout, project.ParamsJSON())
 		return err
 	}
-	selected := controls.All().Filter(filter)
-	if len(selected.Controls) == 0 {
-		return paramsFailure(stdout, asJSON, "no_match", fmt.Errorf("no control or owner matches %q; cicada params --json lists them all", filter))
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--json" || arg == "--json=true":
+		case arg == "--index":
+			request.index = true
+		case arg == "--voice" || arg == "--scope":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				return usage(arg + " needs a value; " + paramsUsage)
+			}
+			if arg == "--voice" {
+				request.query.Voice = args[i+1]
+			} else {
+				request.query.Scope = args[i+1]
+			}
+			i++
+		case strings.HasPrefix(arg, "-"):
+			return usage(paramsUsage)
+		case request.query.Control != "":
+			return usage(paramsUsage)
+		default:
+			request.query.Control = arg
+		}
+	}
+	document, err := paramsResult(request)
+	if err != nil {
+		return paramsFailure(stdout, asJSON, err)
 	}
 	if asJSON {
-		return writeAgentJSON(stdout, paramsDocument{Schema: paramsSchema, Filter: filter, Counts: selected.Count(), Owners: selected.Owners, Controls: selected.Controls})
+		return writeAgentJSON(stdout, document)
 	}
-	return writeControlTable(stdout, selected.Controls)
+	switch document := document.(type) {
+	case paramsIndexDocument:
+		return writeOwnerTable(stdout, document.Owners)
+	case paramsDocument:
+		return writeControlTable(stdout, document.Controls)
+	}
+	return nil
 }
 
-func paramsFailure(stdout io.Writer, asJSON bool, code string, err error) error {
+func paramsFailure(stdout io.Writer, asJSON bool, err error) error {
 	if asJSON {
+		code := "params_failed"
+		var coded *paramsError
+		if errors.As(err, &coded) {
+			code = coded.code
+		}
 		if writeErr := writeAgentJSON(stdout, jsonErrorDocument{Schema: paramsSchema, Error: jsonError{Code: code, Message: err.Error()}}); writeErr != nil {
 			return writeErr
 		}
 	}
 	return err
+}
+
+// writeOwnerTable prints owners as text, one per line.
+func writeOwnerTable(w io.Writer, owners []controls.Owner) error {
+	table := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(table, "OWNER\tKIND\tFAMILY\tCONTROLS\tMEANING")
+	for _, owner := range owners {
+		family := owner.Family
+		if family == "" {
+			family = "—"
+		}
+		fmt.Fprintf(table, "%s\t%s\t%s\t%d\t%s\n", owner.Name, owner.Kind, family, owner.Controls, owner.Meaning)
+	}
+	return table.Flush()
 }
 
 // writeControlTable prints controls as text, one per line.
