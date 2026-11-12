@@ -258,6 +258,14 @@ jobs:
           set -euo pipefail
           CICADA_WAV_PARITY_OUT="$PWD/build/parity/wav-hashes.txt" go test -timeout=20m ./cmd/cicada -run '^TestExampleWAVParity$' -count=1 -v | tee build/parity/wav-parity.txt
           grep -q -- '^--- PASS: TestExampleWAVParity ' build/parity/wav-parity.txt
+      # Flushing subnormal numbers (kernel/dsp/subnormal) must leave 24-bit
+      # output unchanged. That is checked, not proven: the same renders, with
+      # Flush turned into the identity by the build tag cicada_noflush, must
+      # match the hashes above byte for byte.
+      - name: Require the same WAV files with subnormal flushing turned off
+        run: |
+          set -euo pipefail
+          make test-flush-identity FLUSH_REFERENCE="$PWD/build/parity/wav-hashes.txt"
       - name: Save amd64 PCM and the tested kernel
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:

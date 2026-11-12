@@ -113,6 +113,25 @@ bench-agent-loop: build-core
 test-render-identity:
 	CICADA_RENDER_IDENTITY_SWEEP=1 go test ./cmd/cicada -run '^TestRenderCacheIdentity$$' -count=1 -timeout=110m -v
 
+# Checks that flushing subnormal numbers (kernel/dsp/subnormal) leaves the
+# 24-bit files cicada render writes unchanged: renders the WAV parity subset
+# and the flush cases (cmd/cicada/testdata/flush) in a build with the tag
+# cicada_noflush, where Flush returns its argument, and requires the same
+# bytes as the ordinary build in every mode. FLUSH_REFERENCE names hashes the
+# ordinary build already wrote (CICADA_WAV_PARITY_OUT), as CI's amd64 parity
+# job does; without it the target renders them first.
+.PHONY: test-flush-identity
+FLUSH_REFERENCE ?=
+test-flush-identity:
+	mkdir -p build/flush-identity
+	bash -o pipefail -c 'set -e; reference="$(FLUSH_REFERENCE)"; \
+	  if [ -z "$$reference" ]; then \
+	    reference="$$PWD/build/flush-identity/flush.txt"; \
+	    CICADA_WAV_PARITY_OUT="$$reference" go test -timeout=20m ./cmd/cicada -run "^TestExampleWAVParity$$" -count=1; \
+	  fi; \
+	  CICADA_WAV_PARITY_REFERENCE="$$reference" go test -tags cicada_noflush -timeout=20m ./cmd/cicada -run "^TestExampleWAVParity$$" -count=1 -v | tee build/flush-identity/report.txt; \
+	  grep -q -- "^--- PASS: TestExampleWAVParity " build/flush-identity/report.txt'
+
 # The agent task suite (internal/agentsuite) drives build/cicada through one
 # scripted task that reads only JSON: help, intents, symbols, check, apply,
 # render to a loudness target and audition. It must finish within 2 minutes.

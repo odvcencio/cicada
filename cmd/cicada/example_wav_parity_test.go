@@ -53,7 +53,7 @@ func TestExampleWAVParity(t *testing.T) {
 	if os.Getenv("CICADA_WAV_PARITY_ALL") == "1" {
 		scores = exampleScores(t, root)
 	}
-	got := renderWAVHashes(t, root, scores)
+	got := renderWAVHashes(t, root, append(scoreCases(scores), wavFlushCases...))
 	if t.Failed() {
 		return
 	}
@@ -94,6 +94,44 @@ var wavParitySubset = []string{
 	"examples/modeled-kit/reggae-one-drop-after-room.cicada",
 	"examples/modeled-kit/rock-after-room.cicada",
 	"examples/modeled-kit/soca-after-room.cicada",
+}
+
+// wavFlushCases drive state and smoothed controls into the subnormal numbers
+// that kernel/dsp/subnormal flushes, and a normalization gain near the
+// largest render.WAV allows. Every run of TestExampleWAVParity renders them,
+// so the arm64 job compares them with amd64, and make test-flush-identity
+// compares them, with the parity subset, with and without the flush (the
+// build tag cicada_noflush).
+//
+//   - piano-pedal: a sustain pedal pressed and released, which without the
+//     flush leaves the smoothed pedal at 1.4e-43 under 88 resonators.
+//   - reverb-hard-left: a hard-left track alone on the reverb send after
+//     bar 1, so the reverb's right input is an exact zero while the left
+//     plays and its right diffusers decay on their own.
+//   - string-tail-from-bar-5: bars 5 to 24 of a string machine chord that
+//     ends in bar 2: a range that holds only the tail (peak 1.7e-6), which
+//     normalization raises by about 2^19 and the loudness modes by more.
+var wavFlushCases = []wavCase{
+	{name: "flush:piano-pedal", score: "cmd/cicada/testdata/flush/piano-pedal.cicada"},
+	{name: "flush:reverb-hard-left", score: "cmd/cicada/testdata/flush/reverb-hard-left.cicada"},
+	{name: "flush:string-tail-from-bar-5", score: "cmd/cicada/testdata/flush/string-tail.cicada", args: []string{"--from", "5"}},
+}
+
+// wavCase is one score to render in every mode of wavParityModes. name is the
+// first field of its hash key: the score's path, or for a case with extra
+// render arguments a name without spaces. args go before the mode's.
+type wavCase struct {
+	name, score string
+	args        []string
+}
+
+// scoreCases renders each score as it is, keyed by its path.
+func scoreCases(scores []string) []wavCase {
+	cases := make([]wavCase, len(scores))
+	for i, score := range scores {
+		cases[i] = wavCase{name: score, score: score}
+	}
+	return cases
 }
 
 // knownWAVDifference is a render that is known to differ between amd64 and
@@ -156,20 +194,20 @@ func exampleScores(t *testing.T, root string) []string {
 	return scores
 }
 
-// renderWAVHashes renders every score in every mode with the real main, in
-// parallel child processes, and returns the results keyed by "score mode".
-func renderWAVHashes(t *testing.T, root string, scores []string) map[string]wavHash {
+// renderWAVHashes renders every case in every mode with the real main, in
+// parallel child processes, and returns the results keyed by "name mode".
+func renderWAVHashes(t *testing.T, root string, cases []wavCase) map[string]wavHash {
 	t.Helper()
 	var mu sync.Mutex
 	got := map[string]wavHash{}
 	t.Run("render", func(t *testing.T) {
-		for _, score := range scores {
+		for _, c := range cases {
 			for _, mode := range wavParityModes {
-				key := score + " " + mode.name
+				key := c.name + " " + mode.name
 				t.Run(strings.ReplaceAll(key, "/", "_"), func(t *testing.T) {
 					t.Parallel()
 					wav := filepath.Join(t.TempDir(), "out.wav")
-					args := append([]string{"render", score, "-o", wav}, mode.args...)
+					args := append(append([]string{"render", c.score, "-o", wav}, c.args...), mode.args...)
 					_, status := runMain(t, root, args...)
 					result := wavHash{sum: "none", status: status}
 					if data, err := os.ReadFile(wav); err == nil {
