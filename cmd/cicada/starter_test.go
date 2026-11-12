@@ -18,7 +18,7 @@ func TestStarterMatchesFirstSongExample(t *testing.T) {
 	if err := newProject("first-song", os.WriteFile); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"cicada.mod", "main.cicada"} {
+	for _, name := range []string{"cicada.mod", "main.cicada", "AGENTS.md"} {
 		written, err := os.ReadFile(filepath.Join(root, "first-song", name))
 		if err != nil {
 			t.Fatal(err)

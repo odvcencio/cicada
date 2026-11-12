@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"m31labs.dev/cicada/audioasset"
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 	"m31labs.dev/cicada/kernel/fx/convolution"
 )
 
@@ -146,7 +147,7 @@ func (i Impulse) Condition(highpassHz, energyLimit float64) (Impulse, error) {
 		if c == 1 {
 			output = result.Right
 		}
-		alpha := math.Exp(-2 * math.Pi * highpassHz / float64(i.RateHz))
+		alpha := detmath.Exp(-2 * math.Pi * highpassHz / float64(i.RateHz))
 		var previousInput, previousOutput, energy float64
 		for n := range output {
 			var x float64
@@ -291,9 +292,9 @@ func resample(input []float32, sourceRate, targetRate, frames int) []float32 {
 			}
 			weight := float64(2 * float64(cutoff))
 			if math.Abs(x) > 1e-12 {
-				weight = math.Sin(2*math.Pi*cutoff*x) / (math.Pi * x)
+				weight = detmath.Sin(2*math.Pi*cutoff*x) / (math.Pi * x)
 			}
-			weight *= float64(.42+float64(.5*math.Cos(math.Pi*x/float64(radius)))) + float64(.08*math.Cos(2*math.Pi*x/float64(radius)))
+			weight *= float64(.42+float64(.5*detmath.Cos(math.Pi*x/float64(radius)))) + float64(.08*detmath.Cos(2*math.Pi*x/float64(radius)))
 			// Zero padding preserves causal edge behaviour; all filter taps
 			// contribute to the normalization, including those outside data.
 			weights += float64(weight)

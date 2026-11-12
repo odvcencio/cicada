@@ -6,9 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math"
-	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -730,29 +728,24 @@ func (u *vocalLanesUI) savePreference() {
 }
 
 func (u *vocalLanesUI) loadWaveforms() {
-	client := &http.Client{Timeout: 30 * time.Second}
 	for _, lane := range u.props.Lanes {
 		if u.ctx.Err() != nil {
 			return
 		}
-		key := js.Global().Get("location").Get("origin").String() + "/api/takes/" + url.PathEscape(lane.ID) + "/waveform?bins=8192"
+		resource := "/api/takes/" + url.PathEscape(lane.ID) + "/waveform?bins=8192"
+		key := js.Global().Get("location").Get("origin").String() + resource
 		vocalPeaksCache.Lock()
 		peaks, found := vocalPeaksCache.values[key]
 		vocalPeaksCache.Unlock()
 		var err error
 		if !found {
-			var request *http.Request
-			request, err = http.NewRequestWithContext(u.ctx, http.MethodGet, key, nil)
+			response, fetchErr := nativeRequest{Method: methodGet, Path: resource, Timeout: 30 * time.Second, Limit: 1 << 20}.do(u.ctx)
+			err = fetchErr
 			if err == nil {
-				var response *http.Response
-				response, err = client.Do(request)
-				if response != nil {
-					if response.StatusCode != 200 {
-						err = fmt.Errorf("waveform unavailable")
-					} else {
-						err = json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&peaks)
-					}
-					response.Body.Close()
+				if response.Status != statusOK {
+					err = fmt.Errorf("waveform unavailable")
+				} else {
+					err = decodeLimited(response.Body, 1<<20, &peaks)
 				}
 			}
 			if err == nil && (peaks.Take != lane.ID || len(peaks.Peaks) == 0 || len(peaks.Peaks) > 8192 || peaks.Start != lane.Start || peaks.End != lane.End) {
