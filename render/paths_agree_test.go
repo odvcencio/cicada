@@ -286,15 +286,6 @@ func pathsRender(score *notation.Score, scheduled bool, assetRoot string, bars, 
 	return tapped, "", err
 }
 
-// pathsLaneOf maps a drum's General MIDI pitch to its lane.
-var pathsLaneOf = func() map[uint8]uint8 {
-	m := map[uint8]uint8{}
-	for lane, note := range drum.MIDINotes {
-		m[note] = uint8(lane)
-	}
-	return m
-}()
-
 func pathsDrumTracks(score *notation.Score, rate int) map[int]bool {
 	drums := map[int]bool{}
 	if p, _ := project.FromScore(score); p != nil {
@@ -322,9 +313,14 @@ func pathsNotes(tapped []pathsTapped, drums map[int]bool, endTick int64) map[str
 		ev := tp.event
 		if drums[tp.track] {
 			if ev.Kind == seq.NoteOn {
-				// Both paths tap a drum hit with its lane in Note, so a
-				// difference here is a real one.
+				// Both paths tap a drum hit with its lane in Note. A note that
+				// is not a lane (a General MIDI pitch, say) gets a key of its
+				// own, so the path that taps it fails the comparison by name.
 				lane := ev.Note
+				if drum.Lane(lane) >= drum.LaneCount {
+					keys[fmt.Sprintf("track %d tick %d drum hit with note %d, which is not a lane", tp.track, ev.Tick, lane)]++
+					continue
+				}
 				keys[fmt.Sprintf("track %d tick %d lane %d vel %d accent %v", tp.track, ev.Tick, lane, ev.Velocity, ev.Accent)]++
 			}
 			continue
