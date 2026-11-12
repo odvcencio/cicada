@@ -333,6 +333,9 @@ func (e *Engine) renderMasterFrame(frame int, left, right float32, outL, outR []
 			if limiter, ok := e.masterProcessor.(interface{ LimiterGainReductionDB() float64 }); ok {
 				e.taps[frame].MasterLimiterReductionDB = limiter.LimiterGainReductionDB()
 			}
+			if limiter, ok := e.masterProcessor.(interface{ ExportLimiterGainReductionDB() float64 }); ok {
+				e.taps[frame].ExportLimiterReductionDB = limiter.ExportLimiterGainReductionDB()
+			}
 		}
 	}
 	// The export DC correction goes in after the master chain and every gain

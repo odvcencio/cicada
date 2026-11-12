@@ -6,6 +6,7 @@ import (
 	"io"
 	"m31labs.dev/cicada/host/schedule"
 	"m31labs.dev/cicada/kernel/cmd"
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/mix"
 	"m31labs.dev/cicada/kernel/seq"
@@ -26,7 +27,7 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 	if opts.Block == 0 {
 		opts.Block = 4096
 	}
-	if opts.Block < 1 || opts.Block > 4096 || opts.TailSec < 0 || opts.TailSec > 10 || math.IsNaN(opts.TailSec) || math.IsInf(opts.TailSec, 0) || math.IsNaN(opts.MasterInputGainDB) || math.IsInf(opts.MasterInputGainDB, 0) || opts.MasterInputGainDB < -120 || opts.MasterInputGainDB > 24 || math.IsNaN(opts.MasterGainDB) || math.IsInf(opts.MasterGainDB, 0) || opts.MasterGainDB < -120 || opts.MasterGainDB > 24 {
+	if opts.Block < 1 || opts.Block > 4096 || opts.TailSec < 0 || opts.TailSec > 10 || math.IsNaN(opts.TailSec) || math.IsInf(opts.TailSec, 0) || math.IsNaN(opts.MasterGainDB) || math.IsInf(opts.MasterGainDB, 0) || opts.MasterGainDB < -120 || opts.MasterGainDB > 24 {
 		return report, fmt.Errorf("invalid scheduled render options")
 	}
 	p, ds := project.FromScore(score)
@@ -41,7 +42,12 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 	if err != nil {
 		return report, err
 	}
-	cfg.MasterGainDB = scheduledMasterGainDB(cfg.MasterGainDB, opts)
+	authoredGainDB := cfg.MasterGainDB
+	if chainGain := scheduledChainGain(p, cfg.MasterProcessor, opts); chainGain != 1 {
+		project.SetMasterExportGain(cfg.MasterProcessor, chainGain)
+	} else if !scheduledGainInChain(p, cfg.MasterProcessor) {
+		cfg.MasterGainDB = scheduledMasterGainDB(authoredGainDB, opts)
+	}
 	cfg.MasterBiasL, cfg.MasterBiasR = opts.MasterBiasL, opts.MasterBiasR
 	player, err := engine.New(cfg)
 	if err != nil {
@@ -75,7 +81,7 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 	}
 	fromFrame := tempoMap.SampleAtTick(meterMap.BarStart(int64(opts.From)))
 	endFrame := tempoMap.SampleAtTick(endTick)
-	report = Report{SampleRate: opts.SampleRate, Bars: int(meterMap.BarsUntil(endTick)) - opts.From, From: opts.From, MasterGainDB: cfg.MasterGainDB, TailFrames: int64(math.Ceil(opts.TailSec * float64(opts.SampleRate)))}
+	report = Report{SampleRate: opts.SampleRate, Bars: int(meterMap.BarsUntil(endTick)) - opts.From, From: opts.From, MasterGainDB: scheduledMasterGainDB(authoredGainDB, opts), TailFrames: int64(math.Ceil(opts.TailSec * float64(opts.SampleRate)))}
 	report.tempoChanges = project.ExcerptTempoChanges(p.TempoMilli, songChanges, report.From, report.Bars)
 	if len(report.tempoChanges) > maxWAVTempoChanges {
 		return report, fmt.Errorf("bars %d to %d hold %d tempo changes; the WAV timing chunk records at most %d, so render a shorter range", report.From+1, report.From+report.Bars, len(report.tempoChanges), maxWAVTempoChanges)
@@ -85,7 +91,7 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 	if err != nil {
 		return report, err
 	}
-	maxFrames := (int64(^uint32(0))-int64(36+metadataBytes(len(report.tempoChanges)))) / int64(encoder.frameBytes())
+	maxFrames := (int64(^uint32(0)) - int64(36+metadataBytes(len(report.tempoChanges)))) / int64(encoder.frameBytes())
 	spanFrames := endFrame - fromFrame
 	if spanFrames < 0 || report.TailFrames > maxFrames || spanFrames > maxFrames-report.TailFrames {
 		return report, fmt.Errorf("WAV exceeds RIFF size limit")
@@ -117,15 +123,17 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 	left, right := make([]float32, opts.Block), make([]float32, opts.Block)
 	buffer := make([]byte, opts.Block*encoder.frameBytes())
 	totalFrames := endFrame + report.TailFrames + latency
-	// The master cache stores TapFrame.MasterInput, which enters the master
-	// stage ahead of the master gain that carries the export gain, so a replay
-	// runs the master chain and the limiter again on the stored input.
+	// The master cache stores the signal at the export gain point: the master
+	// chain stores it when the gain enters inside the chain (MasterCache.atPoint),
+	// and otherwise the render stores TapFrame.MasterInput, which enters the
+	// master stage ahead of the master gain that then carries the export gain.
+	// A replay runs everything after the stored signal again.
 	var cache *MasterCache
 	replay := false
 	var inL, inR []float32
 	if opts.MasterCache != nil && stemsDir == "" && opts.NoteTap == nil {
 		key := masterCacheKey{score: score, sampleRate: opts.SampleRate, block: opts.Block, from: opts.From, bars: opts.Bars, tailSec: opts.TailSec, assetRoot: opts.AssetRoot, assetDir: opts.AssetDir, baseline: opts.SamplerBaseline}
-		use, replaying, err := opts.MasterCache.begin(key, totalFrames)
+		use, replaying, err := opts.MasterCache.begin(key, totalFrames, cfg.MasterProcessor)
 		if err != nil {
 			return report, err
 		}
@@ -133,6 +141,8 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 			cache, replay = opts.MasterCache, replaying
 		}
 		if replay {
+			// With the signal at the gain point, the chain reads it and ignores
+			// this input, which stays silent.
 			inL, inR = make([]float32, opts.Block), make([]float32, opts.Block)
 		}
 	}
@@ -149,8 +159,10 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 			if err := cache.beginBlock(frames, true); err != nil {
 				return report, err
 			}
-			for i := range frames {
-				inL[i], inR[i] = cache.block[2*i], cache.block[2*i+1]
+			if !cache.atPoint {
+				for i := range frames {
+					inL[i], inR[i] = cache.block[2*i], cache.block[2*i+1]
+				}
 			}
 			player.RenderMasterWithTaps(inL[:frames], inR[:frames], left[:frames], right[:frames], taps[:frames])
 		} else {
@@ -163,22 +175,26 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 			if err != nil {
 				return report, fmt.Errorf("prepare streamed export: %w", err)
 			}
+			if cache != nil {
+				// Before the block renders: a chain that stores its gain-point
+				// signal appends to the block as it runs.
+				if err := cache.beginBlock(frames, false); err != nil {
+					return report, err
+				}
+			}
 			player.RenderWithTaps(left[:frames], right[:frames], taps[:frames])
 			if stats := player.StreamStats(); stats.MissingFrames > 0 {
 				return report, fmt.Errorf("streamed export missed %d source output frames", stats.MissingFrames)
 			}
-			if cache != nil {
-				if err := cache.beginBlock(frames, false); err != nil {
-					return report, err
-				}
-				// A capture whose file failed has turned itself off; the render
-				// goes on without it.
-				if !cache.disabled {
+			// A capture whose file failed has turned itself off; the render goes
+			// on without it.
+			if cache != nil && !cache.disabled {
+				if !cache.atPoint {
 					for i := range frames {
 						cache.block = append(cache.block, taps[i].MasterInput.Left, taps[i].MasterInput.Right)
 					}
-					cache.endBlock()
 				}
+				cache.endBlock()
 			}
 		}
 		for player.Poll(&message) {
@@ -199,6 +215,7 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 				}
 			}
 			report.noteMasterChainReduction(position+int64(i), tap.MasterLimiterReductionDB)
+			report.noteExportLimiterReduction(position+int64(i), tap.ExportLimiterReductionDB)
 			report.MaxLimiterGainReductionDB = max(report.MaxLimiterGainReductionDB, tap.LimiterReductionDB)
 			if stems != nil {
 				for t := range p.Tracks {
@@ -257,7 +274,33 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 }
 
 // scheduledMasterGainDB is the master gain the scheduled engine applies ahead
-// of the master chain: the authored master level and both export gains.
+// of the master chain when the export gain enters at the master input: the
+// authored master level and the export gain.
 func scheduledMasterGainDB(authoredGainDB float64, opts Options) float64 {
-	return authoredGainDB + (opts.MasterGainDB + opts.MasterInputGainDB)
+	return authoredGainDB + opts.MasterGainDB
+}
+
+// scheduledGainInChain reports whether the export gain enters the scheduled
+// engine's master chain (ahead of its last limiter, or after a chain without
+// one) rather than its master gain.
+func scheduledGainInChain(p *project.Project, processor engine.StereoProcessor) bool {
+	return processor != nil && project.MasterExportGainPoint(p) != project.GainAtMasterInput
+}
+
+// scheduledChainGain is the export gain factor the master chain applies at its
+// gain point, or 1 when the gain enters at the master input.
+func scheduledChainGain(p *project.Project, processor engine.StereoProcessor, opts Options) float32 {
+	if !scheduledGainInChain(p, processor) {
+		return 1
+	}
+	return exportGainFactor(opts.MasterGainDB)
+}
+
+// exportGainFactor is the factor of an export gain applied inside the master
+// chain, on both renderers.
+func exportGainFactor(db float64) float32 {
+	if db == 0 {
+		return 1
+	}
+	return float32(detmath.Pow(10, db/20))
 }

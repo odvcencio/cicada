@@ -15,24 +15,20 @@ func TestSameAudioMatchesRenders(t *testing.T) {
 	for _, test := range []struct {
 		name  string
 		score *notation.Score
-		input bool // the export gain goes in at the master input, as with a limiter
 	}{
-		{"direct, no master chain", cacheScoreWithMaster(t, "master { level = 3dB }"), false},
-		{"direct, no master block", cacheScoreWithMaster(t, ""), false},
-		{"direct, chain after the gain", cacheScoreWithMaster(t, "fx tone eq { type = highpass frequency = 25Hz }\nmaster { level = -2dB insert = tone }"), false},
-		{"direct, limiter chain", cacheScoreVariant(t), true},
-		{"scheduled, no master chain", scheduledCacheScore(t, "master { level = 3dB }"), false},
-		{"scheduled, limiter chain", scheduledCacheScore(t, masterCacheChain), true},
+		{"direct, no master chain", cacheScoreWithMaster(t, "master { level = 3dB }")},
+		{"direct, no master block", cacheScoreWithMaster(t, "")},
+		{"direct, chain ahead of the gain", cacheScoreWithMaster(t, "fx tone eq { type = highpass frequency = 25Hz }\nmaster { level = -2dB insert = tone }")},
+		{"direct, limiter chain", cacheScoreVariant(t)},
+		{"scheduled, no master chain", scheduledCacheScore(t, "master { level = 3dB }")},
+		{"scheduled, limiter chain", scheduledCacheScore(t, masterCacheChain)},
+		{"scheduled, chain without limiter", scheduledCacheScore(t, "fx tone eq { type = highpass frequency = 25Hz }\nmaster { level = -2dB insert = tone }")},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			base := Options{SampleRate: 48000, Bars: 1, TailSec: .05}
 			at := func(gain float64) Options {
 				opts := base
-				if test.input {
-					opts.MasterInputGainDB = gain
-				} else {
-					opts.MasterGainDB = gain
-				}
+				opts.MasterGainDB = gain
 				return opts
 			}
 			const gain = 11.40714904491081
@@ -87,7 +83,7 @@ func TestSameAudioComparesEveryOption(t *testing.T) {
 		"MaxResidentPCM":  func(o *Options) { o.MaxResidentPCM = 1 << 20 },
 		"NoteTap":         func(o *Options) { o.NoteTap = func(int, seq.Event) {} },
 	}
-	ignored := map[string]bool{"MasterGainDB": true, "MasterInputGainDB": true, "MasterCache": true}
+	ignored := map[string]bool{"MasterGainDB": true, "MasterCache": true}
 	fields := reflect.TypeOf(Options{})
 	for i := range fields.NumField() {
 		name := fields.Field(i).Name

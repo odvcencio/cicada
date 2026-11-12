@@ -52,8 +52,10 @@ go tool pprof -top render.prof
 `cicada render --loudness` searches for the export gain in up to six passes.
 The first pass synthesizes the song; every later pass replays that pass's mix
 from a temporary file next to the output (8 bytes per frame, about 71 MB for a
-three-minute song at 48 kHz) and runs only the master stage, the measurement
-and the WAV writing again. A pass whose gain would not change the audio is not
+three-minute song at 48 kHz) and runs only what follows the export gain (the
+last master limiter, the inserts after it and the safety limiter, or the whole
+master stage when the gain goes in at the master input), the measurement and
+the WAV writing again. A pass whose gain would not change the audio is not
 rendered at all. The output and the reported numbers are byte for byte those of
 a search that synthesizes every pass. The summary line counts the passes by how
 they got their audio, and one line per pass gives its gain, loudness and true

@@ -52,8 +52,8 @@ func TestExportLoudnessMasterLimiterReachesTarget(t *testing.T) {
 		t.Fatalf("verify-wav: %v", err)
 	}
 	t.Logf("METRIC EXPORT-LIMITER lufs=%.3f true_peak=%.3f gain=%+.2f chain_reduction=%.2f passes=%d", report.IntegratedLUFS, report.TruePeakDBTP, result.AppliedGainDB, result.MasterLimiterReductionDB, result.Passes)
-	if result.GainStage != "master_input" {
-		t.Fatalf("gain stage = %q, want master_input", result.GainStage)
+	if result.GainStage != "before_last_limiter" {
+		t.Fatalf("gain stage = %q, want before_last_limiter", result.GainStage)
 	}
 	if result.MasterLimiterReductionDB <= 0 {
 		t.Fatalf("master limiter never reduced gain: %+v", result)
@@ -186,7 +186,7 @@ func loudestCompliantLUFS(t *testing.T, inspection scoreInspection, opts render.
 		if err != nil {
 			t.Fatal(err)
 		}
-		opts.MasterInputGainDB = gain
+		opts.MasterGainDB = gain
 		report, err := render.WAV(inspection.score, opts, file)
 		if closeErr := file.Close(); err == nil {
 			err = closeErr
@@ -624,8 +624,8 @@ func TestExportLoudnessMasterLimiterOnScheduledEngine(t *testing.T) {
 	if err != nil {
 		t.Fatalf("target render: %v (%+v)", err, result)
 	}
-	if result.GainStage != "master_input" || result.MasterLimiterReductionDB <= 0 || result.MasterLimiterReductionDB > maxExportLimiterReductionDB {
-		t.Fatalf("scheduled engine did not limit at the master input: %+v", result)
+	if result.GainStage != "before_last_limiter" || result.MasterLimiterReductionDB <= 0 || result.MasterLimiterReductionDB > maxExportLimiterReductionDB {
+		t.Fatalf("scheduled engine did not put the gain ahead of its last limiter: %+v", result)
 	}
 	if result.TruePeakDBTP > -1 || result.AchievedLUFS < -9.5 || result.AchievedLUFS > -8.5 {
 		t.Fatalf("scheduled engine missed the target: %+v", result)
@@ -733,7 +733,7 @@ func chainedExcerptReduction(t *testing.T, path string, scheduled bool) float64 
 	if err != nil {
 		t.Fatal(err)
 	}
-	opts := render.Options{SampleRate: 48000, Bits: 24, From: 4, Bars: 2, TailSec: 1, MasterInputGainDB: -3}
+	opts := render.Options{SampleRate: 48000, Bits: 24, From: 4, Bars: 2, TailSec: 1, MasterGainDB: -3}
 	if got := render.UsesScheduledEngine(inspection.score, opts); got != scheduled {
 		t.Fatalf("UsesScheduledEngine = %v, want %v", got, scheduled)
 	}
@@ -783,8 +783,13 @@ func TestExportLoudnessChainedLimitersFullSong(t *testing.T) {
 			t.Fatal(err)
 		}
 		result, err := renderLoudnessFileReport(inspection.score, filepath.Join(t.TempDir(), "full.wav"), opts, target, nil)
-		t.Logf("METRIC EXPORT-CHAINED-FULL scheduled=%v lufs=%.3f gain=%+.2f chain_reduction=%.3f err=%v", scheduled, result.AchievedLUFS, result.AppliedGainDB, result.MasterLimiterReductionDB, err)
-		if err != nil || result.MasterLimiterReductionDB <= 0 || result.MasterLimiterReductionDB > maxExportLimiterReductionDB {
+		t.Logf("METRIC EXPORT-CHAINED-FULL scheduled=%v lufs=%.3f gain=%+.2f last_limiter=%.3f largest=%.3f err=%v", scheduled, result.AchievedLUFS, result.AppliedGainDB, result.MasterLimiterReductionDB, result.LargestLimiterReductionDB, err)
+		// The first limiter (-12 dBTP) runs ahead of the gain, as in
+		// playback, and reduces 6.5 dB whatever the gain; the 6 dB maximum
+		// bounds the last limiter, the one the gain drives, so the export
+		// reaches its quiet target. The largest reduction still reports the
+		// first limiter.
+		if err != nil || result.MasterLimiterReductionDB > maxExportLimiterReductionDB || result.LargestLimiterReductionDB <= maxExportLimiterReductionDB || math.Abs(result.AchievedLUFS-target.LoudnessTarget) > target.Tolerance {
 			t.Fatalf("full-song chained limiter export: %v (%+v)", err, result)
 		}
 	}
@@ -828,7 +833,7 @@ func testCappedPassRendersPendingDCCorrection(t *testing.T, scheduled bool) {
 		if err != nil {
 			return report, err
 		}
-		gain := math.Pow(10, opts.MasterInputGainDB/20)
+		gain := math.Pow(10, opts.MasterGainDB/20)
 		// The renderer already added its correction; add only the source DC.
 		// The scheduled engine applies the correction before the gain, so a
 		// source whose DC grows faster than the gain (here with its square)
@@ -837,7 +842,7 @@ func testCappedPassRendersPendingDCCorrection(t *testing.T, scheduled bool) {
 		if scheduled {
 			offset = dc * gain * gain
 		}
-		gains = append(gains, opts.MasterInputGainDB)
+		gains = append(gains, opts.MasterGainDB)
 		addDC24(t, buf.Bytes(), offset, offset)
 		_, err = w.Write(buf.Bytes())
 		return report, err
@@ -880,10 +885,10 @@ func TestExportLoudnessCappedPassRendersPendingDCCorrectionScheduled(t *testing.
 	testCappedPassRendersPendingDCCorrection(t, true)
 }
 
-// Without a limiter the scheduled engine still adds the export gain ahead of
-// the master chain, so the report must say master_input there and post_chain
-// on the direct renderer.
-func TestExportLoudnessGainStageNamesPlacementPerRenderer(t *testing.T) {
+// Without a limiter both renderers add the export gain after the master chain,
+// so both reports say post_chain. The scheduled engine used to add it ahead of
+// the chain, with its master gain.
+func TestExportLoudnessGainStageIsTheSameOnBothRenderers(t *testing.T) {
 	source, err := os.ReadFile(filepath.Join("testdata", "export-loudness", "punchy-nolimiter.cicada"))
 	if err != nil {
 		t.Fatal(err)
@@ -907,12 +912,10 @@ func TestExportLoudnessGainStageNamesPlacementPerRenderer(t *testing.T) {
 			t.Fatal(err)
 		}
 		result, _ := renderLoudnessFileReport(inspection.score, filepath.Join(t.TempDir(), "x.wav"), opts, target, nil)
-		want := "post_chain"
-		if scheduled {
-			want = "master_input"
-		}
-		if result.GainStage != want || result.limiterMode {
-			t.Fatalf("scheduled=%v: gain stage %q limiterMode %v, want %q without limiter mode", scheduled, result.GainStage, result.limiterMode, want)
+		// Both renderers put the gain after a chain without a limiter; the
+		// scheduled engine used to put it ahead of the chain.
+		if result.GainStage != "post_chain" || result.limiterMode {
+			t.Fatalf("scheduled=%v: gain stage %q limiterMode %v, want post_chain without limiter mode", scheduled, result.GainStage, result.limiterMode)
 		}
 	}
 }

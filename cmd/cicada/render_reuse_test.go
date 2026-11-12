@@ -147,7 +147,10 @@ func TestLoudnessSearchCacheFileHasNoNameOnUnix(t *testing.T) {
 	}
 	inspection := loadTupletGrid(t)
 	target := renderTargetOptions{LoudnessTarget: -14, TruePeakMaxDBTP: -1, Tolerance: .5, Loudness: true}
-	if _, err := renderLoudnessFileReport(inspection.score, filepath.Join(dir, "out.wav"), render.Options{SampleRate: 48000, Bits: 24, TailSec: 1}, target, nil); err != nil && !strings.Contains(err.Error(), "missed") {
+	// The quiet score stops short of the target (at the +24 dB maximum export
+	// gain); only the cache file matters here.
+	var shortfall *loudnessShortfallError
+	if _, err := renderLoudnessFileReport(inspection.score, filepath.Join(dir, "out.wav"), render.Options{SampleRate: 48000, Bits: 24, TailSec: 1}, target, nil); err != nil && !errors.As(err, &shortfall) {
 		t.Fatal(err)
 	}
 	if named != 0 {

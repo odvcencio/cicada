@@ -43,6 +43,25 @@ fx stereo width { amount = 1.1 }
 fx ceiling limiter { ceiling = -1dBTP }
 master { level = 3dB insert = tone -> glue -> punch -> stereo -> ceiling }`
 
+// cacheChain is a master block that inserts the named effects in order, with
+// their declarations: tone, lift (18 dB of low shelf, so a limiter after it
+// acts on every pass), guard (a limiter ahead of the last one), stereo and
+// ceiling (the last limiter).
+func cacheChain(names ...string) string {
+	declarations := map[string]string{
+		"tone":    "fx tone eq { type = highpass frequency = 25Hz }",
+		"lift":    "fx lift eq { type = low_shelf frequency = 4kHz gain = 18dB }",
+		"guard":   "fx guard limiter { ceiling = -12dBTP }",
+		"stereo":  "fx stereo width { amount = 1.1 }",
+		"ceiling": "fx ceiling limiter { ceiling = -1dBTP }",
+	}
+	var lines []string
+	for _, name := range names {
+		lines = append(lines, declarations[name])
+	}
+	return strings.Join(lines, "\n") + "\nmaster { insert = " + strings.Join(names, " -> ") + " }"
+}
+
 func cacheScoreWithMaster(t *testing.T, master string, replacements ...string) *notation.Score {
 	t.Helper()
 	source := strings.Replace(masterCacheScore, "MASTER_FX", master, 1)
@@ -138,12 +157,19 @@ func TestMasterCacheReplayMatchesFullRender(t *testing.T) {
 		{"odd blocks", cacheScoreVariant(t), Options{SampleRate: 48000, Bars: 1, Block: 1000, TailSec: .1}},
 		// Without a master chain every gain change is linear until the safety
 		// limiter, which the replay runs again.
+		// The chain stores the signal at its gain point unless a limiter runs
+		// ahead of the last one or the last limiter comes first.
+		{"inserts after the last limiter", cacheScoreWithMaster(t, cacheChain("tone", "ceiling", "stereo")), Options{SampleRate: 48000, Bars: 1, TailSec: .1}},
+		{"limiter ahead of the last one", cacheScoreWithMaster(t, cacheChain("lift", "guard", "tone", "ceiling")), Options{SampleRate: 48000, Bars: 1, TailSec: .1}},
+		{"last limiter first", cacheScoreWithMaster(t, cacheChain("ceiling", "stereo")), Options{SampleRate: 48000, Bars: 1, TailSec: .1}},
 		{"no master chain", cacheScoreWithMaster(t, "master { level = 3dB }"), Options{SampleRate: 48000, TailSec: .2}},
 		{"no master block", cacheScoreWithMaster(t, ""), Options{SampleRate: 48000, Bars: 1, TailSec: .1}},
 		{"no master chain, excerpt", cacheScoreWithMaster(t, "master { level = -2dB }"), Options{SampleRate: 44100, From: 1, Bars: 1, TailSec: .3}},
 		// The scheduled engine replays through its own master stage.
 		{"scheduled, chain with limiter", scheduledCacheScore(t, masterCacheChain), Options{SampleRate: 48000, TailSec: .2}},
 		{"scheduled, chain without limiter", scheduledCacheScore(t, "fx tone eq { type = highpass frequency = 25Hz }\nfx glue comp { threshold = -18dB }\nmaster { insert = tone -> glue }"), Options{SampleRate: 48000, Bars: 1, TailSec: .1}},
+		{"scheduled, inserts after the last limiter", scheduledCacheScore(t, cacheChain("tone", "ceiling", "stereo")), Options{SampleRate: 48000, Bars: 1, TailSec: .1}},
+		{"scheduled, limiter ahead of the last one", scheduledCacheScore(t, cacheChain("lift", "guard", "tone", "ceiling")), Options{SampleRate: 48000, Bars: 1, TailSec: .1}},
 		{"scheduled, no master chain", scheduledCacheScore(t, "master { level = 3dB }"), Options{SampleRate: 48000, TailSec: .2}},
 		{"scheduled, excerpt", scheduledCacheScore(t, masterCacheChain), Options{SampleRate: 48000, From: 1, Bars: 1, TailSec: .3}},
 		{"scheduled, small blocks", scheduledCacheScore(t, masterCacheChain), Options{SampleRate: 48000, Bars: 1, Block: 48, TailSec: .05}},
@@ -154,10 +180,10 @@ func TestMasterCacheReplayMatchesFullRender(t *testing.T) {
 			replays := 0
 			for i, change := range []func(*Options){
 				func(o *Options) {},
-				func(o *Options) { o.MasterInputGainDB = 4.5 },
-				func(o *Options) { o.MasterInputGainDB = -7; o.MasterBiasL, o.MasterBiasR = .002, -.001 },
+				func(o *Options) { o.MasterGainDB = 4.5 },
+				func(o *Options) { o.MasterGainDB = -7; o.MasterBiasL, o.MasterBiasR = .002, -.001 },
 				func(o *Options) { o.MasterGainDB = 1.25; o.MasterBiasL = -.003; o.Bits = 16 },
-				func(o *Options) { o.MasterInputGainDB = 2; o.Normalize = true; o.Bits = 32; o.Dither = &off },
+				func(o *Options) { o.MasterGainDB = 2; o.Normalize = true; o.Bits = 32; o.Dither = &off },
 			} {
 				opts := test.base
 				change(&opts)
@@ -174,6 +200,41 @@ func TestMasterCacheReplayMatchesFullRender(t *testing.T) {
 					t.Fatalf("render %d did not replay from the cache", i)
 				}
 				replays = cache.Replays()
+			}
+		})
+	}
+}
+
+// The cache stores the signal at the export gain point inside the master chain
+// when it can, so a replay skips the inserts ahead of the last limiter; it
+// stores the master input when there is no such point, or when a limiter ahead
+// of the last one would need its reading.
+func TestMasterCacheStoresTheGainPointSignal(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		score   *notation.Score
+		atPoint bool
+	}{
+		{"chain with limiter", cacheScoreVariant(t), true},
+		{"chain without limiter", cacheScoreWithMaster(t, "fx tone eq { type = highpass frequency = 25Hz }\nmaster { insert = tone }"), true},
+		{"inserts after the last limiter", cacheScoreWithMaster(t, cacheChain("tone", "ceiling", "stereo")), true},
+		{"limiter ahead of the last one", cacheScoreWithMaster(t, cacheChain("lift", "guard", "tone", "ceiling")), false},
+		{"last limiter first", cacheScoreWithMaster(t, cacheChain("ceiling", "stereo")), false},
+		{"no master chain", cacheScoreWithMaster(t, "master { level = 3dB }"), false},
+		{"scheduled, chain with limiter", scheduledCacheScore(t, masterCacheChain), true},
+		{"scheduled, no master chain", scheduledCacheScore(t, "master { level = 3dB }"), false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cache := newProductionMasterCache(t)
+			opts := Options{SampleRate: 48000, Bars: 1, TailSec: .05, MasterCache: cache}
+			renderCacheBytes(t, test.score, opts)
+			if cache.atPoint != test.atPoint || cache.key.atPoint != test.atPoint {
+				t.Fatalf("capture stored the gain-point signal = %v (key %v), want %v", cache.atPoint, cache.key.atPoint, test.atPoint)
+			}
+			opts.MasterGainDB = 3
+			renderCacheBytes(t, test.score, opts)
+			if cache.Replays() != 1 || cache.atPoint != test.atPoint {
+				t.Fatalf("replays %d, gain point %v; want one replay at gain point %v", cache.Replays(), cache.atPoint, test.atPoint)
 			}
 		})
 	}
@@ -471,7 +532,7 @@ func TestMasterCacheReadFailureTurnsTheCacheOff(t *testing.T) {
 // endBlock is the one place a capture can fail after rendering has started.
 func TestMasterCacheEndBlockFailureTurnsTheCacheOff(t *testing.T) {
 	cache := newTestMasterCache(t)
-	if use, replay, err := cache.begin(masterCacheKey{sampleRate: 48000}, 2); !use || replay || err != nil {
+	if use, replay, err := cache.begin(masterCacheKey{sampleRate: 48000}, 2, nil); !use || replay || err != nil {
 		t.Fatalf("begin = %v, %v, %v; want a capture", use, replay, err)
 	}
 	readOnly, err := os.Open(cache.file.Name())
@@ -491,14 +552,14 @@ func TestMasterCacheEndBlockFailureTurnsTheCacheOff(t *testing.T) {
 	if err := cache.finishCapture(); err != nil || cache.ready {
 		t.Fatalf("finishCapture after a failed write: %v, ready=%v", err, cache.ready)
 	}
-	if use, _, _ := cache.begin(masterCacheKey{sampleRate: 48000}, 2); use {
+	if use, _, _ := cache.begin(masterCacheKey{sampleRate: 48000}, 2, nil); use {
 		t.Fatal("a disabled cache accepted another render")
 	}
 }
 
 func TestMasterCacheFinishCaptureRejectsAShortCapture(t *testing.T) {
 	cache := newTestMasterCache(t)
-	if _, _, err := cache.begin(masterCacheKey{}, 4); err != nil {
+	if _, _, err := cache.begin(masterCacheKey{}, 4, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := cache.beginBlock(2, false); err != nil {

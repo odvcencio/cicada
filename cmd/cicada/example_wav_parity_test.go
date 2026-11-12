@@ -341,8 +341,16 @@ var wavPins = map[string]string{
 	// anywhere-you-are changed again by #338: 22 note starts at section
 	// changes now sound (the engine dropped the first note of a scene-bound
 	// pass whose previous pass released at the switch).
-	"examples/songs/anywhere-you-are.cicada lufs-14":      "1f1aa87558deec7a80ab5082a4468ca4edfce7c06afb1f45042590a6bca0db35",
-	"examples/songs/anywhere-you-are.cicada lufs-9":       "1f1aa87558deec7a80ab5082a4468ca4edfce7c06afb1f45042590a6bca0db35",
+	// Its two loudness renders changed again when the export gain moved from
+	// the master input to just ahead of the last master limiter: the song's
+	// air EQ and glue compressor now run at playback level instead of up to
+	// 12 dB hotter. -14 LUFS: +11.46 dB, -14.26 LUFS, loudness range 6.93 LU
+	// (before: the +12 dB cap, -14.42 LUFS, 6.07 LU). -9 LUFS still stops at
+	// the +12 dB cap, now at -13.81 LUFS and 6.83 LU (before: -14.42 LUFS and
+	// 6.07 LU, the same file as -14). Pinned from amd64 Linux and arm64 macOS,
+	// which agree.
+	"examples/songs/anywhere-you-are.cicada lufs-14":      "1e23111f2fb950756a2121ebc0fada9149105159a8fcc3b2cb979dedb0c08cc6",
+	"examples/songs/anywhere-you-are.cicada lufs-9":       "8aa89ab2190d3e390cdf202d640f76b0334a6c2b6ae887fdae9939c834beddd3",
 	"examples/songs/anywhere-you-are.cicada normalize":    "5c4ebeb4803f2d45f1a0db8a77644e250008c3a794e4c19db1cc6dc4422267d2",
 	"examples/songs/anywhere-you-are.cicada plain":        "f084bbbf40601d3e8206af4ecc46586e29599a273815b6cc60bcfa665da45610",
 	"examples/songs/lanterns-after-rain.cicada lufs-14":   "68123218cd22ed9e74092a7099b728a79909a82be408061b7eb9c96da89a4f07",

@@ -22,6 +22,19 @@ tail by default. Integer PCM output uses deterministic triangular dither.
 `--normalize` peak-normalizes the finished file to −1 dBFS; it does not target
 a loudness standard.
 
+`--loudness -14`, or an `export` block with `loudness`, renders to a loudness
+target. The gain it finds is makeup gain into the master chain's last limiter,
+not gain into the mix: every master insert ahead of that limiter, such as a glue
+compressor, an EQ or a drive, runs exactly as in playback, so the export has the
+dynamics you hear in Studio. Until November 2026 the gain went in ahead of the
+whole chain, so a master compressor worked up to 12 dB harder in the export
+than in playback. A song with a master compressor is therefore compressed less
+in its export than before; if you raised the compressor's threshold to make up
+for that, lower it back to what sounds right in playback. Renders without a
+target, and songs whose limiter is the only master insert, are unchanged. See
+[export loudness targets](../audio/mix-chain.md#export-loudness-targets) for
+where the gain goes in each kind of chain and the limits the search keeps.
+
 Use `--from N` and `--bars M` to select a range. Bar numbers start at 1, so
 `--from 1` selects the first bar. The legacy value `--from 0` still selects the
 first bar and prints a deprecation warning. `--bars 0` renders from that bar
