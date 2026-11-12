@@ -45,10 +45,10 @@ func keyboardAutomationRewind(t *testing.T, placement bool) {
 			points []cmd.Command
 			skip   int // frames to skip after the restart before comparing
 		}{
-			{"first point after zero", []cmd.Command{{Op: cmd.OpSetParam, Track: 0, Index: uint16(id), Arg0: math.Float32bits(other), Tick: seq.TicksPerBar}}, 0},
+			{"first point after zero", []cmd.Command{{Op: cmd.OpSetParam, Track: 0, Index: uint16(id), Arg0: math.Float32bits(other), Tick: ticksPerBar}}, 0},
 			// The tick-0 point glides on first play but is rebuilt at once on a
 			// restart, so compare once the glide has settled.
-			{"first point at zero", []cmd.Command{{Op: cmd.OpSetParam, Track: 0, Index: uint16(id), Arg0: math.Float32bits(other), Tick: 0}, {Op: cmd.OpSetParam, Track: 0, Index: uint16(id), Arg0: math.Float32bits(authored), Tick: seq.TicksPerBar}}, 24000},
+			{"first point at zero", []cmd.Command{{Op: cmd.OpSetParam, Track: 0, Index: uint16(id), Arg0: math.Float32bits(other), Tick: 0}, {Op: cmd.OpSetParam, Track: 0, Index: uint16(id), Arg0: math.Float32bits(authored), Tick: ticksPerBar}}, 24000},
 		} {
 			for _, moment := range []string{"seek to the start", "seek to the middle", "listening range (seek and play)", "reset and play", "loop restart", "replay after the end"} {
 				t.Run(f.patch+"/"+f.name+"/"+lane.name+"/"+moment, func(t *testing.T) {
@@ -62,8 +62,8 @@ func keyboardAutomationRewind(t *testing.T, placement bool) {
 							cfg.Patterns = []engine.PatternBank{{}}
 							cfg.Patterns[0].Slots[0] = seq.Pattern{Len: 16, GatePercent: 50}
 							cfg.Schedule = []engine.ScheduleEvent{
-								{Kind: engine.SchedulePattern, Track: 0, Index: 0, Tick: 0, EndTick: 3 * seq.TicksPerBar, ID: 1},
-								{Kind: engine.SchedulePatternEnd, Track: 0, Tick: 3 * seq.TicksPerBar, EndTick: 3 * seq.TicksPerBar, ID: 1},
+								{Kind: engine.SchedulePattern, Track: 0, Index: 0, Tick: 0, EndTick: 3 * ticksPerBar, ID: 1},
+								{Kind: engine.SchedulePatternEnd, Track: 0, Tick: 3 * ticksPerBar, EndTick: 3 * ticksPerBar, ID: 1},
 							}
 						} else {
 							cfg.Scenes = []engine.Scene{{}}

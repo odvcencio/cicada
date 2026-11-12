@@ -102,22 +102,22 @@ func TestSceneTempoStepsAtBarIndependentOfBlockSize(t *testing.T) {
 	if e64.transport.BPMMilli() != 60_000 {
 		t.Fatalf("tempo after the slow scenes = %d", e64.transport.BPMMilli())
 	}
-	if got := e64.songSampleAtTick(seq.TicksPerBar); got != 96_000 {
+	if got := e64.songSampleAtTick(ticksPerBar); got != 96_000 {
 		t.Fatalf("bar 1 starts at sample %d, want 96000", got)
 	}
-	if got := e64.songSampleAtTick(2 * seq.TicksPerBar); got != 96_000+192_000 {
+	if got := e64.songSampleAtTick(2 * ticksPerBar); got != 96_000+192_000 {
 		t.Fatalf("bar 2 starts at sample %d, want 288000", got)
 	}
 	// The playing clock re-anchored on exactly that sample.
 	anchor := e64.transport.Clock()
-	if anchor.AnchorTick != seq.TicksPerBar || anchor.AnchorSample != 96_000 {
+	if anchor.AnchorTick != ticksPerBar || anchor.AnchorSample != 96_000 {
 		t.Fatalf("clock anchor = tick %d sample %d", anchor.AnchorTick, anchor.AnchorSample)
 	}
 }
 
 func TestSceneTempoSeekMatchesPlayingThrough(t *testing.T) {
 	cfg := sceneTempoConfig()
-	seekTo := int64(2*seq.TicksPerBar + 137)
+	seekTo := int64(2*ticksPerBar + 137)
 	// Play through to just before the seek position.
 	probe, err := New(cfg)
 	if err != nil {
@@ -172,7 +172,7 @@ func TestSceneTempoLoopWrapRestoresScoreTempo(t *testing.T) {
 	if got := e.transport.Clock().AnchorSample; got != int64(cycle) {
 		t.Fatalf("loop re-anchored at %d, want %d", got, cycle)
 	}
-	if e.songSampleAtTick(e.scheduleDuration+seq.TicksPerBar) != int64(cycle)+96_000 {
+	if e.songSampleAtTick(e.scheduleDuration+ticksPerBar) != int64(cycle)+96_000 {
 		t.Fatal("second cycle sample map is wrong")
 	}
 }
@@ -248,7 +248,7 @@ func TestSceneTempoClipSeekMatchesPlayingThrough(t *testing.T) {
 		{},
 	}
 	cfg.Song = []SongEntry{{Scene: 0, Bars: 1}, {Scene: 1, Bars: 1}, {Scene: 2, Bars: 1}}
-	seek := int64(2*seq.TicksPerBar + 137)
+	seek := int64(2*ticksPerBar + 137)
 	continuous, err := New(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -270,7 +270,7 @@ func TestSceneTempoClipSeekMatchesPlayingThrough(t *testing.T) {
 		}
 		frame += int64(n)
 	}
-	if !seeking.Push(cmd.Command{Op: cmd.OpSeek, Track: 0xff, Arg0: uint32(seek / seq.TicksPerBar), Arg1: uint32(seek % seq.TicksPerBar)}) || !seeking.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff}) {
+	if !seeking.Push(cmd.Command{Op: cmd.OpSeek, Track: 0xff, Arg0: uint32(seek / ticksPerBar), Arg1: uint32(seek % ticksPerBar)}) || !seeking.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff}) {
 		t.Fatal("seek rejected")
 	}
 	var want, got [128]TapFrame
@@ -305,27 +305,27 @@ func TestSceneTempoFramesBetweenTicksMatchesTheTransport(t *testing.T) {
 		if loop {
 			last = 7
 		}
-		for _, from := range []int64{0, seq.TicksPerBar, 2*seq.TicksPerBar + 137} {
+		for _, from := range []int64{0, ticksPerBar, 2*ticksPerBar + 137} {
 			e, err := New(cfg)
 			if err != nil {
 				t.Fatal(err)
 			}
-			e.Push(cmd.Command{Op: cmd.OpSeek, Track: 0xff, Arg0: uint32(from / seq.TicksPerBar), Arg1: uint32(from % seq.TicksPerBar)})
+			e.Push(cmd.Command{Op: cmd.OpSeek, Track: 0xff, Arg0: uint32(from / ticksPerBar), Arg1: uint32(from % ticksPerBar)})
 			e.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff})
 			reached := map[int64]int64{}
 			var l, r [1]float32
-			for frame := int64(0); frame < probe.FramesBetweenTicks(0, last*seq.TicksPerBar)+10; frame++ {
+			for frame := int64(0); frame < probe.FramesBetweenTicks(0, last*ticksPerBar)+10; frame++ {
 				e.Render(l[:], r[:])
 				// Tick() is the tick after this frame, so the frame that reaches
 				// a bar is the one before.
 				for bar := int64(1); bar <= last; bar++ {
-					if _, seen := reached[bar]; !seen && e.transport.Tick() >= bar*seq.TicksPerBar {
+					if _, seen := reached[bar]; !seen && e.transport.Tick() >= bar*ticksPerBar {
 						reached[bar] = frame + 1
 					}
 				}
 			}
 			for bar := int64(1); bar <= last; bar++ {
-				tick := bar * seq.TicksPerBar
+				tick := bar * ticksPerBar
 				if tick <= from {
 					continue
 				}
@@ -355,7 +355,7 @@ func TestSceneTempoRenderSeekAndFramesAllocationFree(t *testing.T) {
 		}
 		e.apply(cmd.Command{Op: cmd.OpSeek, Track: 0xff})
 		e.Render(left[:], right[:])
-		_ = e.FramesBetweenTicks(0, 8*seq.TicksPerBar) + e.TempoAtTick(5*seq.TicksPerBar)
+		_ = e.FramesBetweenTicks(0, 8*ticksPerBar) + e.TempoAtTick(5*ticksPerBar)
 	})
 	if e.faulted || allocs != 0 {
 		t.Fatalf("fault=%v allocations=%g", e.faulted, allocs)
@@ -421,7 +421,7 @@ func TestSceneTempoManualLaunchOnTheBoundaryKeepsTheSongTempo(t *testing.T) {
 		t.Fatalf("a manual launch changed the tempo to %d", through.transport.BPMMilli())
 	}
 	// Frames per bar: the transport reaches bar 2 where the export says it does.
-	want := through.FramesBetweenTicks(0, 2*seq.TicksPerBar)
+	want := through.FramesBetweenTicks(0, 2*ticksPerBar)
 	if want != 96_000+192_000 {
 		t.Fatalf("export gives %d frames to bar 2", want)
 	}
@@ -430,7 +430,7 @@ func TestSceneTempoManualLaunchOnTheBoundaryKeepsTheSongTempo(t *testing.T) {
 		t.Fatalf("clock anchor %d tempo %d", through.transport.Clock().AnchorSample, through.transport.BPMMilli())
 	}
 	// 137 ticks into the song's bar 3 (scene 3 keeps the 60 BPM tempo).
-	seek := 2*seq.TicksPerBar + 137
+	seek := 2*ticksPerBar + 137
 	seeking.Push(cmd.Command{Op: cmd.OpSeek, Track: 0xff, Arg0: 2, Arg1: 137})
 	seeking.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff})
 	seeking.Render(l[:1], r[:1])
@@ -538,7 +538,7 @@ func TestSceneTempoManualLaunchWithoutAChainMovesHostBoundaries(t *testing.T) {
 	if len(e.tempoChain) != 0 {
 		t.Fatal("the song should have no authored tempo chain")
 	}
-	if got := e.FramesBetweenTicks(0, 2*seq.TicksPerBar); got != 192_000 {
+	if got := e.FramesBetweenTicks(0, 2*ticksPerBar); got != 192_000 {
 		t.Fatalf("authored frames to bar 2 = %d", got)
 	}
 	e.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff})
@@ -553,16 +553,16 @@ func TestSceneTempoManualLaunchWithoutAChainMovesHostBoundaries(t *testing.T) {
 	if e.transport.BPMMilli() != 60_000 {
 		t.Fatalf("the launch left the tempo at %d", e.transport.BPMMilli())
 	}
-	if got := e.FramesBetweenTicks(0, 2*seq.TicksPerBar); got != 96_000+192_000 {
+	if got := e.FramesBetweenTicks(0, 2*ticksPerBar); got != 96_000+192_000 {
 		t.Fatalf("frames to bar 2 after the launch = %d, want 288000", got)
 	}
-	if got := e.FramesBetweenTicks(0, seq.TicksPerBar); got != 96_000 {
+	if got := e.FramesBetweenTicks(0, ticksPerBar); got != 96_000 {
 		t.Fatalf("frames to bar 1 = %d", got)
 	}
 	// A seek back to the start restores the authored tempo and chain.
 	e.Push(cmd.Command{Op: cmd.OpSeek, Track: 0xff})
 	e.Render(l[:], r[:])
-	if e.transport.BPMMilli() != 120_000 || e.FramesBetweenTicks(0, 2*seq.TicksPerBar) != 192_000 {
+	if e.transport.BPMMilli() != 120_000 || e.FramesBetweenTicks(0, 2*ticksPerBar) != 192_000 {
 		t.Fatalf("seek did not restore the authored tempo: %d", e.transport.BPMMilli())
 	}
 }
@@ -605,7 +605,7 @@ func TestSceneTempoExplicitScoreTempoStillProtectsAgainstManualLaunches(t *testi
 		if want := int64(authored) * 1000; e.transport.BPMMilli() != want {
 			t.Fatalf("authored %g BPM became %d after a manual launch", authored, e.transport.BPMMilli())
 		}
-		if got := e.FramesBetweenTicks(0, 2*seq.TicksPerBar); got != int64(math.Ceil(float64(2*240000*48000)/float64(authored*1000))) {
+		if got := e.FramesBetweenTicks(0, 2*ticksPerBar); got != int64(math.Ceil(float64(2*240000*48000)/float64(authored*1000))) {
 			t.Fatalf("authored %g BPM: frames to bar 2 = %d", authored, got)
 		}
 	}
@@ -639,7 +639,7 @@ func TestSceneTempoLoopSeamPredictionMatchesTheTransportAcrossLoops(t *testing.T
 		reached := map[int64]int64{}
 		for frame := int64(1); len(reached) < cycles*bars; frame++ {
 			e.Render(l[:], r[:])
-			if bar := e.transport.Tick() / seq.TicksPerBar; bar > 0 {
+			if bar := e.transport.Tick() / ticksPerBar; bar > 0 {
 				if _, seen := reached[bar]; !seen {
 					reached[bar] = frame
 				}
@@ -649,7 +649,7 @@ func TestSceneTempoLoopSeamPredictionMatchesTheTransportAcrossLoops(t *testing.T
 			}
 		}
 		for bar := int64(1); bar <= cycles*bars; bar++ {
-			if got, want := e.FramesBetweenTicks(0, bar*seq.TicksPerBar), reached[bar]; got != want {
+			if got, want := e.FramesBetweenTicks(0, bar*ticksPerBar), reached[bar]; got != want {
 				t.Fatalf("%v bar %d: predicted %d frames, the transport took %d", tempos, bar, got, want)
 			}
 		}
@@ -686,7 +686,7 @@ func TestSceneTempoLoopedClipSeekMatchesPlayingThrough(t *testing.T) {
 		through.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff})
 		var l, r [128]float32
 		// Play through three passes and one bar into the fourth, plus 137 ticks.
-		target := 10*seq.TicksPerBar + 137
+		target := 10*ticksPerBar + 137
 		for through.transport.Tick() < target {
 			through.Render(l[:1], r[:1])
 		}
@@ -695,7 +695,7 @@ func TestSceneTempoLoopedClipSeekMatchesPlayingThrough(t *testing.T) {
 			t.Fatal(err)
 		}
 		tick := target
-		seeking.Push(cmd.Command{Op: cmd.OpSeek, Track: 0xff, Arg0: uint32(tick / seq.TicksPerBar), Arg1: uint32(tick % seq.TicksPerBar)})
+		seeking.Push(cmd.Command{Op: cmd.OpSeek, Track: 0xff, Arg0: uint32(tick / ticksPerBar), Arg1: uint32(tick % ticksPerBar)})
 		seeking.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff})
 		seeking.Render(l[:1], r[:1])
 		// Frame N is the first at which the tick is reached; both engines render it.

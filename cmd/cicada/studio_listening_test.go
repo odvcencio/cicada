@@ -69,11 +69,11 @@ func TestSessionListeningResolvesSectionsAndPreservesSongAuthority(t *testing.T)
 		t.Fatalf("context audition lost other placements: %v", err)
 	}
 	_, middle, err := prepareStudioListening(p, studioListening{Kind: "section", Name: "middle", Loop: true})
-	if err != nil || middle.StartTick != seq.TicksPerBar || middle.EndTick != 2*seq.TicksPerBar {
+	if err != nil || middle.StartTick != ticksPerBar || middle.EndTick != 2*ticksPerBar {
 		t.Fatalf("section did not find the next chronological marker: %v %+v", err, middle)
 	}
 	_, last, err := prepareStudioListening(p, studioListening{Kind: "section", Name: "later", Loop: true})
-	if err != nil || last.EndTick != 4*seq.TicksPerBar {
+	if err != nil || last.EndTick != 4*ticksPerBar {
 		t.Fatalf("last section did not end with the arrangement: %v %+v", err, last)
 	}
 }

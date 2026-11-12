@@ -30,22 +30,22 @@ func TestNoteClockBoundsFallbackAndAudition(t *testing.T) {
 		{"invalid tempo", time.Second, math.NaN(), 4320},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := s.Playhead().NoteTick(tc.elapsed, tc.bpm); got != tc.want {
+			if got := s.Playhead(seq.MeterMap{}).NoteTick(tc.elapsed, tc.bpm); got != tc.want {
 				t.Fatalf("recording tick=%d, want %d", got, tc.want)
 			}
 		})
 	}
 	s.Playing = false
-	if got := s.Playhead().NoteTick(time.Second, 120); got != 4320 {
+	if got := s.Playhead(seq.MeterMap{}).NoteTick(time.Second, 120); got != 4320 {
 		t.Fatalf("stopped recording advanced to %d", got)
 	}
 	s.Playing, s.Bar, s.Step = true, 2, 16
 	s.Range = &PlaybackRange{Start: 3840, End: 7680, Loop: true}
-	if got := s.Playhead().NoteTick(250*time.Millisecond, 120); got != 4080 {
+	if got := s.Playhead(seq.MeterMap{}).NoteTick(250*time.Millisecond, 120); got != 4080 {
 		t.Fatalf("loop recording did not wrap: %d", got)
 	}
 	s.Range.Loop = false
-	if got := s.Playhead().NoteTick(250*time.Millisecond, 120); got != 7680 {
+	if got := s.Playhead(seq.MeterMap{}).NoteTick(250*time.Millisecond, 120); got != 7680 {
 		t.Fatalf("audition recording advanced beyond its end: %d", got)
 	}
 }
@@ -76,19 +76,19 @@ func TestNativeNoteClockCommitsBeatsToTheirPlayedSteps(t *testing.T) {
 					sample := clock.SampleAtTick(want) - int64(age)*48000/int64(time.Second)
 					tick := clock.TickAtSample(sample)
 					frame := liveplay.TransportFrame{
-						Bar: int32(tick/seq.TicksPerBar + 1), Beat: int32(tick%seq.TicksPerBar/seq.PPQ + 1),
+						Bar: int32(tick/ticksPerBar + 1), Beat: int32(tick%ticksPerBar/seq.PPQ + 1),
 						Tick: int32(tick % seq.PPQ), TempoMilli: uint32(bpm * 1000), Playing: true,
 					}
 					var raw [liveplay.TransportFrameSize]byte
 					frame.Encode(raw[:])
-					state := PlaybackState{Playing: true, Bar: int64(frame.Bar), Step: tick%seq.TicksPerBar/seq.TicksPerStep + 1}
+					state := PlaybackState{Playing: true, Bar: int64(frame.Bar), Step: tick%ticksPerBar/seq.TicksPerStep + 1}
 					state.Frames.Transport = base64.StdEncoding.EncodeToString(raw[:])
 					if delivery.known {
 						age := int64(delivery.age)
 						state.FrameAgeNanos = &age
 						state.RoundTrip = delivery.roundTrip
 					}
-					got := state.Playhead().NoteTick(delivery.elapsed, 100) // Native tempo wins.
+					got := state.Playhead(seq.MeterMap{}).NoteTick(delivery.elapsed, 100) // Native tempo wins.
 					if delta := got - want; delta < -1 || delta > 1 {
 						t.Fatalf("beat %d recorded at %d instead of %d", beat+1, got, want)
 					}

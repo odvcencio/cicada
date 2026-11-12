@@ -15,7 +15,6 @@ import (
 	"m31labs.dev/cicada/host/liveplay"
 	"m31labs.dev/cicada/host/takejournal"
 	"m31labs.dev/cicada/kernel"
-	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/project"
 )
 
@@ -57,7 +56,7 @@ func ampSyntheticTake(t *testing.T, s *studio) takejournal.Take {
 	if err != nil {
 		t.Fatal(err)
 	}
-	timeline := &takejournal.Timeline{StartTick: 0, EndTick: seq.TicksPerBar, PlaybackStartTick: 0, TempoMilli: 120000}
+	timeline := &takejournal.Timeline{StartTick: 0, EndTick: ticksPerBar, PlaybackStartTick: 0, TempoMilli: 120000}
 	id, err := s.takes.BeginTimeline("vox", "session", studioRevision(source), 48000, 1, timeline)
 	if err != nil {
 		t.Fatal(err)
