@@ -324,6 +324,54 @@ func TestTransportFollowsItsMeterMap(t *testing.T) {
 	}
 }
 
+// TestTransportBarMatchesItsMap moves a transport through random maps with
+// playback steps, small moves, jumps back and forward and map changes, and
+// checks that the bar it keeps between calls always gives the map's answer.
+func TestTransportBarMatchesItsMap(t *testing.T) {
+	rng := rand.New(rand.NewSource(11))
+	transport, err := NewTransport(48000, 120_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport.Play()
+	for round := 0; round < 60; round++ {
+		m, _ := randomMeterMap(rng)
+		if round%4 == 0 {
+			m = MeterMap{}
+		}
+		transport.SetMeterMap(m)
+		for step := 0; step < 500; step++ {
+			switch tick := transport.Tick(); rng.Intn(8) {
+			case 0:
+				err = transport.SeekTick(rng.Int63n(400_000))
+			case 1:
+				err = transport.SeekTick(max(0, tick-rng.Int63n(10_000)))
+			case 2:
+				err = transport.SeekTick(tick + rng.Int63n(240))
+			default:
+				transport.Advance(rng.Intn(4096) + 1)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			tick := transport.Tick()
+			bar, offset := transport.Bar()
+			wantBar, wantOffset := m.BarAt(tick)
+			if bar != wantBar || offset != wantOffset || transport.NextBarLine() != m.NextBarLine(tick) {
+				t.Fatalf("round %d tick %d: transport bar %d+%d next %d, map %d+%d next %d", round, tick, bar, offset, transport.NextBarLine(), wantBar, wantOffset, m.NextBarLine(tick))
+			}
+		}
+	}
+	var sink int64
+	if allocs := testing.AllocsPerRun(100, func() {
+		transport.Advance(64)
+		bar, offset := transport.Bar()
+		sink += bar + offset + transport.NextBarLine()
+	}); allocs != 0 || sink == 0 {
+		t.Fatalf("transport bar lookups allocated %.0f times", allocs)
+	}
+}
+
 func TestMeterMapLookupsAreAllocationFree(t *testing.T) {
 	odd, _ := NewMeterMap([]MeterChange{{0, Meter{4, 4}}, {4, Meter{7, 8}}, {8, Meter{3, 4}}, {12, Meter{5, 8}}})
 	for _, m := range []MeterMap{{}, odd} {

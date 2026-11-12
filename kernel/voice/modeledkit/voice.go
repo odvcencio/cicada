@@ -2,7 +2,11 @@
 // filtered excitation. It contains no recordings, wavetables, or external assets.
 package modeledkit
 
-import "math"
+import (
+	"math"
+
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+)
 
 // Profile numbers are stored in kernel images, so a new piece goes at the end.
 type Profile uint8
@@ -141,8 +145,8 @@ type bandFilter struct {
 }
 
 func (f *bandFilter) configure(low, high, rate float64) {
-	f.lowA = 1 - math.Exp(-2*math.Pi*min(high, .35*rate)/rate)
-	f.highA = 1 - math.Exp(-2*math.Pi*min(low, .2*rate)/rate)
+	f.lowA = 1 - detmath.Exp(-2*math.Pi*min(high, .35*rate)/rate)
+	f.highA = 1 - detmath.Exp(-2*math.Pi*min(low, .2*rate)/rate)
 }
 
 func (f *bandFilter) next(input float64) float64 {
@@ -276,20 +280,20 @@ func (v *Voice) Hit(velocity uint8) {
 	}
 	s.remaining = int(max(r.t60, r.noiseT60)*v.params.Decay*3*v.rate) + s.contact + s.hold
 	s.noiseAmp = r.noise * strength * (.28 + float64(.72*hardness))
-	s.noisePole = math.Exp(-math.Log(1000) / (r.noiseT60 * v.params.Decay * v.rate))
+	s.noisePole = detmath.Exp(-detmath.Log(1000) / (r.noiseT60 * v.params.Decay * v.rate))
 	low, high := r.low*(.72+float64(.4*hardness)), r.high*(.55+float64(.45*hardness))
 	if v.profile == BrushSweep {
 		// Only the bristle band rings in a sweep, so tune and strike
 		// position move that band. The stroke starts at a varied phase.
 		band := tune * (.8 + float64(.4*position))
 		low, high = low*band, high*band
-		s.stroke.y, s.stroke.x = math.Sincos(2.1 * jitter)
-		s.stroke.s, s.stroke.c = math.Sincos(2 * math.Pi * strokeHz * (1 + float64(.08*jitter)) / v.rate)
+		s.stroke.y, s.stroke.x = detmath.Sincos(2.1 * jitter)
+		s.stroke.s, s.stroke.c = detmath.Sincos(2 * math.Pi * strokeHz * (1 + float64(.08*jitter)) / v.rate)
 		s.swell = strokeDepth
 	}
 	s.filter.configure(low, high, v.rate)
-	s.followerA = 1 - math.Exp(-1/(.0008*v.rate))
-	s.bendAlpha = 1 - math.Exp(-1/(.024*v.rate))
+	s.followerA = 1 - detmath.Exp(-1/(.0008*v.rate))
+	s.bendAlpha = 1 - detmath.Exp(-1/(.024*v.rate))
 	if v.profile == Snare || v.profile == Rimshot {
 		// The wire contact is driven by both its own strike and membrane
 		// displacement. Soft ghost notes excite much less wire energy.
@@ -341,10 +345,10 @@ func (v *Voice) Hit(velocity uint8) {
 		if metal {
 			decay = r.t60 * v.params.Decay / (1 + float64(.065*float64(i)))
 		}
-		radius := math.Exp(-math.Log(1000) / (decay * v.rate))
-		m.s, m.c = math.Sincos(2 * math.Pi * startFrequency / v.rate)
+		radius := detmath.Exp(-detmath.Log(1000) / (decay * v.rate))
+		m.s, m.c = detmath.Sincos(2 * math.Pi * startFrequency / v.rate)
 		m.s, m.c = m.s*radius, m.c*radius
-		m.targetS, m.targetC = math.Sincos(2 * math.Pi * frequency / v.rate)
+		m.targetS, m.targetC = detmath.Sincos(2 * math.Pi * frequency / v.rate)
 		m.targetS, m.targetC = m.targetS*radius, m.targetC*radius
 		brightness := 1.0
 		if i > 0 {
@@ -354,11 +358,11 @@ func (v *Voice) Hit(velocity uint8) {
 		// upper membrane modes and moves nodal cancellations across modes.
 		shape := 1.0
 		if i > 0 {
-			shape = (.45 + float64(.85*position)) * (.7 + float64(.3*math.Cos(float64(i+1)*position*math.Pi)))
+			shape = (.45 + float64(.85*position)) * (.7 + float64(.3*detmath.Cos(float64(i+1)*position*math.Pi)))
 		} else {
 			shape = 1 - float64(.35*position)
 		}
-		contactVariation := 1 + float64(.065*math.Sin(float64((i+1)*int(variation+1))*1.7))
+		contactVariation := 1 + float64(.065*detmath.Sin(float64((i+1)*int(variation+1))*1.7))
 		gain := level * weights[i] / weightSum * brightness * shape * contactVariation
 		if metal {
 			// Bell strikes concentrate low plate modes; bow/edge strikes
@@ -370,7 +374,7 @@ func (v *Voice) Hit(velocity uint8) {
 				gain *= 1.9 / (1 + float64(.25*float64(i)))
 			}
 			phase := .35 * random(&s.noise)
-			m.y, m.x = math.Sincos(phase)
+			m.y, m.x = detmath.Sincos(phase)
 			m.x, m.y = m.x*gain, m.y*gain
 		} else {
 			m.x = gain
