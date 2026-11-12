@@ -3,6 +3,7 @@ package fx
 import (
 	"testing"
 
+	"m31labs.dev/cicada/kernel/dsp/subnormal/subnormaltest"
 	"m31labs.dev/cicada/kernel/internal/bitdigest"
 )
 
@@ -140,12 +141,17 @@ func TestDelayDigest(t *testing.T) {
 	checkDigest(t, "delay", d, delayDigest)
 }
 
-// driveDigest: the fold shape runs on the second tier (SinPiNear, 2026-11-11)
-// and its gain tables on the exact SinPi; neither move changed these bits,
-// which the programme's fold setting covers.
-const driveDigest = "267a31bf2928cce345c1e9b8645288576285467f8139b6c376a4aeae4334a575"
+// driveDigest changed with #323, which flushes the drive's silent tone tails
+// once they decay into float64 subnormal numbers (kernel/dsp/subnormal): the
+// 4 kHz tone at 44.1 kHz stalls there in the program's silent blocks. The
+// output changes in the sign of zero only: 3,350 of the 180,000 samples are
+// +0 where they were -0 (compared bit by bit on amd64), which PCM encodes
+// alike. amd64 and arm64 produce the new digest alike; it was
+// 267a31bf2928cce345c1e9b8645288576285467f8139b6c376a4aeae4334a575.
+const driveDigest = "fe580e9c2b5c8005edbcf2c7f4836df5a0d9239d621d010242266e7bfdabbab9"
 
 func TestDriveDigest(t *testing.T) {
+	subnormaltest.SkipWithoutFlush(t) // the digest pins the flushed tone tails
 	d := bitdigest.New()
 	settings := []DriveParams{
 		{Shape: Soft, GainDB: 9, ToneHz: 9_000, Mix: 1},

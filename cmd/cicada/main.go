@@ -411,6 +411,7 @@ func main() {
 			exitProcess(1)
 		}
 		fmt.Printf("%s: %d stems, %d bars from bar %d, %d frames at %d Hz, %s\n", renderPath, len(score.Tracks)+5, report.Bars, report.From+1, report.Frames, report.SampleRate, laneSummary(report.LaneReport))
+		warnNormalizeSkipped(os.Stderr, report)
 	case "midi":
 		midiOpts.libraryAliases = score.LibraryAliases
 		if err := midiFile(semantic, midiOpts); err != nil {
@@ -718,7 +719,16 @@ func renderFile(score *notation.Score, path string, opts render.Options, target 
 		return err
 	}
 	fmt.Printf("%s: %d bars from bar %d, %d frames at %d Hz, pre-limiter peak %.3f, pre-limiter overs %d, output peak %.3f, ceiling samples %d, clipped samples %d, %s\n", path, report.Bars, report.From+1, report.Frames, report.SampleRate, report.Peak, report.PreLimiterOvers, report.OutputPeak, report.CeilingSamples, report.ClippedSamples, laneSummary(report.LaneReport))
+	warnNormalizeSkipped(os.Stderr, report)
 	return nil
+}
+
+// warnNormalizeSkipped prints a warning when --normalize was skipped because
+// the range is silent (render.Report.NormalizeSkipped).
+func warnNormalizeSkipped(w io.Writer, report render.Report) {
+	if report.NormalizeSkipped != "" {
+		fmt.Fprintln(w, "warning: "+report.NormalizeSkipped)
+	}
 }
 
 // newNormalizeMasterCache creates the temporary file that lets the second
