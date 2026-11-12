@@ -1,6 +1,7 @@
 package main
 
 import (
+	"m31labs.dev/cicada/kernel/seq"
 	"net/url"
 	"strings"
 	"testing"
@@ -46,7 +47,7 @@ func TestModulationSourceFormCarriesIdentityAndPoint(t *testing.T) {
 
 func TestModulationPeriodsUseMusicalTime(t *testing.T) {
 	for ticks, want := range map[int64]string{3840: "1 bar per cycle", 30720: "8 bars per cycle", 960: "1 beat per cycle", 1920: "2 beats per cycle", 240: "1/4 of a beat per cycle"} {
-		if got := modulationPeriod(ticks); got != want {
+		if got := modulationPeriod(seq.MeterMap{}, ticks); got != want {
 			t.Errorf("%d: got %q, want %q", ticks, got, want)
 		}
 	}

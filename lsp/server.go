@@ -20,6 +20,7 @@ import (
 	"unicode/utf8"
 
 	"m31labs.dev/cicada/instrument"
+	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/language"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
@@ -736,7 +737,7 @@ func inlayHints(source []byte, requested *region) []any {
 			offset++
 		}
 		if tempo > 0 {
-			elapsed += float64(entry.Bars) * 240000 / tempo
+			elapsed += float64(score.MeterMap().BarsTicks(0, int64(entry.Bars))) * 60000 / float64(seq.PPQ) / tempo
 		}
 		seconds := elapsed
 		minute := int(seconds) / 60

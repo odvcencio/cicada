@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"m31labs.dev/cicada/host/liveplay"
-	"m31labs.dev/cicada/kernel/seq"
 )
 
 const secondaryPart = "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n"
@@ -388,7 +387,7 @@ func TestPublicationLedgerOverflowDropsOldest(t *testing.T) {
 func TestListeningRangeReplacementSettlesTheLedger(t *testing.T) {
 	s, stream, dir := secondaryStudio(t)
 	tr := s.transport
-	listening := &studioListening{Kind: "range", StartTick: 0, EndTick: seq.TicksPerBar / 2, Loop: true}
+	listening := &studioListening{Kind: "range", StartTick: 0, EndTick: ticksPerBar / 2, Loop: true}
 	tr.listening = listening
 	if err := stream.PlayRange(listening.playbackRange()); err != nil {
 		t.Fatal(err)

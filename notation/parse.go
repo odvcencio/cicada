@@ -323,6 +323,7 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 	if syntaxFailed {
 		return nil, diagnostics
 	}
+	resolveArrangementTicks(s)
 	s.Assets, s.Clips, s.Samplers, _ = resolveAudio(s)
 	diagnostics = append(diagnostics, expandPhrases(s)...)
 	diagnostics = append(diagnostics, Validate(s)...)

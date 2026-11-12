@@ -45,7 +45,7 @@ func sceneEntryOnsets(t *testing.T, source string, scheduled bool) map[int][]int
 // idleBars lists the onsets of the idle pattern, one c3 per quarter note.
 func idleBars(bars int64) []int64 {
 	var ticks []int64
-	for tick := int64(0); tick < bars*seq.TicksPerBar; tick += 960 {
+	for tick := int64(0); tick < bars*ticksPerBar; tick += 960 {
 		ticks = append(ticks, tick)
 	}
 	return ticks
@@ -67,7 +67,7 @@ pattern idle { c3 . . . }
 // lost its note at the switch too. Both render paths must start the same notes
 // at the same ticks.
 func TestSceneEntryStartsTheFirstNoteOnBothRenderPaths(t *testing.T) {
-	const bar = seq.TicksPerBar
+	const bar = ticksPerBar
 	cases := []struct {
 		name, patterns, song string
 		track                int     // the track whose onsets want lists
