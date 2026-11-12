@@ -412,6 +412,7 @@ func TestDocumentedExamplesDecode(t *testing.T) {
 	}
 	formats := map[string]func() any{
 		agentsSchema:       func() any { return &agentsDocument{} },
+		songSchema:         func() any { return &songDocument{} },
 		intentsIndexSchema: func() any { return &intentsIndexDocument{} },
 		helpSchema:         func() any { return &helpDocument{} },
 		intentsSchema:      func() any { return &intentsDocument{} },

@@ -10,12 +10,34 @@ import (
 
 const diagnosticsUsage = "usage: cicada diagnostics [--json] [code]"
 
+// diagnosticsPrefix starts every diagnostic code; cicada diagnostics adds it
+// to a code typed without it.
+const diagnosticsPrefix = "CICADA-"
+
 // diagnosticsSchema names the format of cicada diagnostics --json.
 const diagnosticsSchema = "cicada.diagnostics.v1"
 
 type diagnosticsDocument struct {
 	Schema      string             `json:"schema"`
 	Diagnostics []diagnostics.Code `json:"diagnostics"`
+}
+
+// diagnosticsFor is the cicada.diagnostics.v1 document of one code (with or
+// without its CICADA- prefix, in any case), or of every code when name is
+// empty. For a code the catalog lacks it returns unknown_code and the error.
+func diagnosticsFor(name string) (diagnosticsDocument, string, error) {
+	if name == "" {
+		return diagnosticsDocument{Schema: diagnosticsSchema, Diagnostics: diagnostics.Catalog()}, "", nil
+	}
+	code := strings.ToUpper(name)
+	if !strings.HasPrefix(code, diagnosticsPrefix) {
+		code = diagnosticsPrefix + code
+	}
+	entry, ok := diagnostics.Lookup(code)
+	if !ok {
+		return diagnosticsDocument{}, "unknown_code", fmt.Errorf("unknown diagnostic code %q; run cicada diagnostics for the list", name)
+	}
+	return diagnosticsDocument{Schema: diagnosticsSchema, Diagnostics: []diagnostics.Code{entry}}, "", nil
 }
 
 // diagnosticsCommand prints the catalog of diagnostic codes, or one code.
@@ -42,20 +64,17 @@ func diagnosticsCommand(args []string, stdout io.Writer) error {
 	if len(names) > 1 {
 		return fail("usage", fmt.Errorf("%s", diagnosticsUsage))
 	}
-	catalog := diagnostics.Catalog()
+	name := ""
 	if len(names) == 1 {
-		code := strings.ToUpper(names[0])
-		if !strings.HasPrefix(code, "CICADA-") {
-			code = "CICADA-" + code
-		}
-		entry, ok := diagnostics.Lookup(code)
-		if !ok {
-			return fail("unknown_code", fmt.Errorf("unknown diagnostic code %q; run cicada diagnostics for the list", names[0]))
-		}
-		catalog = []diagnostics.Code{entry}
+		name = names[0]
 	}
+	document, code, err := diagnosticsFor(name)
+	if err != nil {
+		return fail(code, err)
+	}
+	catalog := document.Diagnostics
 	if asJSON {
-		data, err := marshalAgentJSON(diagnosticsDocument{Schema: diagnosticsSchema, Diagnostics: catalog})
+		data, err := marshalAgentJSON(document)
 		if err != nil {
 			return err
 		}
