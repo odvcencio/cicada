@@ -45,6 +45,9 @@ func checkDigest(t *testing.T, name string, d *bitdigest.Digest, want string) {
 	}
 }
 
+// compressorDigest: moved on 2026-11-10 (pull request #327) when the
+// compressor's attack, release, sidechain and smoothing coefficients (Exp) and
+// knee floor (Pow) moved from the math library to kernel/dsp/detmath.
 const compressorDigest = "86cf1d19159f4ceac9a9041e80b6bb3fd31168a2bbdac79c5eabede35aed45cb"
 
 func TestCompressorDigest(t *testing.T) {
@@ -88,6 +91,9 @@ func TestCompressorDigest(t *testing.T) {
 	checkDigest(t, "compressor", d, compressorDigest)
 }
 
+// deesserDigest: moved on 2026-11-10 (pull request #327) when the de-esser's
+// filter coefficient (Tan) and its four envelope coefficients (Exp) moved from
+// the math library to kernel/dsp/detmath.
 const deesserDigest = "6e11dd45beb49351be3e30d6ea780c18ecb040d02f272e920f4d08ea1ac5e3b8"
 
 func TestDeesserDigest(t *testing.T) {
@@ -105,6 +111,9 @@ func TestDeesserDigest(t *testing.T) {
 	checkDigest(t, "de-esser", d, deesserDigest)
 }
 
+// delayDigest: moved on 2026-11-10 (pull request #327) when the delay's
+// smoothing and damping coefficients (Exp) moved from the math library to
+// kernel/dsp/detmath.
 const delayDigest = "548cbe3e46afa40ec9efc2c7dd37eff075b8d5a1d6b518e7a29b2a380daf8ceb"
 
 func TestDelayDigest(t *testing.T) {
@@ -131,6 +140,9 @@ func TestDelayDigest(t *testing.T) {
 	checkDigest(t, "delay", d, delayDigest)
 }
 
+// driveDigest: the fold shape runs on the second tier (SinPiNear, 2026-11-11)
+// and its gain tables on the exact SinPi; neither move changed these bits,
+// which the programme's fold setting covers.
 const driveDigest = "267a31bf2928cce345c1e9b8645288576285467f8139b6c376a4aeae4334a575"
 
 func TestDriveDigest(t *testing.T) {
@@ -154,6 +166,11 @@ func TestDriveDigest(t *testing.T) {
 	checkDigest(t, "drive", d, driveDigest)
 }
 
+// reverbDigest: moved on 2026-11-10 (pull request #327) when the reverb's
+// line gains (Pow), damping, high-pass and smoothing coefficients (Exp) and
+// modulation (Sin) moved from the math library to kernel/dsp/detmath. The
+// modulation's move to the second tier (SinPiNear, 2026-11-11) left these
+// bits unchanged.
 const reverbDigest = "5ef9d6acb97a40cef3c5a5758d85c825787bfcc02de82043aab562e70d78f575"
 
 func TestReverbDigest(t *testing.T) {

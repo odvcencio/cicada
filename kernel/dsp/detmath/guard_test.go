@@ -1,11 +1,13 @@
 package detmath
 
 import (
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -16,21 +18,27 @@ import (
 // The render path must not call a math library function whose last bits can
 // differ by target: Go's math.Exp, Log, Pow, Sin, Cos, Tan, Tanh and the rest
 // come from different code on amd64 (where math.Exp even takes an FMA path only
-// on CPUs that have one), arm64 and WebAssembly. This test parses every
-// non-test Go file under kernel/ and render/, plus the loudness search in
-// cmd/cicada/main.go and the automation curves in project/automation.go, and
-// fails on any use of a math function that is not in exactFunctions. Those
-// return the same bits on every target: IEEE 754 operations that are correctly
-// rounded (Sqrt, FMA), conversions to and from bits, and exact operations
-// (Abs, Floor, Ldexp, Mod and the like). This package replaces the others.
+// on CPUs that have one), arm64 and WebAssembly. This test asks the go command
+// for every package of this module that ./render, ./cmd/cicada or a browser
+// kernel in ./cmd/cicada-*-wasm depends on (go list -deps), so a package is
+// covered the day the render path imports it. It parses every non-test Go file
+// in those packages (whatever its build tags) and fails on any use of a math
+// or math/cmplx function that is not in exactFunctions or
+// exactComplexFunctions, and on a dot import of either.
+// The exact functions return the same bits on every target: IEEE 754
+// operations that are correctly rounded (Sqrt, FMA), conversions to and from
+// bits, and exact operations (Abs, Floor, Ldexp, Mod and the like). This
+// package replaces the others.
 //
-// mathAllowlist names the files that still use other math functions, with the
+// mathAllowlist names files that may still use other math functions, with the
 // exact number of uses: a new use fails, and a removed one asks for the entry
-// to be lowered. Decision 9 of 2026-11-10 (hypha://m31labs/cicada,
-// decisions/2026-11-10-stewardship-and-direction) empties it.
+// to be lowered. It is empty since 2026-11-10 (Decision 9 of
+// hypha://m31labs/cicada, decisions/2026-11-10-stewardship-and-direction) and
+// should stay so.
 //
-// notRenderPath names files that never produce audio: analysis and display
-// code, whose results are read by people and agents but never rendered.
+// notRenderPath names the files in those packages that never produce audio,
+// an exported file or a decision about either, each with the reason: display,
+// analysis and authoring code whose results are read by people and agents.
 
 var exactFunctions = map[string]bool{
 	"Abs": true, "Ceil": true, "Copysign": true, "Dim": true, "FMA": true,
@@ -52,50 +60,83 @@ var mathConstants = map[string]bool{
 	"MaxUint": true, "MaxUint8": true, "MaxUint16": true, "MaxUint32": true, "MaxUint64": true,
 }
 
-var mathAllowlist = map[string]int{
-	"kernel/engine/clips.go":                1,
-	"kernel/engine/engine.go":               3,
-	"kernel/engine/modulation.go":           1,
-	"kernel/expression/expression.go":       1,
-	"kernel/expression/vibrato_enabled.go":  1,
-	"kernel/graph/delay.go":                 6,
-	"kernel/graph/graph.go":                 11,
-	"kernel/graph/quality.go":               3,
-	"kernel/spatial/decoder.go":             1,
-	"kernel/spatial/spatial.go":             6,
-	"kernel/voice/acid/oscillator.go":       3,
-	"kernel/voice/acid/table_oscillator.go": 1,
-	"kernel/voice/acid/voice.go":            13,
-	"kernel/voice/clav/clav.go":             13,
-	"kernel/voice/drum/kit.go":              38,
-	"kernel/voice/drum/sampler.go":          1,
-	"kernel/voice/ep/ep.go":                 21,
-	"kernel/voice/fm/fm.go":                 10,
-	"kernel/voice/guitar/voice.go":          2,
-	"kernel/voice/keyboard/catalog.go":      1,
-	"kernel/voice/modal/fitted.go":          4,
-	"kernel/voice/modal/voice.go":           11,
-	"kernel/voice/modeledkit/voice.go":      15,
-	"kernel/voice/organ/organ.go":           11,
-	"kernel/voice/piano/piano.go":           26,
-	"kernel/voice/polykeys/polykeys.go":     15,
-	"kernel/voice/sample/instrument.go":     2,
-	"kernel/voice/sample/src.go":            1,
-	"kernel/voice/sample/voice.go":          2,
-	"kernel/voice/strings/strings.go":       8,
-	"project/automation.go":                 9,
-	"render/scene_parameters.go":            1,
-	"render/schedule.go":                    1,
-}
+var mathAllowlist = map[string]int{}
 
 var notRenderPath = map[string]string{
-	"kernel/analysis/correlation.go": "analysis for Studio meters and audition reports",
-	"kernel/analysis/fft.go":         "analysis for Studio meters and audition reports",
-	"kernel/analysis/spectrum.go":    "analysis for Studio meters and audition reports",
-	"render/fingerprint.go":          "an audio fingerprint for comparing renders; it reads audio, it does not make it",
+	"cmd/cicada/studio_audio.go":      "Studio's level meters: a display",
+	"cmd/cicada/view_automation.go":   "the automation view's curve drawing: a display",
+	"host/liveplay/player.go":         "live playback status (Studio's clip warning); never part of a render",
+	"host/modalfit/fit.go":            "offline modal fitting: its results are stored in the library and rendered from there",
+	"host/modalfit/instrument.go":     "offline modal fitting: its results are stored in the library and rendered from there",
+	"host/scoreaudition/analyze.go":   "audition measurements reported to people and agents; it reads audio, it does not make it",
+	"host/scoreaudition/fft.go":       "audition measurements reported to people and agents; it reads audio, it does not make it",
+	"host/scoreaudition/stereo.go":    "audition measurements reported to people and agents; it reads audio, it does not make it",
+	"host/transcription/analysis.go":  "transcription of recorded audio into notes: authoring, not rendering",
+	"host/transcription/inference.go": "transcription of recorded audio into notes: authoring, not rendering",
+	"kernel/analysis/correlation.go":  "analysis for Studio meters and audition reports",
+	"kernel/analysis/fft.go":          "analysis for Studio meters and audition reports",
+	"kernel/analysis/spectrum.go":     "analysis for Studio meters and audition reports",
+	"render/fingerprint.go":           "an audio fingerprint for comparing renders; it reads audio, it does not make it",
 }
 
-var guardedFiles = []string{"cmd/cicada/main.go", "project/automation.go"}
+// renderPathFiles returns every non-test Go file, relative to root, in the
+// packages of this module that ./render, ./cmd/cicada or a browser kernel
+// (./cmd/cicada-*-wasm, listed for js/wasm) depends on.
+func renderPathFiles(t *testing.T, root string) []string {
+	t.Helper()
+	dirs := map[string]bool{}
+	list := func(env []string, patterns ...string) {
+		args := append([]string{"list", "-deps", "-f", "{{if .Module}}{{if eq .Module.Path \"m31labs.dev/cicada\"}}{{.Dir}}{{end}}{{end}}"}, patterns...)
+		cmd := exec.Command("go", args...)
+		cmd.Dir = root
+		cmd.Env = append(os.Environ(), env...)
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("go %s: %v", strings.Join(args, " "), err)
+		}
+		for _, dir := range strings.Fields(string(out)) {
+			dirs[dir] = true
+		}
+	}
+	list(nil, "./render", "./cmd/cicada")
+	list([]string{"GOOS=js", "GOARCH=wasm"}, "./cmd/cicada-...-wasm")
+	var sorted []string
+	for dir := range dirs {
+		sorted = append(sorted, dir)
+	}
+	sort.Strings(sorted)
+	// go list reports real paths; the root may reach the checkout through a
+	// symbolic link (macOS's /var is /private/var), so compare real paths.
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var files []string
+	for _, dir := range sorted {
+		if dir, err = filepath.EvalSymlinks(dir); err != nil {
+			t.Fatal(err)
+		}
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range entries {
+			name := e.Name()
+			if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+				continue
+			}
+			rel, err := filepath.Rel(realRoot, filepath.Join(dir, name))
+			if err != nil || strings.HasPrefix(rel, "..") {
+				t.Fatalf("go list gave %s, outside the repository %s (%v)", dir, realRoot, err)
+			}
+			files = append(files, filepath.ToSlash(rel))
+		}
+	}
+	if len(files) < 100 {
+		t.Fatalf("go list found only %d files on the render path", len(files))
+	}
+	return files
+}
 
 func repoRoot(t *testing.T) string {
 	t.Helper()
@@ -117,27 +158,45 @@ func inexactUses(t *testing.T, path string) []string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	name := ""
+	mathName, cmplxName := "", ""
+	var uses []string
 	for _, spec := range file.Imports {
-		if p, _ := strconv.Unquote(spec.Path.Value); p == "math" {
-			name = "math"
-			if spec.Name != nil {
-				name = spec.Name.Name
-			}
+		p, _ := strconv.Unquote(spec.Path.Value)
+		if p != "math" && p != "math/cmplx" {
+			continue
+		}
+		name := p[strings.LastIndex(p, "/")+1:]
+		if spec.Name != nil {
+			name = spec.Name.Name
+		}
+		if name == "." {
+			// The calls would be unqualified and invisible to this scan.
+			uses = append(uses, "dot import of "+p)
+			continue
+		}
+		if p == "math" {
+			mathName = name
+		} else {
+			cmplxName = name
 		}
 	}
-	if name == "" || name == "_" {
-		return nil
-	}
-	var uses []string
 	ast.Inspect(file, func(n ast.Node) bool {
 		selector, ok := n.(*ast.SelectorExpr)
 		if !ok {
 			return true
 		}
-		if x, ok := selector.X.(*ast.Ident); ok && x.Name == name {
+		x, ok := selector.X.(*ast.Ident)
+		if !ok || x.Name == "_" {
+			return true
+		}
+		switch x.Name {
+		case mathName:
 			if !exactFunctions[selector.Sel.Name] && !mathConstants[selector.Sel.Name] {
 				uses = append(uses, selector.Sel.Name)
+			}
+		case cmplxName:
+			if !exactComplexFunctions[selector.Sel.Name] {
+				uses = append(uses, "cmplx."+selector.Sel.Name)
 			}
 		}
 		return true
@@ -145,30 +204,16 @@ func inexactUses(t *testing.T, path string) []string {
 	return uses
 }
 
+// exactComplexFunctions are the math/cmplx functions that do no rounding;
+// the others (Abs, Exp, Log, Pow, Sqrt, the trigonometric functions and the
+// rest) go through math's architecture-dependent functions.
+var exactComplexFunctions = map[string]bool{"Conj": true, "Inf": true, "NaN": true, "IsInf": true, "IsNaN": true}
+
 func TestRenderPathAvoidsMathLibrary(t *testing.T) {
 	root := repoRoot(t)
 	found := map[string][]string{}
-	scan := func(rel string) {
+	for _, rel := range renderPathFiles(t, root) {
 		found[rel] = inexactUses(t, filepath.Join(root, filepath.FromSlash(rel)))
-	}
-	for _, dir := range []string{"kernel", "render"} {
-		err := filepath.WalkDir(filepath.Join(root, dir), func(path string, d fs.DirEntry, err error) error {
-			if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-				return err
-			}
-			rel, err := filepath.Rel(root, path)
-			if err != nil {
-				return err
-			}
-			scan(filepath.ToSlash(rel))
-			return nil
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	for _, rel := range guardedFiles {
-		scan(rel)
 	}
 	var files []string
 	for file := range found {
@@ -182,7 +227,7 @@ func TestRenderPathAvoidsMathLibrary(t *testing.T) {
 		got, want := len(found[file]), mathAllowlist[file]
 		switch {
 		case got > want:
-			t.Errorf("%s uses math.%s, whose last bits differ by target (%d uses, allowed %d); use detmath or an exact formulation", file, strings.Join(found[file], ", math."), got, want)
+			t.Errorf("%s uses %s, whose last bits differ by target (%d uses, allowed %d); use detmath or an exact formulation", file, strings.Join(found[file], ", "), got, want)
 		case got < want:
 			t.Errorf("%s now makes %d inexact math uses; lower its mathAllowlist entry from %d", file, got, want)
 		}
@@ -195,6 +240,138 @@ func TestRenderPathAvoidsMathLibrary(t *testing.T) {
 	for file := range notRenderPath {
 		if _, ok := found[file]; !ok {
 			t.Errorf("notRenderPath names %s, which the scan does not cover", file)
+		}
+	}
+}
+
+// nearSites lists every use of a second-tier (...Near) function: per-sample
+// nonlinearities on the audio path, each pinned by its processor's digest
+// (package comment). A use anywhere else, or a different count, fails.
+var nearSites = map[string]int{
+	"kernel/fx/ampcab/ampcab.go": 4, // saturation per oversampled sample (TestAmpcabDigest)
+	"kernel/fx/drive.go":         1, // fold shape per oversampled sample (TestDriveDigest)
+	"kernel/fx/reverb.go":        1, // modulation per frame, also the room's (TestReverbDigest, TestRoomDigest)
+}
+
+func TestNearTierOnlyAtListedSites(t *testing.T) {
+	root := repoRoot(t)
+	found := map[string]int{}
+	skip := map[string]bool{".git": true, "build": true, "node_modules": true, ".recovery": true, "testdata": true}
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if skip[d.Name()] {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		n, err := nearUses(path)
+		rel, _ := filepath.Rel(root, path)
+		if err != nil {
+			t.Errorf("%s: %v", filepath.ToSlash(rel), err)
+		}
+		if n > 0 {
+			found[filepath.ToSlash(rel)] = n
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for file, n := range found {
+		if want := nearSites[file]; n != want {
+			t.Errorf("%s uses a ...Near function %d times (listed %d): the second tier is for the listed per-sample sites only", file, n, want)
+		}
+	}
+	for file, want := range nearSites {
+		if found[file] != want {
+			t.Errorf("nearSites lists %s with %d uses, found %d", file, want, found[file])
+		}
+	}
+}
+
+// nearUses counts the uses of second-tier (...Near) functions in a Go file:
+// the selectors detmath.XxxNear (under any import name) in a file that imports
+// this package, and the unqualified XxxNear identifiers inside this package
+// itself. A dot import of this package would hide its calls from the count, so
+// it is an error.
+func nearUses(path string) (int, error) {
+	file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.SkipObjectResolution|parser.ImportsOnly)
+	if err != nil {
+		return 0, nil // not a parsable Go file (for example a generated fragment); the build would fail first
+	}
+	self := file.Name.Name == "detmath" && strings.HasSuffix(filepath.ToSlash(filepath.Dir(path)), "kernel/dsp/detmath")
+	name := ""
+	for _, spec := range file.Imports {
+		if p, _ := strconv.Unquote(spec.Path.Value); p == "m31labs.dev/cicada/kernel/dsp/detmath" {
+			name = "detmath"
+			if spec.Name != nil {
+				name = spec.Name.Name
+			}
+		}
+	}
+	if name == "." {
+		return 0, fmt.Errorf("dot-imports kernel/dsp/detmath, which hides its ...Near calls from TestNearTierOnlyAtListedSites; import it by name")
+	}
+	if name == "" && !self {
+		return 0, nil
+	}
+	file, err = parser.ParseFile(token.NewFileSet(), path, nil, parser.SkipObjectResolution)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	declared := map[*ast.Ident]bool{} // identifiers that are not uses
+	ast.Inspect(file, func(node ast.Node) bool {
+		switch node := node.(type) {
+		case *ast.FuncDecl:
+			declared[node.Name] = true // the definition of TanhNear is not a use
+		case *ast.SelectorExpr:
+			if x, ok := node.X.(*ast.Ident); ok && name != "" && x.Name == name && strings.HasSuffix(node.Sel.Name, "Near") {
+				n++
+			}
+			declared[node.Sel] = true // a selector's name is a field or another package's
+		case *ast.Ident:
+			if self && !declared[node] && node.IsExported() && strings.HasSuffix(node.Name, "Near") {
+				n++
+			}
+		}
+		return true
+	})
+	return n, nil
+}
+
+// TestNearUsesSeesEveryImportForm checks nearUses itself on small files: a
+// renamed import is counted, a dot import is an error, and a call inside this
+// package is counted while the function's own definition is not.
+func TestNearUsesSeesEveryImportForm(t *testing.T) {
+	dir := t.TempDir()
+	write := func(rel, src string) string {
+		path := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	renamed := write("fx/renamed.go", "package fx\n\nimport dm \"m31labs.dev/cicada/kernel/dsp/detmath\"\n\nfunc f(x float64) float64 { return dm.TanhNear(x) + dm.Tanh(x) + dm.SinPiNear(x) }\n")
+	dot := write("fx/dot.go", "package fx\n\nimport . \"m31labs.dev/cicada/kernel/dsp/detmath\"\n\nfunc g(x float64) float64 { return TanhNear(x) }\n")
+	inside := write("kernel/dsp/detmath/inside.go", "package detmath\n\nfunc SinPiNear(x float64) float64 { return x }\n\nfunc h(x float64) float64 { return SinPiNear(x) }\n")
+	for _, c := range []struct {
+		path    string
+		want    int
+		wantErr bool
+	}{{renamed, 2, false}, {dot, 0, true}, {inside, 1, false}} {
+		n, err := nearUses(c.path)
+		if n != c.want || (err != nil) != c.wantErr {
+			t.Errorf("nearUses(%s) = %d, %v; want %d, error %v", filepath.Base(c.path), n, err, c.want, c.wantErr)
 		}
 	}
 }
