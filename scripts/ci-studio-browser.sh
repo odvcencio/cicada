@@ -562,7 +562,7 @@ seg_autoscroll() { # 27 s
 seg_placement_commands() { # 13 s
 	node workstation/browser/placement-commands.test.cjs --write-fixture "$browser_root/placement-commands.cicada"
 	start_studio "$browser_root/placement-commands.cicada" build/studio-placement-commands-server.log
-	run_suite placement-commands node --test workstation/browser/placement-commands.test.cjs | tee build/studio-placement-commands-report.txt
+	run_suite placement-commands env CICADA_PLACEMENT_OPEN_PROOF_DIR="$PWD/build/studio-clip-open-proof" node --test workstation/browser/placement-commands.test.cjs | tee build/studio-placement-commands-report.txt
 	stop_studio
 }
 

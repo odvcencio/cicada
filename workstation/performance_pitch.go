@@ -35,13 +35,14 @@ func (s *studioApp) performancePitch(ctx *server.Context, v workspace, csrf stri
 		}
 	}
 	returnTo := patternContextURL(patternURL(p.ID, 1, "", "")+fmt.Sprintf("&note=%d", selected), ctx.Request.URL.Query().Get("track"), ctx.Request.URL.Query().Get("scene"))
+	returnTo = samePatternPlacementURL(returnTo, ctx.Request.URL.Query().Get("pattern"), ctx.Request.URL.Query().Get("placement"))
 	form := func(operation string, children ...gosx.Node) gosx.Node {
 		status := ""
 		if state.Value("pitch_operation") == operation {
 			status = message
 		}
 		children = append(children, gosx.El("p", gosx.Attrs(gosx.Attr("class", "form-status"), gosx.Attr("role", "status")), gosx.Text(status)))
-		return ui.Form(ui.FormProps{Action: "/__actions/pattern", CSRF: csrf, Revision: v.Revision, ReturnTo: returnTo, Class: "action-form"}, append([]gosx.Node{hidden("pattern", p.ID), hidden("action", "performance-pitch"), hidden("pitch_operation", operation), hidden("source_revision", v.SourceRevision), hidden("track", ctx.Request.URL.Query().Get("track")), hidden("scene", ctx.Request.URL.Query().Get("scene"))}, children...)...)
+		return ui.Form(ui.FormProps{Action: "/__actions/pattern", CSRF: csrf, Revision: v.Revision, ReturnTo: returnTo, Class: "action-form"}, append([]gosx.Node{hidden("pattern", p.ID), hidden("action", "performance-pitch"), hidden("pitch_operation", operation), hidden("source_revision", v.SourceRevision), hidden("track", ctx.Request.URL.Query().Get("track")), hidden("scene", ctx.Request.URL.Query().Get("scene")), hidden("context_placement", placementForPattern(ctx.Request.URL.Query(), p.ID))}, children...)...)
 	}
 	return gosx.El("section", attrs,
 		gosx.El("h3", gosx.Text("Shape pitch")),

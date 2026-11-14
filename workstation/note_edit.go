@@ -164,6 +164,7 @@ func (s *studioApp) noteQuantize(ctx *server.Context, v workspace, csrf string, 
 	// The pattern editor's track and scene context survives the redirect.
 	query := ctx.Request.URL.Query()
 	returnTo = patternContextURL(returnTo, query.Get("track"), query.Get("scene"))
+	returnTo = samePatternPlacementURL(returnTo, query.Get("pattern"), query.Get("placement"))
 	grid, strength := strconv.FormatInt(grids[0].ticks, 10), "100"
 	for _, choice := range grids {
 		if p.Performance != nil && choice.ticks == 240 {

@@ -1233,6 +1233,7 @@ jobs:
             build/studio-autoscroll-proof/
             build/studio-placement-commands-report.txt
             build/studio-placement-commands-server.log
+            build/studio-clip-open-proof/
             build/studio-arrangement-sources-*-report.txt
             build/studio-arrangement-sources-*-server.log
             build/studio-arrangement-sources-proof/
