@@ -15,3 +15,16 @@ func TestSessionLaunchMatrixUsesScoreTiming(t *testing.T) {
 		t.Fatalf("session launch matrix does not use score timing: %s", html)
 	}
 }
+
+func TestSessionWithoutScenesKeepsArrangement(t *testing.T) {
+	s := &studioApp{}
+	v := workspace{Project: &project.Project{}}
+	got := gosx.RenderHTML(s.session(nil, v, "token", ""))
+	want := gosx.RenderHTML(s.arrangement(nil, v, "token", ""))
+	if got != want {
+		t.Fatal("a project without scenes should show only its arrangement")
+	}
+	if got := gosx.RenderHTML(s.session(nil, workspace{}, "token", "")); !strings.Contains(got, "save a valid score to open the session") {
+		t.Fatalf("session without a project did not explain the failure: %s", got)
+	}
+}
