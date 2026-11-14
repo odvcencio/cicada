@@ -16,8 +16,8 @@ import (
 // samplerScene supplies playable pad geometry; the DOM buttons remain accessible controls.
 func samplerScene() scene.Props {
 	nodes := []scene.Node{
-		scene.DirectionalLight{ID: "key", Color: "#fff0dd", Intensity: 1.35, Direction: scene.Vec3(-.5, -1, -.7)},
-		scene.PointLight{ID: "fill", Color: "#a8bbd0", Intensity: .7, Position: scene.Vec3(3, 5, 4), Range: 20, Decay: 2},
+		scene.DirectionalLight{ID: "key", Color: "#fff0dd", Intensity: 1.5, Direction: scene.Vec3(-.5, -1, -.7)},
+		scene.PointLight{ID: "fill", Color: "#a8bbd0", Intensity: 1.0, Position: scene.Vec3(3, 5, 4), Range: 20, Decay: 2},
 		scene.Mesh{ID: "chassis", Geometry: scene.BoxGeometry{Width: 7.3, Height: .4, Depth: 7.1}, Material: scene.StandardMaterial{Color: "#20252a", Roughness: .38, Metalness: .72}},
 		scene.Mesh{ID: "deck", Geometry: scene.BoxGeometry{Width: 7.1, Height: .06, Depth: 6.9}, Material: scene.StandardMaterial{Color: "#363b3e", Roughness: .42, Metalness: .68}, Position: scene.Vec3(0, .22, 0)},
 		scene.Mesh{ID: "front-trim", Pickable: scene.Bool(false), Geometry: scene.BoxGeometry{Width: 7.08, Height: .035, Depth: .025}, Material: scene.StandardMaterial{Color: "#697177", Roughness: .48, Metalness: .7}, Position: scene.Vec3(0, .11, 3.555)},
@@ -33,7 +33,7 @@ func samplerScene() scene.Props {
 			scene.Mesh{ID: "light-" + id, Pickable: scene.Bool(false), Geometry: scene.BoxGeometry{Width: 1.16, Height: .012, Depth: .98}, Material: scene.StandardMaterial{Color: "#b78a4b", Roughness: .85}, Position: scene.Vec3(x, -100, z)},
 		)
 	}
-	return scene.Props{Width: 800, Height: 560, PickSignalNamespace: "sampler3d", Responsive: scene.Bool(true), Background: "#141719", Controls: "orbit", Camera: scene.PerspectiveCamera{Position: scene.Vec3(6, 8, 10), FOV: 42}, ControlTarget: scene.Vec3(0, 0, 0), Environment: scene.Environment{AmbientColor: "#ffffff", AmbientIntensity: .35}, Graph: scene.NewGraph(nodes...)}
+	return scene.Props{Width: 800, Height: 560, PickSignalNamespace: "sampler3d", Responsive: scene.Bool(true), Background: "#141719", Controls: "orbit", Camera: scene.PerspectiveCamera{Position: scene.Vec3(6, 8, 10), FOV: 38}, ControlTarget: scene.Vec3(0, 0, 0), Environment: scene.Environment{AmbientColor: "#ffffff", AmbientIntensity: .48}, Graph: scene.NewGraph(nodes...)}
 }
 
 // samplerBevelPad keeps the pad's established interactive geometry.
