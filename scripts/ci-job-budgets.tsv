@@ -32,6 +32,7 @@
 6	pr	Deterministic math proofs (*)
 8	pr	Studio CLI tests (shard */3)
 9	pr	Agent loop speed
+5	pr	Edit cost per Apply (report)
 120	nightly	Render cache identity sweep (*)
 150	nightly	Render lanes identity sweep (*)
 9	pr	Render lanes under scheduling stress (short)

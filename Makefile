@@ -109,6 +109,24 @@ BENCH_ARGS ?=
 bench-agent-loop: build-core
 	go run ./cmd/cicada-bench --cicada build/cicada --large-bars 8 --json build/bench-agent-loop.json $(BENCH_ARGS)
 
+# Times and counts what one edit costs (internal/benchscore/applybench): the
+# hot edits on the reference scores REF-S, REF-P and REF-L through edit.Apply
+# with the edit service's options, the work of each Apply counted (build tag
+# cicada_counters) and its state checked against a full compile. It reports;
+# it gates nothing yet. APPLY_BENCH_ENV sets the runs, for example
+# CICADA_APPLY_BENCH_LARGE_RUNS=5 (see TestApplyBenchmark). bench-apply-wasm
+# runs the same in js/wasm under Node, with GOMAXPROCS unset (Go's js/wasm
+# port cannot start threads).
+.PHONY: bench-apply bench-apply-wasm
+APPLY_BENCH_ENV ?=
+bench-apply:
+	mkdir -p build
+	env CICADA_APPLY_BENCH=1 CICADA_APPLY_BENCH_OUT=$(CURDIR)/build/bench-apply.md $(APPLY_BENCH_ENV) go test -tags cicada_counters -count=1 -timeout=60m -run '^TestApplyBenchmark$$' -v ./internal/benchscore/applybench
+
+bench-apply-wasm:
+	mkdir -p build
+	env -u GOMAXPROCS GOOS=js GOARCH=wasm CICADA_APPLY_BENCH=1 CICADA_APPLY_BENCH_OUT=$(CURDIR)/build/bench-apply-wasm.md $(APPLY_BENCH_ENV) go test -exec "$$(go env GOROOT)/lib/wasm/go_js_wasm_exec" -tags cicada_counters -count=1 -timeout=120m -run '^TestApplyBenchmark$$' -v ./internal/benchscore/applybench
+
 # Renders every example score with and without the stored mix (render.MasterCache)
 # and compares the bytes: plain, normalized, and at -14 and -9 LUFS.
 test-render-identity:

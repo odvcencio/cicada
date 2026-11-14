@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	"m31labs.dev/cicada/instrument"
+	"m31labs.dev/cicada/internal/applycount"
 	"m31labs.dev/cicada/internal/paramdefs"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/graph"
@@ -38,6 +39,9 @@ func validateGlideValue(value Value) error {
 // ValidateProject checks the semantic interchange records after source lowering
 // or JSON decoding. It does not yet load audio into the runtime engine.
 func ValidateProject(p *Project) error {
+	if applycount.Enabled {
+		applycount.ProjectValidation()
+	}
 	if p == nil || !((p.Format == FormatID && p.Version == 1) || (p.Format == FormatID2 && p.Version == 2)) {
 		return fmt.Errorf("unsupported project format or version")
 	}
