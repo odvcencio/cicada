@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"m31labs.dev/cicada/internal/benchscore/applybench"
+	"m31labs.dev/cicada/kernel/limits"
 )
 
 // songSession writes the speed plan's example score
@@ -16,10 +16,10 @@ import (
 // a fresh folder.
 func songSession(t testing.TB) *applybench.Session {
 	t.Helper()
-	if runtime.GOOS == "js" {
+	if limits.MaxVoices == limits.PortableMaxVoices {
 		// As REF-L: the portable limits refuse it ("project exceeds 32
-		// allocated voices"), so it is measured natively only.
-		t.Skip("the portable limits refuse anywhere-you-are under js")
+		// allocated voices"), so it needs the native limits profile.
+		t.Skip("the portable limits refuse anywhere-you-are")
 	}
 	dir := t.TempDir()
 	songs := filepath.Join("..", "..", "..", "examples", "songs")

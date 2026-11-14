@@ -52,7 +52,7 @@ func TestApplyWorkPerState(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if refusedUnderJS(name) {
+		if refusedUnderPortableLimits(name) {
 			continue
 		}
 		s, hot := session(t, reference)

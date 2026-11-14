@@ -155,7 +155,7 @@ func position(meter seq.MeterMap, tick int64) string {
 }
 
 // HotEditsFromSource builds reference's hot edits from its parsed score
-// alone, for a build that cannot compile it (REF-L under js, where the
+// alone, for a build that cannot compile it (REF-L under portable limits, where the
 // portable limits allow 16 tracks): patterns, notes and placements come from
 // the notation.Score, and setpitch sets d4. Every such edit is refused by its
 // first compile, so only the time to the refusal is measured.

@@ -5,13 +5,13 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
 	gts "github.com/odvcencio/gotreesitter"
 	"m31labs.dev/cicada/host/schedule"
 	"m31labs.dev/cicada/internal/benchscore"
+	"m31labs.dev/cicada/kernel/limits"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -147,8 +147,8 @@ func TestLargeHasTheShapeOfTheLargestProduction(t *testing.T) {
 // Every reference is a valid score: it compiles the way cicada check and
 // Studio compile it (project sources, parse, semantic model, project
 // validation, the schedule rules and the engine), with no error. Under
-// GOOS=js the portable limits apply (kernel/limits/portable.go: 16 tracks),
-// so there REF-L, with the production's 22 tracks, must be refused.
+// the portable limits apply (16 tracks), REF-L, with the production's 22
+// tracks, must be refused; the score engine uses the native limits instead.
 func TestReferencesCompileWithoutErrors(t *testing.T) {
 	references, err := benchscore.All()
 	if err != nil {
@@ -177,9 +177,9 @@ func TestReferencesCompileWithoutErrors(t *testing.T) {
 					errors = append(errors, d.Error())
 				}
 			}
-			if runtime.GOOS == "js" && reference.Name == benchscore.LargeName {
+			if limits.MaxTracks == limits.PortableMaxTracks && reference.Name == benchscore.LargeName {
 				if len(errors) == 0 || !strings.Contains(strings.Join(errors, "\n"), "score must have 1 to 16 tracks") {
-					t.Fatalf("under js REF-L should be refused for its 22 tracks; got %q", errors)
+					t.Fatalf("under portable limits REF-L should be refused for its 22 tracks; got %q", errors)
 				}
 				return
 			}

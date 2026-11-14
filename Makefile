@@ -118,7 +118,7 @@ bench-agent-loop: build-core
 # it gates nothing yet. APPLY_BENCH_ENV sets the runs, for example
 # CICADA_APPLY_BENCH_LARGE_RUNS=5 (see TestApplyBenchmark). bench-apply-wasm
 # runs the same in js/wasm under Node, with GOMAXPROCS unset (Go's js/wasm
-# port cannot start threads).
+# port cannot start threads), using the score engine's native limits profile.
 .PHONY: bench-apply bench-apply-wasm test-apply-work
 APPLY_BENCH_ENV ?=
 bench-apply:
@@ -133,7 +133,7 @@ test-apply-work:
 
 bench-apply-wasm:
 	mkdir -p build
-	env -u GOMAXPROCS GOOS=js GOARCH=wasm CICADA_APPLY_BENCH=1 CICADA_APPLY_BENCH_OUT=$(CURDIR)/build/bench-apply-wasm.md $(APPLY_BENCH_ENV) go test -exec "$$(go env GOROOT)/lib/wasm/go_js_wasm_exec" -tags cicada_counters -count=1 -timeout=120m -run '^TestApplyBenchmark$$' -v ./internal/benchscore/applybench
+	env -u GOMAXPROCS GOOS=js GOARCH=wasm CICADA_APPLY_BENCH=1 CICADA_APPLY_BENCH_OUT=$(CURDIR)/build/bench-apply-wasm.md $(APPLY_BENCH_ENV) go test -exec "$$(go env GOROOT)/lib/wasm/go_js_wasm_exec" -tags 'cicada_counters cicada_native_limits' -count=1 -timeout=120m -run '^TestApplyBenchmark$$' -v ./internal/benchscore/applybench
 
 # Renders every example score with and without the stored mix (render.MasterCache)
 # and compares the bytes: plain, normalized, and at -14 and -9 LUFS.

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -13,6 +12,7 @@ import (
 	"m31labs.dev/cicada/internal/applycount"
 	"m31labs.dev/cicada/internal/benchscore"
 	"m31labs.dev/cicada/internal/benchscore/applybench"
+	"m31labs.dev/cicada/kernel/limits"
 )
 
 // session writes reference to a fresh folder and returns it with its hot
@@ -34,11 +34,9 @@ func session(t testing.TB, reference benchscore.Reference) (*applybench.Session,
 	return s, hot
 }
 
-// refusedUnderJS reports whether a reference cannot compile in this build:
-// under GOOS=js the portable limits allow 16 tracks (kernel/limits/portable.go)
-// and REF-L has the production's 22.
-func refusedUnderJS(name string) bool {
-	return runtime.GOOS == "js" && name == benchscore.LargeName
+// refusedUnderPortableLimits reports whether this profile cannot compile REF-L.
+func refusedUnderPortableLimits(name string) bool {
+	return limits.MaxTracks == limits.PortableMaxTracks && name == benchscore.LargeName
 }
 
 // Every hot edit applies to every reference, and the state it hands on equals
@@ -51,8 +49,8 @@ func TestHotEditsEqualAFullCompile(t *testing.T) {
 	}
 	for _, reference := range references {
 		t.Run(reference.Name, func(t *testing.T) {
-			if refusedUnderJS(reference.Name) {
-				t.Skip("REF-L exceeds the portable 16-track limit under js")
+			if refusedUnderPortableLimits(reference.Name) {
+				t.Skip("REF-L exceeds the portable 16-track limit")
 			}
 			if testing.Short() && reference.Name == benchscore.LargeName {
 				t.Skip("REF-L takes seconds; run without -short")
@@ -169,6 +167,7 @@ func TestApplyBenchmark(t *testing.T) {
 	}
 	var table bytes.Buffer
 	applybench.Header(&table, references, config, applycount.Enabled)
+	fmt.Fprintf(&table, "Limits: %d tracks, %d voices.\n", limits.MaxTracks, limits.MaxVoices)
 	if large != config {
 		fmt.Fprintf(&table, "REF-L: %d runs after %d warm-ups.\n", large.Runs, large.Warmups)
 	}
@@ -190,16 +189,16 @@ func TestApplyBenchmark(t *testing.T) {
 			m.Reference = reference.Name
 			measurements = append(measurements, m)
 		}
-		if refusedUnderJS(reference.Name) {
+		if refusedUnderPortableLimits(reference.Name) {
 			// The edits are refused by the first compile; time one refusal each.
 			c = applybench.Config{Runs: min(c.Runs, 3), Warmups: min(c.Warmups, 1)}
-			fmt.Fprintf(&table, "REF-L under js: every edit is refused (16-track limit); %d runs after %d warm-ups each.\n", c.Runs, c.Warmups)
+			fmt.Fprintf(&table, "REF-L under portable limits: every edit is refused (16-track limit); %d runs after %d warm-ups each.\n", c.Runs, c.Warmups)
 		}
 		base, err := applybench.FullCompile(s.Path, s.Source, nil)
 		var hot []applybench.HotEdit
 		if err == nil {
 			hot, err = applybench.HotEdits(reference, base)
-		} else if refusedUnderJS(reference.Name) {
+		} else if refusedUnderPortableLimits(reference.Name) {
 			hot, err = largeEditsWithoutAPlan(reference)
 		}
 		if err != nil {
@@ -232,7 +231,7 @@ func TestApplyBenchmark(t *testing.T) {
 }
 
 // largeEditsWithoutAPlan names REF-L's hot edits when the build cannot compile
-// it (js): the same entities, with the 16 notes read from a native compile's
+// it (portable limits): the same entities, with the 16 notes read from a native compile's
 // plan replaced by the first 16 notes the source spells.
 func largeEditsWithoutAPlan(reference benchscore.Reference) ([]applybench.HotEdit, error) {
 	return applybench.HotEditsFromSource(reference)

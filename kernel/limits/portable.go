@@ -1,4 +1,4 @@
-//go:build tinygo || js
+//go:build tinygo || (js && !cicada_native_limits)
 
 package limits
 

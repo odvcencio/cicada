@@ -2,12 +2,12 @@ package applybench
 
 import (
 	"fmt"
-	"runtime"
 	"slices"
 	"time"
 
 	"m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/internal/applycount"
+	"m31labs.dev/cicada/kernel/limits"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -52,7 +52,7 @@ type Measurement struct {
 	// Verified counts runs whose state equalled a full compile of the result.
 	Verified int
 	// Refused is the Apply error when the reference refuses the edit (REF-L
-	// under GOOS=js exceeds the portable track limit); nothing is timed then.
+	// under the portable track limit); nothing is timed then.
 	Refused string
 	// RefusedAfter is how long the refusal took, the median of the runs.
 	RefusedAfter time.Duration
@@ -179,10 +179,10 @@ func verifyKept(session *Session, kept *project.State) error {
 }
 
 // refusedReference reports a reference this build cannot compile (REF-L
-// under js, beyond the portable track limit): its edits are timed to their
+// under the portable track limit): its edits are timed to their
 // refusal, without a kept state.
 func refusedReference(err error) bool {
-	return err != nil && runtime.GOOS == "js"
+	return err != nil && limits.MaxTracks == limits.PortableMaxTracks
 }
 
 func overrides(files []edit.File) map[string][]byte {
