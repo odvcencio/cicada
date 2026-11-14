@@ -14,6 +14,7 @@ import (
 
 	"m31labs.dev/cicada/language"
 	"m31labs.dev/cicada/workstation/ui"
+	"m31labs.dev/cicada/workstation/view"
 	"m31labs.dev/gosx"
 	"m31labs.dev/gosx/action"
 	"m31labs.dev/gosx/editor"
@@ -152,29 +153,7 @@ func (s *studioApp) session(ctx *server.Context, v workspace, csrf, selected str
 	if len(p.Scenes) == 0 {
 		return s.arrangement(ctx, v, csrf, selected)
 	}
-	var heads []gosx.Node
-	heads = append(heads, gosx.El("th", gosx.Text("Track")))
-	for _, scene := range p.Scenes {
-		heads = append(heads, gosx.El("th", s.form(v, csrf, "session", "transport", hidden("scene", scene.ID), submit("action", "launch", scene.ID))))
-	}
-	var rows []gosx.Node
-	for _, track := range p.Tracks {
-		cells := []gosx.Node{gosx.El("th", gosx.Text(track.ID))}
-		for _, scene := range p.Scenes {
-			binding := scene.Bindings[track.ID]
-			if binding == "" || binding == "keep" {
-				cells = append(cells, gosx.El("td", gosx.Text("Keep")))
-				continue
-			}
-			command, label := "slot", binding
-			if binding == "off" {
-				command, label = "trackStop", "Stop"
-			}
-			cells = append(cells, gosx.El("td", s.form(v, csrf, "session", "transport", hidden("track", track.ID), hidden("pattern", binding), submit("action", command, label))))
-		}
-		rows = append(rows, gosx.El("tr", gosx.Fragment(cells...)))
-	}
-	return gosx.Fragment(s.arrangement(ctx, v, csrf, selected), ui.Panel(ui.PanelProps{ID: "session", Title: "Scene launch matrix", Description: "Launches use the score timing, or the next bar if none is set."}, gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll")), gosx.El("table", gosx.Attrs(gosx.Attr("aria-label", "Scene launch matrix")), gosx.El("thead", gosx.El("tr", gosx.Fragment(heads...))), gosx.El("tbody", gosx.Fragment(rows...))))))
+	return gosx.Fragment(s.arrangement(ctx, v, csrf, selected), view.SceneLaunchMatrix(p, v.Revision, csrf))
 }
 
 var drumOrder = []string{"bd", "sd", "ch", "oh", "cp", "rs", "lt", "mt", "ht", "cb", "cy"}
