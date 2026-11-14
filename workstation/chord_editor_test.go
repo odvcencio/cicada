@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/net/html"
 	"m31labs.dev/cicada/project"
 )
 
@@ -93,9 +94,28 @@ func TestChordGridDisplaysAllVoicesAndNativeFormRetainsErrors(t *testing.T) {
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	page := getPage(t, client, app.URL+"/?panel=patterns&pattern=harmony&step=1")
+	pressed := make(map[string]bool)
+	tokens := html.NewTokenizer(strings.NewReader(page))
+	for tokens.Next() != html.ErrorToken {
+		token := tokens.Token()
+		if token.Type != html.StartTagToken || token.Data != "button" {
+			continue
+		}
+		var label, state string
+		for _, attr := range token.Attr {
+			switch attr.Key {
+			case "aria-label":
+				label = attr.Val
+			case "aria-pressed":
+				state = attr.Val
+			}
+		}
+		if state == "true" {
+			pressed[label] = true
+		}
+	}
 	for _, name := range []string{"A3", "C4", "E4"} {
-		label := `aria-label="harmony step 1 ` + name + `" aria-pressed="true"`
-		if !strings.Contains(page, label) {
+		if !pressed["harmony step 1 "+name] {
 			t.Fatalf("chord pitch %s is invisible", name)
 		}
 	}
