@@ -39,19 +39,21 @@ test('sound choice follows phrase editing without replacing drafts',{timeout:240
   await page.goto(base.origin+'/studio?tab=arrange&dock=device&region=center');
   await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
   if(!await page.locator('#studio-code > details').evaluate(node=>node.open)) await page.locator('.shell-pane-toggle[data-pane=code][data-pane-action=show]').click();
-  const stableURL=()=>{const u=new URL(page.url());u.searchParams.sort();return u.href;};
+  // Code recovery may update its own marker without navigating the page.
+  const stableURL=()=>{const u=new URL(page.url());u.searchParams.delete('codeDraft');u.searchParams.sort();return u.href;};
   const draft=page.locator('#score textarea').first(),beforeDraft=await draft.inputValue(),blockedURL=stableURL();
+  await page.evaluate(()=>{window.__blockedSceneNavigations=0;document.addEventListener('gosx:navigate',()=>window.__blockedSceneNavigations++);});
   await draft.fill(beforeDraft+'\n// unsaved scene clip draft\n');
   await page.locator('#arrangement a.timeline-clip[title="main / upper"]').click();
   await page.waitForFunction(()=>document.querySelector('[data-scene-open-status]')?.textContent==='Save or discard unsaved edits before opening a pattern.');
   assert.equal(await page.locator('[data-scene-open-status]').isVisible(),true);
-  assert.equal(stableURL(),blockedURL);assert.equal(await page.locator('#detail-tab-device').getAttribute('aria-selected'),'true');
+  assert.equal(stableURL(),blockedURL);assert.equal(await page.evaluate(()=>window.__blockedSceneNavigations),0,'dirty draft caused a managed navigation');assert.equal(await page.locator('#detail-tab-device').getAttribute('aria-selected'),'true');
   assert.equal(await page.locator('#studio-shell').getAttribute('data-phone-region'),'center');assert.equal(await draft.inputValue(),beforeDraft+'\n// unsaved scene clip draft\n');
   await draft.fill(beforeDraft);
   await page.evaluate(()=>document.documentElement.setAttribute('data-gosx-navigation-state','pending'));
   await page.locator('#arrangement a.timeline-clip[title="main / upper"]').click();
   await page.waitForFunction(()=>document.querySelector('[data-scene-open-status]')?.textContent==='Wait for the current action to finish before opening a pattern.');
-  assert.equal(stableURL(),blockedURL);assert.equal(await page.locator('#detail-tab-device').getAttribute('aria-selected'),'true');
+  assert.equal(stableURL(),blockedURL);assert.equal(await page.evaluate(()=>window.__blockedSceneNavigations),0,'pending action caused a managed navigation');assert.equal(await page.locator('#detail-tab-device').getAttribute('aria-selected'),'true');
   await page.evaluate(()=>document.documentElement.setAttribute('data-gosx-navigation-state','idle'));
   // A later local tab choice wins while the clip request is in flight.
   let release,arrived;const held=new Promise(resolve=>{release=resolve;}),requested=new Promise(resolve=>{arrived=resolve;});
