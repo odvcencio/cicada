@@ -4,12 +4,14 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"syscall/js"
 	"testing"
 	"time"
 
 	padsampler "m31labs.dev/cicada/host/padsampler/protocol"
+	"m31labs.dev/gosx/signal"
 )
 
 func TestSamplerDecodeSynchronousThrowReleasesSlot(t *testing.T) {
@@ -24,19 +26,60 @@ func TestSamplerDecodeSynchronousThrowReleasesSlot(t *testing.T) {
 }
 
 func TestSamplerLoadCommitPreservesRecordingWhenUnionExceedsBudget(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	loader := newSamplerLoader(ctx, func(context.Context, uint64) (samplerLoadResult, error) { return samplerLoadResult{}, nil }, func(uint64, samplerLoadResult, error) {})
 	oldBuffer := js.ValueOf(map[string]any{"length": padsampler.MaxFrames/2 + 1})
 	newBuffer := js.ValueOf(map[string]any{"length": padsampler.MaxFrames/2 + 1})
-	root := js.Global().Call("eval", `({querySelector() { return {}; }})`)
-	u := &samplerUI{root: root, initialized: true, state: samplerProjection{BankRevision: "old"}, buffers: map[string]js.Value{"recorded": oldBuffer}, perf: padsampler.Performance{Hits: []padsampler.Hit{{Sound: "recorded"}}}}
-	result := samplerLoadResult{state: samplerProjection{BankRevision: "new"}, buffers: map[string]js.Value{"new": newBuffer}}
-	if u.commitSamplerLoad(loader, 0, result, func() bool { return true }) {
-		t.Fatal("committed buffers beyond the limit")
+	kept, trimmed, ok := fitSamplerBuffers(map[string]js.Value{"recorded": oldBuffer, "new": newBuffer}, []string{"recorded"}, []string{"new"}, func() bool { return true })
+	if !ok || !trimmed || len(kept) != 1 || !kept["recorded"].Equal(oldBuffer) {
+		t.Fatal("budget selection did not preserve recorded audio ahead of the new pad")
 	}
-	if u.state.BankRevision != "old" || len(u.perf.Hits) != 1 || len(u.buffers) != 1 {
-		t.Fatal("failed commit changed the current bank or recording")
+}
+
+func TestSamplerPrepareKeepsValidPadWhenAnotherFails(t *testing.T) {
+	good := js.ValueOf(map[string]any{"length": 128})
+	for _, message := range []string{"HTTP 404", "decode failed"} {
+		buffers, warning, err := prepareSamplerBuffers(context.Background(), []string{"broken", "working"}, nil, func(_ context.Context, id string) (js.Value, error) {
+			if id == "broken" {
+				return js.Undefined(), fmt.Errorf("%s", message)
+			}
+			return good, nil
+		})
+		if err != nil || !strings.Contains(warning, message) || len(buffers) != 1 || !buffers["working"].Equal(good) {
+			t.Fatalf("failure %q lost the other pad: buffers=%d warning=%q err=%v", message, len(buffers), warning, err)
+		}
+	}
+}
+
+func TestSamplerPrepareKeepsEarlierPadWhenDecodeNeverSettles(t *testing.T) {
+	good := js.ValueOf(map[string]any{"length": 128})
+	audio := js.Global().Call("eval", `({resolve: null, decodeAudioData() { return new Promise(resolve => { this.resolve = resolve; }); }})`)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	buffers, warning, err := prepareSamplerBuffers(ctx, []string{"stalled", "working"}, map[string]js.Value{"working": good}, func(ctx context.Context, _ string) (js.Value, error) {
+		return samplerDecodeAudio(ctx, audio, js.Null())
+	})
+	if err != nil || len(buffers) != 1 || !buffers["working"].Equal(good) || !strings.Contains(warning, "reload") {
+		t.Fatalf("stalled decode lost earlier pad: buffers=%d warning=%q err=%v", len(buffers), warning, err)
+	}
+	audio.Call("resolve", js.ValueOf(map[string]any{"length": 1}))
+	deadline := time.Now().Add(time.Second)
+	for !samplerDecodes.acquire() {
+		if time.Now().After(deadline) {
+			t.Fatal("settled test decode did not release the slot")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	samplerDecodes.release()
+}
+
+func TestSamplerPrepareCancellationDiscardsPartialGeneration(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	good := js.ValueOf(map[string]any{"length": 128})
+	buffers, _, err := prepareSamplerBuffers(ctx, []string{"working", "cancelled"}, map[string]js.Value{"working": good}, func(context.Context, string) (js.Value, error) {
+		cancel()
+		return js.Undefined(), context.Canceled
+	})
+	if err != context.Canceled || buffers != nil {
+		t.Fatalf("cancelled generation retained partial data: buffers=%v err=%v", buffers, err)
 	}
 }
 
@@ -229,6 +272,84 @@ func TestSamplerOverflowBeforeResamplePostDoesNotLeavePostingLocked(t *testing.T
 	samplerTestWait(t, cleaned)
 	if u.posting || u.postInFlight || len(u.perf.Hits) != 1 {
 		t.Fatal("pre-send overflow left posting locked or discarded the performance")
+	}
+	x.close()
+}
+
+func TestSamplerRefreshDoesNotReplaceNewRecordingRevision(t *testing.T) {
+	for _, tc := range []struct {
+		name, source string
+		stop         bool
+	}{
+		{name: "recording with source revision", source: "project-at-record"},
+		{name: "stopped recording with empty source revision", stop: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := js.Global().Call("eval", `(() => {
+				const field={value:""}, status={}, strip={replaceChildren(){}};
+				const form={querySelector(){return field}};
+				return {field, querySelector(s){if(s==='input[name=recordBars]')return {value:'1'};if(s==='form')return form;if(s==='[data-sampler-events]')return strip;if(s==='input[name=performance]')return {value:''};if(s==='[data-sampler-status]')return status;return null},setAttribute(){}};
+			})()`)
+			root.Get("field").Set("value", tc.source)
+			u := &samplerUI{root: root, audio: js.ValueOf(map[string]any{"currentTime": 0}), state: samplerProjection{Revision: "score-at-record", Tempo: 120000}, resetRecordRevision: true}
+			u.record()
+			if !u.recording {
+				t.Fatal("recording did not start")
+			}
+			if tc.stop {
+				u.stop()
+			}
+			u.state.Revision = "later-refresh"
+			u.finishRecordRevisionRefresh()
+			if u.recordRevision != "score-at-record" || u.recordSourceRevision != tc.source {
+				t.Fatalf("refresh changed the new recording receipt: score=%q source=%q", u.recordRevision, u.recordSourceRevision)
+			}
+		})
+	}
+}
+
+func TestSamplerRefreshUpdatesRevisionWithoutNewRecording(t *testing.T) {
+	u := &samplerUI{state: samplerProjection{Revision: "refreshed"}, recordRevision: "old", resetRecordRevision: true}
+	u.finishRecordRevisionRefresh()
+	if u.recordRevision != "refreshed" || u.resetRecordRevision {
+		t.Fatal("post-resample refresh did not update the prior performance revision")
+	}
+}
+
+func TestSamplerRefreshSubscriberEnqueueDoesNotResignal(t *testing.T) {
+	var x *samplerExecutor
+	u := &samplerUI{}
+	done := make(chan struct{})
+	seen := workspaceRefreshRequested.Get()
+	calls, processed := 0, false
+	effect := signal.Watch(func() {
+		current := workspaceRefreshRequested.Get()
+		if current != seen {
+			seen = current
+			calls++
+			x.submit(samplerCommand{kind: "new-edit", dirties: true})
+		}
+	})
+	defer effect.Dispose()
+	x = newSamplerExecutor(4, func(c samplerCommand, _ func() bool) {
+		if c.kind == "save" {
+			u.workspaceRefreshPending = true
+		} else {
+			processed = true
+		}
+		x.publishDirty(false)
+	}, func() bool { return false })
+	u.executor = x
+	x.after = func() {
+		u.flushSamplerWorkspaceRefresh()
+		if processed {
+			close(done)
+		}
+	}
+	x.submit(samplerCommand{kind: "save", dirties: true})
+	samplerTestWait(t, done)
+	if calls != 1 || u.workspaceRefreshPending {
+		t.Fatalf("got %d refresh signals; pending=%t", calls, u.workspaceRefreshPending)
 	}
 	x.close()
 }

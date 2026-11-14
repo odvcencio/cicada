@@ -53,7 +53,7 @@ func (s *studioApp) sampler(ctx *server.Context, v workspace, csrf string) gosx.
 			sub = fmt.Sprintf("%+.0f st · %s", float64(pad.Pitch), pad.Mode)
 		}
 		pads = append(pads, gosx.El("div", gosx.Attrs(gosx.Attr("class", "sampler-pad"), gosx.Attr("data-pad-selected", strconv.FormatBool(i+1 == selected))),
-			gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-sampler-pad", strconv.Itoa(i+1)), gosx.Attr("aria-label", fmt.Sprintf("Play pad %d", i+1)), gosx.Attr("disabled", !loaded)), gosx.El("span", gosx.Attrs(gosx.Attr("class", "pad-number")), gosx.Text(fmt.Sprintf("%02d", i+1))), gosx.El("strong", gosx.Text(pad.Name)), gosx.El("small", gosx.Text(sub)), gosx.El("kbd", gosx.Text(keys[i]))),
+			gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-sampler-pad", strconv.Itoa(i+1)), gosx.Attr("aria-label", fmt.Sprintf("Play pad %d", i+1)), gosx.BoolAttr("disabled")), gosx.El("span", gosx.Attrs(gosx.Attr("class", "pad-number")), gosx.Text(fmt.Sprintf("%02d", i+1))), gosx.El("strong", gosx.Text(pad.Name)), gosx.El("small", gosx.Text(sub)), gosx.El("kbd", gosx.Text(keys[i]))),
 			gosx.El("a", gosx.Attrs(gosx.Attr("href", fmt.Sprintf("/?panel=sampler&pad=%d", i+1)), gosx.Attr("data-sampler-edit", strconv.Itoa(i+1)), gosx.Attr("aria-label", fmt.Sprintf("Edit pad %d", i+1))), gosx.Text("Edit"))))
 	}
 	button := func(action, label string) gosx.Node {
@@ -70,7 +70,8 @@ func (s *studioApp) sampler(ctx *server.Context, v workspace, csrf string) gosx.
 
 	content := gosx.Fragment(gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-sampler-scene-toggle", ""), gosx.Attr("aria-pressed", "false")), gosx.Text("Show 3D surface")), sceneView,
 		gosx.El("div", gosx.Attrs(gosx.Attr("class", "sampler-pad-grid")), gosx.Fragment(pads...)),
-		gosx.El("p", gosx.Attrs(gosx.Attr("data-sampler-status", ""), gosx.Attr("role", "status"), gosx.Attr("aria-live", "polite")), gosx.Text("Load a sample, then play pads with the mouse, touch, or keyboard.")),
+		gosx.El("p", gosx.Attrs(gosx.Attr("data-sampler-status", ""), gosx.Attr("role", "status"), gosx.Attr("aria-live", "polite")), gosx.Text("Preparing sampler…")),
+		gosx.El("noscript", gosx.Text("Pad playback needs JavaScript. The selected pad's audio preview remains available.")),
 		samplerWaveform(),
 		gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions sampler-performance")), field("Record bars", wholeInput("recordBars", 4, 1, 16)), field("Quantize to sixteenths", checkInput("quantize", true)), button("record", "Record pads"), button("stop", "Stop pads"), button("play", "Play performance")),
 		gosx.El("div", gosx.Attrs(gosx.Attr("class", "sampler-event-strip"), gosx.Attr("data-sampler-events", ""), gosx.Attr("aria-label", "Recorded pad hits"))),

@@ -76,6 +76,10 @@ type liveUI struct {
 	monitorGroups        map[uint64]liveMIDIGroup
 	sharedLease          bool
 	events               []liveEvent
+	frameWindow          js.Value
+	frameBlur            js.Func
+	frameUnload          js.Func
+	frameGeneration      atomic.Uint64
 	status               *signal.Signal[string]
 	held                 map[string]liveHeld
 	counts               map[liveHeld]int
@@ -151,6 +155,7 @@ func mountLive(host enginewasm.Context) (enginewasm.Handle, error) {
 			return
 		}
 		releaseUnsaved()
+		u.unwatchSamplerFrame()
 		u.closeNotes()
 		if u.nativeMIDICancel != nil {
 			u.nativeMIDICancel()
@@ -183,7 +188,59 @@ func (u *liveUI) on(target js.Value, name string, fn func(js.Value)) {
 	target.Call("addEventListener", name, f)
 	u.events = append(u.events, liveEvent{target, name, f})
 }
-func (u *liveUI) query(selector string) js.Value  { return u.root.Call("querySelector", selector) }
+func (u *liveUI) query(selector string) js.Value { return u.root.Call("querySelector", selector) }
+
+// The parent window is already blurred while its iframe has focus, so a
+// subsequent external focus loss is delivered to the frame window instead.
+func (u *liveUI) watchSamplerFrame() {
+	frame := js.Global().Get("document").Call("querySelector", "[data-sampler-scene-container] iframe")
+	if !workspacePresent(frame) {
+		return
+	}
+	window := frame.Get("contentWindow")
+	if workspacePresent(u.frameWindow) && u.frameWindow.Equal(window) {
+		return
+	}
+	u.unwatchSamplerFrame()
+	u.frameWindow = window
+	generation := u.frameGeneration.Load()
+	u.frameBlur = js.FuncOf(func(_ js.Value, _ []js.Value) any {
+		// Focus can move back to the parent, or out of the application. Check
+		// after the browser completes the transfer before releasing MIDI notes.
+		go func() {
+			time.Sleep(time.Millisecond)
+			if !u.closed.Load() && u.frameGeneration.Load() == generation && !js.Global().Get("document").Call("hasFocus").Bool() && !u.closed.Load() && u.frameGeneration.Load() == generation {
+				u.closeNotes()
+			}
+		}()
+		return nil
+	})
+	u.frameUnload = js.FuncOf(func(_ js.Value, _ []js.Value) any {
+		u.unwatchSamplerFrame()
+		return nil
+	})
+	window.Call("addEventListener", "blur", u.frameBlur)
+	window.Call("addEventListener", "unload", u.frameUnload)
+}
+
+func (u *liveUI) unwatchSamplerFrame() {
+	u.frameGeneration.Add(1)
+	if !workspacePresent(u.frameWindow) {
+		return
+	}
+	window := u.frameWindow
+	u.frameWindow = js.Undefined()
+	// Navigation can make the old WindowProxy cross-origin. Release both Go
+	// callbacks even when the browser refuses access to its event listeners.
+	func() {
+		defer func() { _ = recover() }()
+		window.Call("removeEventListener", "blur", u.frameBlur)
+		window.Call("removeEventListener", "unload", u.frameUnload)
+	}()
+	u.frameBlur.Release()
+	u.frameUnload.Release()
+}
+
 func (u *liveUI) selected(selector string) string { return u.query(selector).Get("value").String() }
 func (u *liveUI) queue(action string, values map[string]string) bool {
 	if u.closed.Load() {
@@ -678,6 +735,7 @@ func (u *liveUI) bindControls() {
 	u.on(window, "keyup", func(e js.Value) { u.noteOff("key:" + strings.ToLower(e.Get("key").String())) })
 	u.on(window, "blur", func(js.Value) {
 		if samplerFrameOwnsFocus() {
+			u.watchSamplerFrame()
 			// Key-up will be delivered in the frame; release only keyboard notes.
 			for id := range u.held {
 				if strings.HasPrefix(id, "key:") {

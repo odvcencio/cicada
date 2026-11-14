@@ -5,6 +5,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -17,6 +18,15 @@ func TestSamplerPanelShowsPadsChopControlsEffectsAndNativeForms(t *testing.T) {
 	}
 	if strings.Count(page, `data-sampler-pad="`) != 16 {
 		t.Fatal("sampler does not have sixteen pads")
+	}
+	buttons := regexp.MustCompile(`<button\b[^>]*data-sampler-pad="[^"]+"[^>]*>`).FindAllString(page, -1)
+	if len(buttons) != 16 {
+		t.Fatalf("found %d sampler pad buttons", len(buttons))
+	}
+	for _, button := range buttons {
+		if !strings.Contains(button, "disabled") {
+			t.Fatal("server rendered a playable pad before its audio and waveform engine was ready")
+		}
 	}
 	for _, want := range []string{`data-pad-selected="true"`, `name="pad" value="3"`, `name="bankRevision" value="bank-current"`, `name="source_revision" value="current-sources"`, `data-sampler-wave`, `name="start"`, `name="end"`, `name="pitch"`, `name="reverse"`, `name="bypassEffects"`, `name="choke"`, `name="mode"`, `name="performance"`, `name="destination"`, `name="delayMix"`, `name="reverbMix"`, "Record pads", "Resample performance", "Import and chop WAV", "Chop source", "Apply effects"} {
 		if !strings.Contains(page, want) {

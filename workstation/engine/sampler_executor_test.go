@@ -184,3 +184,62 @@ func TestSamplerExecutorPanicStillRunsCleanup(t *testing.T) {
 	}
 	x.close()
 }
+
+func TestSamplerExecutorAfterWaitsForQueuedDirtyCommands(t *testing.T) {
+	entered, unblock, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	var x *samplerExecutor
+	pending := false
+	calls := 0
+	observedDirty := false
+	x = newSamplerExecutor(2, func(c samplerCommand, _ func() bool) {
+		if c.kind == "save" {
+			pending = true
+			close(entered)
+			<-unblock
+		}
+		x.publishDirty(c.kind == "edit")
+	}, func() bool { return false })
+	x.after = func() {
+		if pending && !x.pendingSnapshot() {
+			pending = false
+			calls++
+			observedDirty = x.dirtySnapshot()
+			close(done)
+		}
+	}
+	if !x.submit(samplerCommand{kind: "save", dirties: true}) {
+		t.Fatal("save rejected")
+	}
+	samplerWait(t, entered)
+	if !x.submit(samplerCommand{kind: "edit", dirties: true}) {
+		t.Fatal("edit rejected")
+	}
+	close(unblock)
+	samplerWait(t, done)
+	if calls != 1 || !observedDirty {
+		t.Fatalf("got %d refreshes, dirty=%t", calls, observedDirty)
+	}
+	x.close()
+}
+
+func TestSamplerExecutorRefreshRunsAfterOverflowCleanup(t *testing.T) {
+	entered, unblock, refreshed := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	var x *samplerExecutor
+	pending := true
+	x = newSamplerExecutor(1, func(samplerCommand, func() bool) { close(entered); <-unblock }, func() bool { return true })
+	x.ready = func() {
+		if pending && !x.pendingSnapshot() {
+			pending = false
+			close(refreshed)
+		}
+	}
+	x.submit(samplerCommand{kind: "running", dirties: true})
+	samplerWait(t, entered)
+	x.submit(samplerCommand{kind: "queued", dirties: true})
+	if x.submit(samplerCommand{kind: "overflow", dirties: true}) {
+		t.Fatal("overflow accepted")
+	}
+	close(unblock)
+	samplerWait(t, refreshed)
+	x.close()
+}

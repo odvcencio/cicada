@@ -32,6 +32,7 @@ type samplerExecutor struct {
 	run             func(samplerCommand, func() bool)
 	release         func() bool
 	ready           func()
+	after           func()
 }
 
 func newSamplerExecutor(limit int, run func(samplerCommand, func() bool), release func() bool) *samplerExecutor {
@@ -116,6 +117,12 @@ func (x *samplerExecutor) dirtySnapshot() bool {
 	return x.dirty || x.pendingDirty != 0 || x.revoked
 }
 
+func (x *samplerExecutor) pendingSnapshot() bool {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	return x.pendingDirty != 0 || x.revoked
+}
+
 // publishDirty is called by the serialized state owner before a command ends.
 func (x *samplerExecutor) publishDirty(dirty bool) {
 	x.mu.Lock()
@@ -193,7 +200,11 @@ func (x *samplerExecutor) loop() {
 			if c.dirties {
 				x.pendingDirty--
 			}
+			after := x.after
 			x.mu.Unlock()
+			if after != nil {
+				after()
+			}
 		}
 	}
 }

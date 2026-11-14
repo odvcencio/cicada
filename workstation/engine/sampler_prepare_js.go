@@ -26,6 +26,7 @@ type samplerLoadSnapshot struct {
 type samplerLoadResult struct {
 	state   samplerProjection
 	buffers map[string]js.Value
+	warning string
 }
 
 // snapshotSamplerLoad is called by the state executor, never by the worker.
@@ -48,39 +49,85 @@ func prepareSamplerLoad(ctx context.Context, snapshot samplerLoadSnapshot) (samp
 	if len(result.state.Sounds) != 16 {
 		return result, fmt.Errorf("invalid pad bank")
 	}
-	result.buffers = make(map[string]js.Value)
-	ids := append(append([]string(nil), result.state.Sounds...), snapshot.sounds...)
+	// Recorded sounds take priority over newly prepared pads under the memory
+	// limit, so a bank refresh cannot evict an unsaved performance.
+	ids := append([]string(nil), snapshot.sounds...)
 	if snapshot.initial {
 		for _, hit := range result.state.Bank.Performance.Hits {
 			ids = append(ids, hit.Sound)
 		}
 	}
+	ids = append(ids, result.state.Sounds...)
+	var err error
+	result.buffers, result.warning, err = prepareSamplerBuffers(ctx, ids, snapshot.buffers, func(ctx context.Context, id string) (js.Value, error) {
+		raw, err := samplerFetchAudio(ctx, "/media/sampler/"+id+".wav")
+		if err != nil {
+			return js.Undefined(), err
+		}
+		return samplerDecodeAudio(ctx, snapshot.audio, raw)
+	})
+	return result, err
+}
+
+func prepareSamplerBuffers(ctx context.Context, ids []string, cached map[string]js.Value, load func(context.Context, string) (js.Value, error)) (map[string]js.Value, string, error) {
+	buffers := make(map[string]js.Value)
+	seen := make(map[string]bool)
+	var unique []string
 	frames := 0
+	warning := ""
 	for _, id := range ids {
-		if id == "" {
+		if id == "" || seen[id] {
 			continue
 		}
-		if _, ok := result.buffers[id]; ok {
-			continue
-		}
-		buffer, ok := snapshot.buffers[id]
-		if !ok {
-			raw, err := samplerFetchAudio(ctx, "/media/sampler/"+id+".wav")
-			if err != nil {
-				return result, err
-			}
-			buffer, err = samplerDecodeAudio(ctx, snapshot.audio, raw)
-			if err != nil {
-				return result, err
-			}
-		}
-		frames += buffer.Get("length").Int()
-		if frames > padsampler.MaxFrames {
-			return result, fmt.Errorf("pad monitor exceeds 64 MiB; shorten the loaded regions")
-		}
-		result.buffers[id] = buffer
+		seen[id] = true
+		unique = append(unique, id)
 	}
-	return result, nil
+	add := func(id string, buffer js.Value) {
+		length := buffer.Get("length").Int()
+		if length > padsampler.MaxFrames-frames {
+			if warning == "" {
+				warning = "pad monitor exceeds 64 MiB; shorten the loaded regions"
+			}
+			return
+		}
+		frames += length
+		buffers[id] = buffer
+	}
+	// Reserve already usable audio before a missing sound can stall decoding.
+	for _, id := range unique {
+		if ctx.Err() == context.Canceled {
+			return nil, "", ctx.Err()
+		}
+		if buffer, ok := cached[id]; ok {
+			add(id, buffer)
+		}
+	}
+	for _, id := range unique {
+		if err := ctx.Err(); err != nil {
+			if err == context.DeadlineExceeded {
+				return buffers, "audio preparation timed out; reload the page to retry", nil
+			}
+			return nil, "", err
+		}
+		if _, ok := cached[id]; ok {
+			continue
+		}
+		buffer, err := load(ctx, id)
+		if err != nil {
+			if ctx.Err() != nil {
+				if ctx.Err() == context.DeadlineExceeded {
+					return buffers, "audio preparation timed out; reload the page to retry", nil
+				}
+				return nil, "", ctx.Err()
+			}
+			if warning == "" {
+				warning = err.Error()
+			}
+			continue
+		}
+		add(id, buffer)
+	}
+	return buffers, warning, nil
 }
 
 var samplerDecodes samplerDecodeGate
@@ -185,23 +232,30 @@ func (u *samplerUI) commitSamplerLoad(loader *samplerLoader[samplerLoadResult], 
 	if !valid() {
 		return false
 	}
+	var required []string
 	for _, hit := range u.perf.Hits {
+		required = append(required, hit.Sound)
 		if _, ok := result.buffers[hit.Sound]; !ok {
 			if buffer, exists := u.buffers[hit.Sound]; exists {
 				result.buffers[hit.Sound] = buffer
 			}
 		}
 	}
-	frames := 0
-	for _, buffer := range result.buffers {
-		frames += buffer.Get("length").Int()
-		if !valid() {
-			return false
+	if !u.initialized {
+		for _, hit := range result.state.Bank.Performance.Hits {
+			required = append(required, hit.Sound)
 		}
-		if frames > padsampler.MaxFrames {
+	}
+	kept, trimmed, ok := fitSamplerBuffers(result.buffers, required, result.state.Sounds, valid)
+	if !ok {
+		if valid() {
 			u.status("Pad monitor exceeds 64 MiB; shorten the loaded regions. Your performance is retained.")
-			return false
 		}
+		return false
+	}
+	result.buffers = kept
+	if trimmed && result.warning == "" {
+		result.warning = "pad monitor exceeds 64 MiB; shorten the loaded regions"
 	}
 	changed, initialized := false, false
 	if !loader.commit(generation, func() {
@@ -241,6 +295,12 @@ func (u *samplerUI) commitSamplerLoad(loader *samplerLoader[samplerLoadResult], 
 	if selected < 1 || selected > 16 {
 		selected = 1
 	}
+	// Publish waveform eligibility before enabling any playable pad. The
+	// server renders pads disabled until their engine is ready to handle input.
+	u.draw()
+	if !valid() {
+		return false
+	}
 	for i := 0; i < 16 && valid(); i++ {
 		button := u.root.Call("querySelector", fmt.Sprintf("[data-sampler-pad='%d']", i+1))
 		button.Call("closest", ".sampler-pad").Call("setAttribute", "data-pad-selected", strconv.FormatBool(i+1 == selected))
@@ -267,13 +327,59 @@ func (u *samplerUI) commitSamplerLoad(loader *samplerLoader[samplerLoadResult], 
 	if !valid() {
 		return false
 	}
-	u.draw()
 	u.root.Call("setAttribute", "data-sampler-bank-revision", result.state.BankRevision)
 	u.root.Call("setAttribute", "data-sampler-ready", "true")
-	if changed && !u.recording {
-		u.status("Pads ready · browser audio · record a performance, then resample it into Session.")
+	if !u.recording && !u.posting {
+		if result.warning != "" {
+			u.status("Some pad sounds could not be prepared: " + result.warning + ". Available pads remain playable.")
+			u.partialStatus = true
+		} else if changed || u.partialStatus {
+			u.status("Pads ready · browser audio · record a performance, then resample it into Session.")
+			u.partialStatus = false
+		}
 	}
 	return true
+}
+
+// fitSamplerBuffers reserves recorded audio first, then retains as many pads
+// as fit in display order. Only the selected bounded set enters live state.
+func fitSamplerBuffers(buffers map[string]js.Value, required, pads []string, valid func() bool) (map[string]js.Value, bool, bool) {
+	kept := make(map[string]js.Value)
+	frames, trimmed := 0, false
+	add := func(id string, mandatory bool) bool {
+		if _, exists := kept[id]; exists {
+			return true
+		}
+		buffer, exists := buffers[id]
+		if !exists {
+			return true
+		}
+		length := buffer.Get("length").Int()
+		if !valid() {
+			return false
+		}
+		if length > padsampler.MaxFrames-frames {
+			if mandatory {
+				return false
+			}
+			trimmed = true
+			return true
+		}
+		frames += length
+		kept[id] = buffer
+		return true
+	}
+	for _, id := range required {
+		if !add(id, true) {
+			return nil, false, false
+		}
+	}
+	for _, id := range pads {
+		if !add(id, false) {
+			return nil, false, false
+		}
+	}
+	return kept, trimmed, true
 }
 
 type samplerLoadDelivery struct {
@@ -334,7 +440,13 @@ func (u *samplerUI) finishSamplerLoad() {
 		u.status("Could not prepare pads: " + delivery.err.Error())
 		return
 	}
-	if u.commitSamplerLoad(u.loader, delivery.generation, delivery.result, u.samplerEffectsAllowed) && u.resetRecordRevision {
+	if u.commitSamplerLoad(u.loader, delivery.generation, delivery.result, u.samplerEffectsAllowed) {
+		u.finishRecordRevisionRefresh()
+	}
+}
+
+func (u *samplerUI) finishRecordRevisionRefresh() {
+	if u.resetRecordRevision {
 		u.recordRevision = u.state.Revision
 		u.resetRecordRevision = false
 	}

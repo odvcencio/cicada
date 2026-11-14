@@ -57,6 +57,7 @@ type samplerUI struct {
 	loadMailbox                     samplerMailbox[samplerLoadDelivery]
 	resampleMailbox                 samplerMailbox[string]
 	resetRecordRevision             bool
+	workspaceRefreshPending         bool
 	root, panel, audio, wave        js.Value
 	bindings                        []samplerBinding
 	state                           samplerProjection
@@ -72,6 +73,7 @@ type samplerUI struct {
 	savedPerf                       string
 	initialized, recording, posting bool
 	postInFlight                    bool
+	partialStatus                   bool
 	origin                          float64
 	recordRevision                  string
 	recordSourceRevision            string
@@ -133,8 +135,10 @@ func mountSampler(host enginewasm.Context) (enginewasm.Handle, error) {
 	u.executor.ready = func() {
 		if !u.closed.Load() {
 			safeSamplerEffect(u.draw)
+			safeSamplerEffect(u.flushSamplerWorkspaceRefresh)
 		}
 	}
+	u.executor.after = func() { safeSamplerEffect(u.flushSamplerWorkspaceRefresh) }
 	go func() {
 		for {
 			select {
@@ -1057,6 +1061,9 @@ func (u *samplerUI) record() {
 		return
 	}
 	u.origin = u.now() + .1
+	// A pending post-resample refresh belongs to the previous performance.
+	// It must not replace the revision captured for this new recording.
+	u.resetRecordRevision = false
 	u.recordRevision = u.state.Revision
 	u.recordSourceRevision = workspaceFieldValue(u.root.Call("querySelector", "form"), "source_revision")
 	u.recordTempo = u.state.Tempo
@@ -1244,6 +1251,21 @@ func (u *samplerUI) finishSamplerResample(payload string) {
 		_ = u.load()
 		u.recordRevision = u.state.Revision
 	}
+	u.workspaceRefreshPending = true
+}
+
+// Refresh only after the serialized command and any queued edits have
+// published their dirty snapshot. The shell's watcher runs synchronously.
+func (u *samplerUI) flushSamplerWorkspaceRefresh() {
+	if u.closed.Load() || !u.workspaceRefreshPending || u.executor.pendingSnapshot() {
+		return
+	}
+	u.workspaceRefreshPending = false
+	defer func() {
+		if recover() != nil {
+			u.workspaceRefreshPending = true
+		}
+	}()
 	workspaceRefreshRequested.Update(func(n uint64) uint64 { return n + 1 })
 }
 
