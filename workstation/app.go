@@ -82,7 +82,7 @@ func newConfiguredApp(b *backend, options workspaceOptions) (http.Handler, error
 	}
 	s := &studioApp{backend: b, collaboration: newCollaboration(b), notes: notes}
 	s.collaboration.access = notes
-	startupPath := "/"
+	startupPath := "/studio"
 	if options.LocalBootstrap && notes != nil && b != nil {
 		if _, err := notes.localOwner("", ""); err != nil && !errors.Is(err, errLocalOwnerSession) {
 			return nil, err
