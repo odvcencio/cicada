@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"html"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -666,6 +667,45 @@ func TestShellGetFormsStayInTheShell(t *testing.T) {
 		response.Body.Close()
 		if response.StatusCode != 200 || !strings.Contains(string(data), `id="studio-shell"`) {
 			t.Errorf("%s: native submission left the shell: %d", name, response.StatusCode)
+		}
+	}
+}
+
+func TestArrangeBrowserDestinations(t *testing.T) {
+	current, _ := url.Parse("/studio?tab=arrange&region=center&file=song.cicada")
+	for _, tc := range []struct{ target, reveal string }{
+		{"/?panel=sampler&placement=p1", "sampler"},
+		{"/?panel=takes&clip=audio1", "takes"},
+		{"/?panel=patterns&pattern=notes", ""},
+	} {
+		link := gosx.El("a", gosx.Attrs(gosx.Attr("href", tc.target)), gosx.Text("open"))
+		for _, arrange := range []bool{false, true} {
+			body := gosx.RenderHTML(shellPanelLinks(current, link, arrange))
+			match := regexp.MustCompile(`href="([^"]+)"`).FindStringSubmatch(body)
+			if len(match) != 2 {
+				t.Fatalf("missing href: %s", body)
+			}
+			destination, err := url.Parse(html.UnescapeString(match[1]))
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := ""
+			if arrange {
+				want = tc.reveal
+			}
+			if got := destination.Query().Get("reveal"); got != want {
+				t.Errorf("%s arrange=%v: reveal=%q, want %q", tc.target, arrange, got, want)
+			}
+			region := "center"
+			if want != "" {
+				region = "browser"
+			}
+			if got := destination.Query().Get("region"); got != region {
+				t.Errorf("%s: region=%q, want %q", tc.target, got, region)
+			}
+			if destination.Query().Get("file") != "song.cicada" {
+				t.Errorf("lost file in %s", destination)
+			}
 		}
 	}
 }

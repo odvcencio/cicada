@@ -307,3 +307,116 @@ test('placements edit visually and Session follows saved Score without reloading
     await browser.close();
   }
 });
+
+test('placement destinations reveal the browser on desktop and phone', {timeout:90000}, async () => {
+  const base = process.env.CICADA_STUDIO_URL;
+  assert.ok(base, 'set CICADA_STUDIO_URL to a disposable Studio');
+  const browser = await playwright().chromium.launch({headless:true, executablePath:process.env.CICADA_CHROME_PATH, args:['--no-sandbox']});
+  const context = await browser.newContext();
+  try {
+    for (const viewport of [{width:1440,height:1000}, {width:390,height:844}]) {
+      const page = await context.newPage();
+      await page.setViewportSize(viewport);
+      await page.addInitScript(() => {
+        if (!sessionStorage.getItem('navigation-layout-seeded')) {
+          sessionStorage.setItem('navigation-layout-seeded', 'yes');
+          localStorage.setItem('studio:layout:browserOpen', 'false');
+          localStorage.setItem('studio:layout:samplerOpen', 'false');
+          localStorage.setItem('studio:layout:takesOpen', 'false');
+        }
+      });
+      await page.goto(new URL('/studio?placement=far-in', base).href);
+      await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
+      const inspector = page.locator('[data-placement-inspector="far-in"]');
+      if (await inspector.getAttribute('open') === null) await inspector.locator('summary').click();
+      const link = page.locator('[data-placement-inspector="far-in"]').getByRole('link', {name:'Sample into pads'});
+      await link.click();
+      await page.locator('#browser-sampler[open]').waitFor();
+      assert.equal(await page.locator('#studio-shell').getAttribute('data-phone-region'), 'browser');
+      assert.equal(await page.locator('#browser-sampler').isVisible(), true);
+      assert.equal(await page.locator('#browser-sampler summary').first().evaluate(el => { const r = el.getBoundingClientRect(); return r.bottom > 0 && r.top < innerHeight; }), true, 'destination is in the viewport');
+      await page.reload();
+      await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
+      await page.locator('#browser-sampler[open]').waitFor();
+      assert.equal(await page.locator('#browser-sampler').isVisible(), true);
+      await page.locator('#browser-sampler > summary').click();
+      await page.reload();
+      await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
+      assert.equal(await page.locator('#browser-sampler').getAttribute('open'), null, 'explicit close survives reload');
+      await page.goto(new URL('/studio?reveal=takes&clip=audio1&region=browser', base).href);
+      await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
+      await page.locator('#browser-takes[open]').waitFor();
+      assert.equal(await page.locator('#browser-takes').isVisible(), true);
+      assert.equal(await page.locator('#browser-takes > summary').evaluate(el => { const r = el.getBoundingClientRect(); return r.bottom > 0 && r.top < innerHeight; }), true, 'Takes is in the viewport');
+      if (viewport.width >= 500) {
+        await page.locator('[data-pane="library"][data-pane-action="hide"]').click();
+        await page.reload();
+        await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
+        assert.equal(await page.locator('#studio-browser > details').getAttribute('open'), null, 'closing Library survives reload');
+      }
+      if (viewport.width < 500) {
+        await page.goto(new URL('/studio?placement=far-in&region=center', base).href);
+        await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
+        const selected = page.locator('[data-placement-inspector="far-in"]');
+        if (await selected.getAttribute('open') === null) await selected.locator('summary').click();
+        let release;
+        const held = new Promise(resolve => { release = resolve; });
+        let arrived;
+        const requested = new Promise(resolve => { arrived = resolve; });
+        await page.route('**/studio?*', async route => {
+          if (new URL(route.request().url()).searchParams.get('reveal') === 'sampler') { arrived(); await held; }
+          await route.continue();
+        });
+        await page.evaluate(() => { window.__destinationNavigated = false; document.addEventListener('gosx:navigate', () => { window.__destinationNavigated = true; }, {once:true}); });
+        await selected.getByRole('link', {name:'Sample into pads'}).click();
+        await requested;
+        await page.locator('.shell-phone-nav [data-shell-region="code"]').click();
+        const response = page.waitForResponse(response => new URL(response.url()).searchParams.get('reveal') === 'sampler');
+        release();
+        await response;
+        await page.waitForFunction(() => window.__destinationNavigated);
+        await until(async () => new URL(page.url()).searchParams.get('region') === 'code' && await page.locator('#studio-shell').getAttribute('data-phone-region') === 'code', 'later phone choice lost');
+        await page.unroute('**/studio?*');
+      }
+      if (viewport.width >= 500) {
+        for (const mode of ['close-library', 'close-section', 'keyboard', 'pointer', 'keyboard-new-focus']) {
+          await page.goto(new URL('/studio?placement=far-in&region=center', base).href);
+          await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
+          if (await page.locator('#studio-browser > details').getAttribute('open') === null)
+            await page.locator('[data-pane="library"][data-pane-action="show"]').click();
+          if (mode === 'close-section' && await page.locator('#browser-sampler').getAttribute('open') === null)
+            await page.locator('#browser-sampler > summary').click();
+          const selected = page.locator('[data-placement-inspector="far-in"]');
+          if (await selected.getAttribute('open') === null) await selected.locator('summary').click();
+          const link = selected.getByRole('link', {name:'Sample into pads'});
+          let release, arrived;
+          const held = new Promise(resolve => { release = resolve; });
+          const requested = new Promise(resolve => { arrived = resolve; });
+          await page.route('**/studio?*', async route => {
+            if (new URL(route.request().url()).searchParams.get('reveal') === 'sampler') { arrived(); await held; }
+            await route.continue();
+          });
+          await page.evaluate(() => { window.__destinationNavigated = false; document.addEventListener('gosx:navigate', () => { window.__destinationNavigated = true; }, {once:true}); });
+          if (mode.startsWith('keyboard')) { await link.focus(); await page.keyboard.press('Enter'); }
+          else await link.click();
+          await requested;
+          if (mode === 'close-library') await page.locator('[data-pane="library"][data-pane-action="hide"]').click();
+          if (mode === 'close-section') await page.locator('#browser-sampler > summary').click();
+          if (mode === 'keyboard-new-focus') await page.locator('#transport-form button').first().focus();
+          release();
+          await page.waitForFunction(() => window.__destinationNavigated);
+          await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
+          if (mode === 'close-library') assert.equal(await page.locator('#studio-browser > details').getAttribute('open'), null, mode);
+          if (mode === 'close-section') assert.equal(await page.locator('#browser-sampler').getAttribute('open'), null, mode);
+          if (mode === 'keyboard') await until(() => page.locator('#browser-sampler > summary').evaluate(el => el === document.activeElement), 'keyboard destination was not focused');
+          if (mode === 'pointer' || mode === 'keyboard-new-focus') {
+            await page.waitForTimeout(100);
+            assert.equal(await page.locator('#browser-sampler > summary').evaluate(el => el === document.activeElement), false, `${mode} must not focus the destination`);
+          }
+          await page.unroute('**/studio?*');
+        }
+      }
+      await page.close();
+    }
+  } finally { await context.close(); await browser.close(); }
+});
