@@ -70,7 +70,7 @@ func bindShellEdits(ctx context.Context, root js.Value, props workspaceProps) fu
 			u.clearQueue()
 			u.restoreAll()
 			u.status.Set("Refreshing saved state…")
-			u.jobs <- workspaceJob{method: methodGet, form: js.Undefined(), refresh: true, regions: u.shellRegions(workspaceJob{}, regionsAll)}
+			u.jobs <- workspaceJob{method: methodGet, form: js.Undefined(), refresh: true, regions: u.shellRegions(workspaceJob{}, regionsAll), statusGeneration: u.statusGeneration}
 		}
 	})
 	// A stale region refreshes when its tab, pane, section or dialog opens. A
@@ -141,12 +141,15 @@ func bindShellEdits(ctx context.Context, root js.Value, props workspaceProps) fu
 }
 
 // shellCaptures reports whether the queue owns a submission: a piano-roll
-// cell, Undo or Redo, inside an update region and without a submitter that
+// cell, a track rename, Undo or Redo, inside an update region without a submitter that
 // redirects it.
 func shellCaptures(form, submitter js.Value) bool {
 	if !workspacePresent(domCall(form, "closest", "[data-update-region]")) || !strings.EqualFold(workspaceAttr(form, "method"), "post") ||
 		workspacePresent(submitter) && (workspaceAttr(submitter, "formaction") != "" || workspaceAttr(submitter, "formmethod") != "") {
 		return false
+	}
+	if path := workspaceActionPath(workspaceAttr(form, "action")); path == "/__actions/track-rename" || path == "/__actions/revert" {
+		return true
 	}
 	if id := workspaceAttr(form, "id"); id == "undo-form" || id == "redo-form" {
 		return true

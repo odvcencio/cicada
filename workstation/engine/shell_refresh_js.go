@@ -134,7 +134,13 @@ func controlsDirty() bool {
 }
 
 func hasUnsavedWork() bool {
-	dirty := controlsDirty()
+	return controlsDirty() || hasEngineUnsavedWork()
+}
+
+// hasEngineUnsavedWork excludes ordinary form drafts; rename can preserve
+// those, but an unfinished performance may still name the old track.
+func hasEngineUnsavedWork() bool {
+	dirty := false
 	unsavedWork.Range(func(_, check any) bool {
 		if check.(func() bool)() {
 			dirty = true

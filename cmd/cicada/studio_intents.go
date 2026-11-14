@@ -399,6 +399,10 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 			return
 		}
 	}
+	if err := s.trackRenameGuard(env); err != nil {
+		studioJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
+		return
+	}
 	env.Version, env.Revision = edits.EnvelopeVersion, edit.Revision
 	// Other files the intents were computed against, as cicada apply checks.
 	if err := checkFileRevisions(opts, env.Revisions); err != nil {
@@ -628,6 +632,12 @@ func (s *studio) acceptProposal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	proposal, result := staged.proposal, staged.staged.Result
+	commitEnvelope := proposal.Envelope
+	commitEnvelope.DryRun = false
+	if err := s.trackRenameGuard(commitEnvelope); err != nil {
+		studioJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
+		return
+	}
 	if staged.mixer {
 		if err := s.mixerCaptureGuard(); err != nil {
 			studioJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})

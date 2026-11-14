@@ -55,6 +55,7 @@ type workspaceControl struct {
 type workspaceJob struct {
 	method, target, confirmed string
 	confirmedSource           string
+	statusGeneration          uint64
 	values                    map[string]string
 	form                      js.Value
 	controls                  []workspaceControl
@@ -81,24 +82,25 @@ type workspaceJob struct {
 }
 
 type workspaceUI struct {
-	root, patch    js.Value
-	props          workspaceProps
-	ctx            context.Context
-	cancel         context.CancelFunc
-	closed         atomic.Bool
-	blocked        atomic.Bool
-	busy           atomic.Bool
-	jobs           chan workspaceJob
-	events         []workspaceEvent
-	revision       *signal.Signal[string]
-	sourceRevision string
-	status         *signal.Signal[string]
-	tool           *signal.Signal[string]
-	drafts         map[string]workspaceDraft
-	scrolls        []workspaceScroll
-	editors        map[string]workspaceEditorBaseline
-	placements     *placementEditorUI
-	sources        map[string]*sourceRecovery
+	root, patch      js.Value
+	props            workspaceProps
+	ctx              context.Context
+	cancel           context.CancelFunc
+	closed           atomic.Bool
+	blocked          atomic.Bool
+	busy             atomic.Bool
+	jobs             chan workspaceJob
+	events           []workspaceEvent
+	revision         *signal.Signal[string]
+	sourceRevision   string
+	status           *signal.Signal[string]
+	statusGeneration uint64
+	tool             *signal.Signal[string]
+	drafts           map[string]workspaceDraft
+	scrolls          []workspaceScroll
+	editors          map[string]workspaceEditorBaseline
+	placements       *placementEditorUI
+	sources          map[string]*sourceRecovery
 	// The newest project revision this tab has rendered. Only a different
 	// revision on disk is another editor's change worth refreshing for.
 	projectRevision atomic.Value
@@ -351,6 +353,20 @@ func (u *workspaceUI) submit(event js.Value) {
 	}
 	submitter := event.Get("submitter")
 	if u.shell {
+		// Tempo forms use GoSX navigation rather than this queue. Do not send
+		// their old target and source revision while a queued edit is still
+		// changing the score or applying its projection.
+		if workspacePresent(domCall(form, "closest", "[data-arrangement-tempos]")) && u.blocked.Load() {
+			workspaceStop(event)
+			u.status.Set("Refresh saved state before editing. Your drafts are retained.")
+			return
+		}
+		if workspacePresent(domCall(form, "closest", "[data-arrangement-tempos]")) && (u.busy.Load() || len(u.jobs) > 0) {
+			workspaceStop(event)
+			u.statusGeneration++
+			u.status.Set("Studio is updating. Check the tempo step and submit again.")
+			return
+		}
 		if u.shellHolding(form) {
 			// One hold per form: a second click while it waits does nothing.
 			workspaceStop(event)
@@ -861,6 +877,7 @@ func (u *workspaceUI) queue(job workspaceJob) {
 		return
 	}
 	job.confirmedSource = u.sourceRevision
+	job.statusGeneration = u.statusGeneration
 	workspacePending(job, 1)
 	select {
 	case u.jobs <- job:
@@ -993,6 +1010,19 @@ func (u *workspaceUI) runJob(job workspaceJob) bool {
 	if u.shell && job.method == methodGet {
 		job.target = "/__studio/regions?ids=" + url.QueryEscape(job.regions) + "&location=" + url.QueryEscape(workspaceLocation())
 	}
+	// An unfinished performance can retain the old track name even after
+	// playback stops. Check at dispatch as well as submission, because this
+	// edit may have waited behind another queued action.
+	if u.shell && hasEngineUnsavedWork() {
+		switch job.target {
+		case "/__actions/track-rename":
+			u.settle(job, true)
+			u.status.Set("Finish or discard unsaved performances and recordings before renaming a track.")
+			return true
+		case "/__actions/undo", "/__actions/redo", "/__actions/revert":
+			job.values["protect_track_identities"] = "true"
+		}
+	}
 	u.root.Call("setAttribute", "aria-busy", "true")
 	if !u.shell {
 		u.status.Set("Saving…")
@@ -1097,6 +1127,11 @@ func (u *workspaceUI) runJob(job workspaceJob) bool {
 			outcome = holdOwn
 		}
 		u.idleDelay = shellIdleRefresh
+		// A newer refused submit has its own guidance; an older job must not
+		// erase it or overwrite another status shown after that refusal.
+		if job.statusGeneration != u.statusGeneration {
+			return true
+		}
 		if job.refresh {
 			u.status.Set("Workspace updated.")
 		} else if job.method == methodPost {

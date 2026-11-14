@@ -203,6 +203,14 @@ to three decimal places. Changing the key retunes scale-degree notes; explicit
 letter pitches keep their pitch. Every edit validates and checks the current
 disk revision before saving, and has an Undo entry.
 
+To rename a track, open **Rename** in its Arrange rail, enter the new name,
+and choose **Rename track**. Stop playback and finish recording first; a paused
+transport must also be stopped. Commit or discard unfinished or retained note
+performances before renaming. The rename updates references throughout the
+project, including other score files, and one Undo restores them. If a name is
+invalid, already in use, or the project has changed since the form was shown,
+Studio refuses the edit and reports why.
+
 ![GoSX Studio's arrangement timeline and block controls.](screenshots/studio-arrangement-1440.png)
 
 **Automation → Scene automation** shows parameter lanes alongside the song's scene
