@@ -166,6 +166,49 @@ func (s *studioApp) placementEditors(ctx *server.Context, v workspace, csrf stri
 			removeAttrs = append(removeAttrs, gosx.BoolAttr("disabled"), gosx.Attr("title", "Keep at least one placement in the arrangement"))
 		}
 		remove := s.placementForm(v, csrf, "", hidden("name", placement.ID), gosx.El("button", removeAttrs, gosx.Text("Remove placement")))
+		var split gosx.Node = gosx.Fragment()
+		stepTrack := false
+		for _, track := range p.Tracks {
+			if track.ID == placement.Track && track.Kind != "audio" {
+				stepTrack = true
+				break
+			}
+		}
+		for _, pattern := range p.Patterns {
+			if !stepTrack || pattern.ID != placement.Content || pattern.Performance != nil {
+				continue
+			}
+			step := int64(pattern.StepTicks)
+			if step == 0 {
+				step = seq.TicksPerStep
+			}
+			length := int64(pattern.Steps) * step
+			if length <= 0 || length >= placement.LengthTicks {
+				break
+			}
+			// Bound rendering for very long placements; each option carries the
+			// exact absolute tick while its label uses the score's meter map.
+			count := (placement.LengthTicks - 1) / length
+			shown := min(count, 128)
+			var options []gosx.Node
+			for n := int64(1); n <= shown; n++ {
+				at := placement.AtTick + n*length
+				bar, beat, step, remainder := p.MeterMap().Position(at)
+				label := fmt.Sprintf("@%d.%d.%d", bar, beat, step)
+				if remainder != 0 {
+					label += fmt.Sprintf(" + %d ticks", remainder)
+				}
+				options = append(options, gosx.El("option", gosx.Attrs(gosx.Attr("value", strconv.FormatInt(at, 10))), gosx.Text(label)))
+			}
+			picker := gosx.El("select", gosx.Attrs(gosx.Attr("name", "at_tick"), gosx.Attr("aria-label", "Split position")), gosx.Fragment(options...))
+			form := ui.Form(ui.FormProps{Action: "/__actions/split-placement", CSRF: csrf, Revision: v.Revision, ReturnTo: placementURL(placement.ID), Class: "action-form"}, hidden("source_revision", v.SourceRevision), hidden("name", placement.ID), targetField(placementTargetKey(placement)), field("Split position", picker), submit("", "", "Split placement"))
+			help := "Choose a pattern boundary inside this placement. Studio compares the audio before saving."
+			if count > shown {
+				help += " Showing the first 128 boundaries."
+			}
+			split = gosx.El("details", gosx.Attrs(gosx.Attr("class", "placement-split")), gosx.El("summary", gosx.Text("Split placement")), gosx.El("p", gosx.Text(help)), form)
+			break
+		}
 		attrs := gosx.Attrs(gosx.Attr("class", "placement-inspector"), gosx.Attr("data-placement-inspector", placement.ID), gosx.Attr("id", "placement-"+placement.ID))
 		if placement.ID == selected {
 			attrs = append(attrs, gosx.BoolAttr("open"))
@@ -175,6 +218,7 @@ func (s *studioApp) placementEditors(ctx *server.Context, v workspace, csrf stri
 			s.placementListening(v, csrf, placement.ID),
 			gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), gosx.El("a", gosx.Attrs(gosx.Attr("href", contentURL)), gosx.Text("Edit "+placement.Content)), gosx.El("a", gosx.Attrs(gosx.Attr("href", "/?panel=sampler&placement="+url.QueryEscape(placement.ID))), gosx.Text("Sample into pads")), remove),
 			s.placementVariation(ctx, v, csrf, placement),
+			split,
 			gosx.El("details", gosx.Attrs(gosx.Attr("class", "placement-copy")), gosx.El("summary", gosx.Text("Make a copy")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), duplicate))))
 	}
 	var markerForms []gosx.Node

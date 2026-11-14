@@ -148,6 +148,9 @@ func shellCaptures(form, submitter js.Value) bool {
 		workspacePresent(submitter) && (workspaceAttr(submitter, "formaction") != "" || workspaceAttr(submitter, "formmethod") != "") {
 		return false
 	}
+	if workspaceActionPath(workspaceAttr(form, "action")) == "/__actions/split-placement" {
+		return true
+	}
 	if id := workspaceAttr(form, "id"); id == "undo-form" || id == "redo-form" {
 		return true
 	}

@@ -166,6 +166,14 @@ supports Undo. The **Placement list** shows exact starts and exclusive ends;
 sub-sixteenth boundaries retain their exact ticks. Content links open the
 pattern or clip editor. Returning from Score reads the current saved project.
 
+For a named placement of a step pattern with a complete pattern boundary
+inside it, open **Split placement** in its inspector. Choose a position at a pattern-length boundary strictly between its
+start and end. For long placements the picker shows the first 128 boundaries.
+Studio compares the original and split renders before saving and refuses the
+edit if the sound would change. Audio clips and performed-note patterns are not
+split by this control. A successful split is one Undo step; a changed project
+or placement must be refreshed before retrying.
+
 With a placement inspected in Arrange, **Command-D** on Mac (**Control-D**
 elsewhere) duplicates it after the existing placements on its track.
 **Backspace** or **Delete** removes it; the last placement remains protected.
