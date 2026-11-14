@@ -676,7 +676,18 @@ func (u *liveUI) bindControls() {
 		}
 	})
 	u.on(window, "keyup", func(e js.Value) { u.noteOff("key:" + strings.ToLower(e.Get("key").String())) })
-	u.on(window, "blur", func(js.Value) { u.closeNotes() })
+	u.on(window, "blur", func(js.Value) {
+		if samplerFrameOwnsFocus() {
+			// Key-up will be delivered in the frame; release only keyboard notes.
+			for id := range u.held {
+				if strings.HasPrefix(id, "key:") {
+					u.noteOff(id)
+				}
+			}
+			return
+		}
+		u.closeNotes()
+	})
 	watchKeyboardOwner(u.on, keysLive, func() {
 		for id := range u.held {
 			if strings.HasPrefix(id, "key:") {

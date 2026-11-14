@@ -66,14 +66,17 @@ func (s *studioApp) sampler(ctx *server.Context, v workspace, csrf string) gosx.
 	if len(state.Sounds) == 16 && state.Sounds[selected-1] != "" {
 		audio = gosx.El("audio", gosx.Attrs(gosx.BoolAttr("controls"), gosx.Attr("preload", "none"), gosx.Attr("src", "/media/sampler/"+state.Sounds[selected-1]+".wav"), gosx.Attr("aria-label", "Selected pad preview")))
 	}
-	content := gosx.Fragment(gosx.El("div", gosx.Attrs(gosx.Attr("class", "sampler-pad-grid")), gosx.Fragment(pads...)),
+	sceneView := gosx.El("div", gosx.Attrs(gosx.Attr("class", "sampler-scene"), gosx.Attr("data-sampler-scene-container", ""), gosx.BoolAttr("hidden")), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("3D rows, back to front: 01–04, 05–08, 09–12, 13–16. Each row runs left to right; names and keys are on the controls below. Typing-key holds release when the 3D surface gains focus; pointer and MIDI holds continue.")))
+
+	content := gosx.Fragment(gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-sampler-scene-toggle", ""), gosx.Attr("aria-pressed", "false")), gosx.Text("Show 3D surface")), sceneView,
+		gosx.El("div", gosx.Attrs(gosx.Attr("class", "sampler-pad-grid")), gosx.Fragment(pads...)),
 		gosx.El("p", gosx.Attrs(gosx.Attr("data-sampler-status", ""), gosx.Attr("role", "status"), gosx.Attr("aria-live", "polite")), gosx.Text("Load a sample, then play pads with the mouse, touch, or keyboard.")),
 		samplerWaveform(),
 		gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions sampler-performance")), field("Record bars", wholeInput("recordBars", 4, 1, 16)), field("Quantize to sixteenths", checkInput("quantize", true)), button("record", "Record pads"), button("stop", "Stop pads"), button("play", "Play performance")),
 		gosx.El("div", gosx.Attrs(gosx.Attr("class", "sampler-event-strip"), gosx.Attr("data-sampler-events", ""), gosx.Attr("aria-label", "Recorded pad hits"))),
 		gosx.El("details", gosx.Attrs(gosx.BoolAttr("open")), gosx.El("summary", gosx.Text("Resample to a pad and Session")), resample), audio)
 	props, _ := json.Marshal(map[string]any{"csrf": csrf, "tempo": v.Project.TempoMilli, "revision": v.Revision})
-	surface := meterEngine(ctx, engine.Config{Name: "CicadaSampler", Kind: engine.KindSurface, MountID: "cicada-sampler", Runtime: engine.RuntimeGoWASM, Props: props, Capabilities: []engine.Capability{engine.CapAudio, engine.CapFetch, engine.CapKeyboard, engine.CapPointer}, RequiredCapabilities: []engine.Capability{engine.CapWASM, engine.CapFetch, engine.CapAudio}}, content)
+	surface := meterEngine(ctx, engine.Config{Name: "CicadaSampler", Kind: engine.KindSurface, MountID: "cicada-sampler", MountAttrs: map[string]any{"data-sampler-3d": "false"}, Runtime: engine.RuntimeGoWASM, Props: props, Capabilities: []engine.Capability{engine.CapAudio, engine.CapFetch, engine.CapKeyboard, engine.CapPointer}, RequiredCapabilities: []engine.Capability{engine.CapWASM, engine.CapFetch, engine.CapAudio}}, content)
 	var selectedEditor gosx.Node = gosx.El("p", gosx.Text("Import a WAV or sample a Session placement to fill the bank."))
 	if len(state.Bank.Sources) > 0 {
 		src, _ := state.Bank.Source(p.Source)

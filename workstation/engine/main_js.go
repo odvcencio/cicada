@@ -83,6 +83,9 @@ func main() {
 	if err := enginewasm.Register("CicadaVocalLanes", mountVocalLanes); err != nil {
 		panic(err)
 	}
+	if err := enginewasm.Register("CicadaSamplerFrame", mountSamplerFrame); err != nil {
+		panic(err)
+	}
 	if err := enginewasm.Register("CicadaSampler", mountSampler); err != nil {
 		panic(err)
 	}

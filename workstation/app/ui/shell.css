@@ -67,6 +67,8 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
 	.shell #sampler-expand-control { display:inline-flex; align-items:center; gap:8px; margin:0 0 12px; cursor:pointer; }
 	.shell #sampler-expand-control input { margin:0; }
 	.shell:has(#studio-browser .shell-collapsible[open] #browser-sampler[open] #sampler-expand:checked) .gsx-dock { --studio-browser-column:min(640px,calc(100vw - 480px)); }
+	.shell:has(#studio-browser .shell-collapsible[open] #browser-sampler[open] #cicada-sampler[data-sampler-3d="true"]) .gsx-dock { --studio-browser-column:min(640px,calc(100vw - 480px)); }
+	.shell:has(#cicada-sampler[data-sampler-3d="true"]) #sampler-expand-control { display:none; }
 }
 
 /* Top bar: project identity, transport, position and tempo, then the

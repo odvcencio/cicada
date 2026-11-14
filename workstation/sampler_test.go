@@ -12,6 +12,9 @@ import (
 func TestSamplerPanelShowsPadsChopControlsEffectsAndNativeForms(t *testing.T) {
 	address, client, _ := testApp(t)
 	page := getPage(t, client, address+"/?panel=sampler&pad=3")
+	if !strings.Contains(page, "Typing-key holds release when the 3D surface gains focus") {
+		t.Fatal("sampler does not explain keyboard hold release on 3D focus")
+	}
 	if strings.Count(page, `data-sampler-pad="`) != 16 {
 		t.Fatal("sampler does not have sixteen pads")
 	}
