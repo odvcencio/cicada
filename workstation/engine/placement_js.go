@@ -44,6 +44,7 @@ type placementEditorUI struct {
 	placementEdit   func(js.Value, string, int64)
 	placementCopy   func(js.Value, int64)
 	refresh         func(js.Value)
+	open            func(js.Value) bool
 }
 
 func placementTicks(block js.Value, name string) int64 {
@@ -233,7 +234,9 @@ func (u *placementEditorUI) placementPointerUp(event js.Value) {
 		// Pointer capture targets the click at the block rather than its link.
 		// Read the selected view so its defaults and revision also follow edits
 		// saved from another panel or browser.
-		u.refresh(drag.block)
+		if drag.resize || u.open == nil || !u.open(drag.block) {
+			u.refresh(drag.block)
+		}
 	}
 }
 

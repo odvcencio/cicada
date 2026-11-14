@@ -38,7 +38,7 @@ test('secondary arrangement controls, source conflicts, WAV and reopen', {timeou
  const action=(kind,name)=>page.locator(`#arrangement form[action$="/__actions/arrange"]:has(input[name=action][value="${kind}"])${name?`:has(input[name=name][value="${name}"])`:''}`);
  const saved=async check=>{await until(()=>check(owner()),'owning arrangement saved');await ready();assert.equal(fs.readFileSync(fixture.score,'utf8'),entry)};
  const undo=async expected=>{await page.locator('#undo-form button').click();await saved(source=>source===expected)};
- const select=async name=>{await page.getByRole('link',{name:'Edit placement '+name,exact:true}).click();await until(async()=>await block(name).getAttribute('data-placement-selected')==='true','placement selected');await ready()};
+ const select=async name=>{await page.getByRole('link',{name:new RegExp('^Edit placement '+name+':')}).click();await until(async()=>await block(name).getAttribute('data-placement-selected')==='true','placement selected');await ready()};
  const edit=async(form,values,label)=>{for(const details of await form.locator('xpath=ancestor::details').all())if(await details.getAttribute('open')===null)await details.locator(':scope > summary').click();for(const [name,value]of Object.entries(values))await form.locator(`[name="${name}"]`).fill(value);await form.getByRole('button',{name:label,exact:true}).click()};
  async function render(filename){
   await page.getByRole('toolbar',{name:'Transport'}).getByRole('button',{name:'Export',exact:true}).click();const previous=(await read('export')).id;
@@ -49,7 +49,7 @@ test('secondary arrangement controls, source conflicts, WAV and reopen', {timeou
  async function captureViews(){
   // Notices from earlier saves stay until closed now that an Undo no longer
   // navigates; close them one at a time (each close removes one).
-  {const toasts=page.locator('[data-gosx-toast-host] button');while(await toasts.count())await toasts.first().click();}
+  await page.evaluate(()=>document.querySelectorAll('[data-gosx-toast-host] button').forEach(button=>button.click()));
   await until(async()=>!/connecting/i.test(await page.locator('[data-placement-playback-status]').innerText()),'desktop timeline playback status');
   await page.screenshot({path:path.join(proof,'arrangement-desktop.png')});
   const mobile=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,storageState:await context.storageState()}),phone=await mobile.newPage();

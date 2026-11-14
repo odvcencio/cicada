@@ -15,10 +15,12 @@ const fixture = `// cicada-placement-commands-test: disposable fixture
 cicada 2
 title "Placement keyboard checks"
 track bass acid {}
+track lead acid {}
 pattern pulse { 1 . 5 . }
+pattern answer { 2 . 4 . }
 arrange {
   place one bass pulse { at = @1.1.1 length = 4bars }
-  place two bass pulse { at = @5.1.1 length = 4bars }
+  place two lead answer { at = @5.1.1 length = 4bars }
 }
 `;
 if (process.argv[2] === '--write-fixture') {
@@ -55,6 +57,13 @@ test('Studio views, Record entry and Mac placement commands retain drafts and Un
   await page.addInitScript(() => {
     Object.defineProperty(navigator, 'platform', {get:()=>'MacIntel'});
     Object.defineProperty(navigator, 'userAgentData', {get:()=>({platform:'macOS'})});
+    // Exercise the real Web MIDI adapter with an in-memory input, as the
+    // portable MIDI suite does; the Studio and Live service remain real.
+    const access=new EventTarget(), port=new EventTarget();
+    Object.assign(port,{id:'held-note-test',name:'Test MIDI keyboard',state:'connected'});
+    access.inputs=new Map([[port.id,port]]);
+    window.__clipTestMIDI=(...bytes)=>{const event=new Event('midimessage');Object.defineProperty(event,'data',{value:new Uint8Array(bytes)});port.dispatchEvent(event)};
+    Object.defineProperty(navigator,'requestMIDIAccess',{configurable:true,value:()=>Promise.resolve(access)});
   });
   const posts = [], navigations = [], errors = [], liveReleases = [];
   const csrfTokens = new Set();
@@ -84,7 +93,7 @@ test('Studio views, Record entry and Mac placement commands retain drafts and Un
   const visit = async search => { await page.goto(new URL('/studio'+search,base).href); await ready(); };
   const block = name => page.locator(`[data-placement-block="${name}"]`);
   const select = async name => {
-    await page.getByRole('link',{name:'Edit placement '+name,exact:true}).click();
+    await page.getByRole('link',{name:new RegExp('^Edit placement '+name+':')}).click();
     await until(async()=>new URL(page.url()).searchParams.get('placement')===name && await block(name).getAttribute('data-placement-selected')==='true','placement selection did not settle');
     await ready();
   };
@@ -133,6 +142,130 @@ test('Studio views, Record entry and Mac placement commands retain drafts and Un
   try {
     await visit('?placement=one');
     assert.equal((await state()).source,fixture,'runner refuses an unmarked or modified score');
+
+    // A producer opens the pattern from its arrangement clip, without making
+    // a score edit. Selection and its Clip editor follow the same click.
+    const proof=process.env.CICADA_PLACEMENT_OPEN_PROOF_DIR;
+    if(proof) fs.mkdirSync(proof,{recursive:true});
+    await page.locator('#transport-form button[value=play]').click();
+    await until(async()=>(await transport()).playing,'owner song playback did not start');
+    const beforeOpen=await transport();
+    const initialPosts=posts.length;
+    assert.equal(await block('two').locator('.placement-select').getAttribute('aria-label'),'Edit placement two: pattern answer');
+    await block('two').locator('.placement-select').click();
+    await until(async()=>new URL(page.url()).searchParams.get('pattern')==='answer' && await page.locator('#detail-panel-clip .piano-roll[data-pattern-id=answer]').count()===1,'click did not open the second clip pattern');
+    await ready();
+    assert.equal(await page.locator('#detail-panel-clip').isVisible(),true);
+    assert.equal(new URL(page.url()).searchParams.get('placement'),'two');
+    assert.equal(new URL(page.url()).searchParams.get('track'),'lead');
+    assert.equal(await page.getByLabel('Hear pattern with').inputValue(),'lead','pattern preview must use the placement track, not the first compatible track');
+    for(const request of posts.slice(initialPosts)) {
+      assert.equal(new URL(request.url()).pathname,'/__actions/live','opening a clip submitted a score action');
+      assert.equal((await actionValues(request)).type,'release','opening a clip submitted a Live action other than releasing its old mount');
+    }
+    assert.equal((await state()).source,fixture);
+    await until(async()=>{const now=await transport();return now.playing && (now.bar!==beforeOpen.bar || now.step!==beforeOpen.step)},'song transport did not continue advancing after clip opening');
+    const cellVisible=()=>page.locator('#detail-panel-clip .piano-roll .roll-cell').first().evaluate(cell=>{
+      const c=cell.getBoundingClientRect(), pane=document.querySelector('#studio-detail .shell-scroll').getBoundingClientRect();
+      return c.right>pane.left && c.left<pane.right && c.bottom>pane.top && c.top<Math.min(pane.bottom,innerHeight);
+    });
+    const noteVisible=()=>page.locator('#pattern-shared-note').evaluate(note=>{
+      const n=note.getBoundingClientRect(), pane=document.querySelector('#studio-detail .shell-scroll').getBoundingClientRect();
+      return n.right>pane.left && n.left<pane.right && n.bottom>pane.top && n.top<Math.min(pane.bottom,innerHeight);
+    });
+    assert.equal(await cellVisible(),true,'a piano-roll cell must be visible in the Clip dock without scrolling');
+    assert.equal(await page.getByText('Edits affect every use of this pattern.',{exact:true}).count(),1,'the editor must explain shared pattern edits');
+    assert.equal(await noteVisible(),true,'the shared-pattern note must be visible alongside the grid');
+    assert.equal(await page.locator('#detail-panel-clip .piano-roll .roll-cell').first().getAttribute('aria-describedby'),'pattern-shared-note');
+    if(proof) await page.screenshot({path:path.join(proof,'opened-answer.png')});
+    await page.setViewportSize({width:390,height:844});
+    assert.equal(await cellVisible(),true,'a piano-roll cell must be visible in the phone Clip dock without scrolling');
+    assert.equal(await noteVisible(),true,'the phone must show the shared-pattern note alongside the grid');
+    if(proof) await page.screenshot({path:path.join(proof,'opened-answer-phone.png')});
+    await page.setViewportSize({width:1600,height:1000});
+    const skipGrid=page.getByRole('link',{name:'Skip grid to listening and quantize'});
+    await skipGrid.focus();
+    assert.equal(await skipGrid.evaluate(node=>node===document.activeElement),true,'the grid skip link must be keyboard focusable');
+    assert.equal(new URL(await skipGrid.getAttribute('href'),base).hash,'#pattern-controls');
+    await page.keyboard.press('Enter');
+    assert.equal(await page.locator('#pattern-controls').evaluate(node=>node===document.activeElement),true,'skip link must focus the listening and quantize controls');
+    await page.locator('#transport-form button[value=stop]').click();
+    await until(async()=>!(await transport()).playing,'owner song playback did not stop');
+
+    const sameClipContext=async label=>{
+      const q=new URL(page.url()).searchParams;
+      assert.equal(q.get('pattern'),'answer',label+' pattern');
+      assert.equal(q.get('placement'),'two',label+' placement');
+      assert.equal(q.get('track'),'lead',label+' track');
+      assert.equal(await page.getByLabel('Hear pattern with').inputValue(),'lead',label+' audition track');
+    };
+    await page.getByLabel('Lowest octave').fill('3');
+    await page.getByRole('button',{name:'View register'}).click();
+    await until(()=>new URL(page.url()).searchParams.get('octave')==='3','register selection did not settle');await ready();
+    await sameClipContext('register selection');
+    await page.locator('#detail-panel-clip .step-number').nth(1).click();
+    await until(()=>new URL(page.url()).searchParams.get('step')==='2','step selection did not settle');await ready();
+    await sameClipContext('step selection');
+    await page.locator('#detail-panel-clip .tie-step').nth(2).click();
+    await until(()=>new URL(page.url()).searchParams.get('step')==='3','tie selection did not settle');await ready();
+    await sameClipContext('tie selection');
+
+    // The opened grid remains an editor, and its change is one Undo step.
+    await page.locator('#studio-shell[data-shell-edits=ready]').waitFor();
+    const empty=page.locator('#detail-panel-clip .piano-roll .roll-cell[data-active=false]').first();
+    await empty.click();
+    try { await until(async()=>(await state()).source!==fixture,'drawing into opened pattern did not save'); }
+    catch (error) {
+      const sent=[];
+      for (const request of posts.slice(initialPosts)) {
+        const values=await actionValues(request).catch(()=>({}));
+        sent.push({path:new URL(request.url()).pathname,action:values.action,type:values.type});
+      }
+      assert.fail(error.message+' '+JSON.stringify({sent,status:await page.locator('[data-workspace-status]').allTextContents(),errors}));
+    }
+    await sameClipContext('after note edit');
+    await page.getByRole('button',{name:'Undo',exact:true}).click();
+    await sourceIs(fixture); await ready();
+    await sameClipContext('after Undo');
+    if(proof) await page.screenshot({path:path.join(proof,'draw-undone.png')});
+
+    await page.locator('#detail-panel-clip .pattern-choice').filter({hasText:'pulse'}).click();
+    await until(()=>new URL(page.url()).searchParams.get('pattern')==='pulse','different pattern did not open');await ready();
+    assert.equal(new URL(page.url()).searchParams.has('placement'),false,'a different pattern inherited the old placement');
+    assert.notEqual(new URL(page.url()).searchParams.get('track'),'lead','a different pattern inherited the old audition track: '+page.url());
+
+    await block('one').locator('.placement-select').focus();
+    await page.keyboard.press('Enter');
+    await until(async()=>new URL(page.url()).searchParams.get('pattern')==='pulse' && await page.locator('#detail-panel-clip .piano-roll[data-pattern-id=pulse]').count()===1,'Enter did not open the focused pattern');
+    await ready();
+    assert.equal(await page.evaluate(()=>document.activeElement?.id),'patterns','keyboard opening must focus the Clip editor');
+    await page.setViewportSize({width:390,height:844});
+    await page.getByRole('link',{name:'View',exact:true}).click();
+    await block('two').locator('.placement-select').focus();
+    await page.keyboard.press('Enter');
+    await until(async()=>new URL(page.url()).searchParams.get('pattern')==='answer' && await page.evaluate(()=>document.activeElement?.id)==='patterns','phone keyboard opening did not focus its Clip editor');
+    assert.equal(await page.locator('#studio-shell').getAttribute('data-phone-region'),'detail');
+    await page.setViewportSize({width:1600,height:1000});
+    await block('one').locator('.placement-select').focus();
+    await page.keyboard.press('Enter');
+    await until(async()=>new URL(page.url()).searchParams.get('pattern')==='pulse' && await page.evaluate(()=>document.activeElement?.id)==='patterns','return to the first pattern did not settle');
+    await ready();
+    const draft=page.locator('#score textarea').first();
+    if(!(await page.locator('#studio-code > details').evaluate(node=>node.open))) await page.locator('.shell-pane-toggle[data-pane=code][data-pane-action=show]').click();
+    await draft.fill(fixture+'// unsaved clip idea\n');
+    const guardedPosts=posts.length;
+    await block('two').locator('.placement-select').focus();
+    await page.keyboard.press('Enter');
+    await block('two').locator('.placement-select').click();
+    await page.waitForTimeout(150);
+    assert.equal(new URL(page.url()).searchParams.get('pattern'),'pulse','opening with an unsaved draft changed the editor');
+    assert.equal(await draft.inputValue(),fixture+'// unsaved clip idea\n');
+    assert.equal(posts.length,guardedPosts,'guarded clip opening wrote the score');
+    assert.equal((await state()).source,fixture);
+    await draft.fill(fixture);
+    await until(async()=>/No unsaved Code edits/.test(await page.locator('[data-source-recovery-status]').textContent()),'restored Code draft was not cleared before continuing');
+    t.diagnostic('clip-open: click and Enter open their patterns; opening writes nothing; drawing and one Undo restore the score; unsaved Code blocks opening');
+    if(proof) fs.writeFileSync(path.join(proof,'clip-open.json'),JSON.stringify({fixture:'placement-commands',click:'answer',enter:'pulse',scoreWrites:0,liveRelease:'observed on navigation',songTransportContinued:true,desktopAndPhoneGridVisible:true,desktopAndPhoneKeyboardFocus:'patterns',skipGridKeyboardFocus:'pattern-controls',drawUndoRestored:true,unsavedDraftPreserved:true},null,2)+'\n');
 
     // Arrange opens on the song rather than placing its timeline below the
     // entire vocal workflow. The sticky links move within the mounted pane.
@@ -265,7 +398,7 @@ test('Studio views, Record entry and Mac placement commands retain drafts and Un
     const selectionSeen=new Promise(resolve=>selectionRequested=resolve);
     const selectionURL=url=>url.pathname==='/studio'&&url.searchParams.get('placement')==='two';
     await page.route(selectionURL,async route=>{selectionRequested();await selectionGate;await route.continue()});
-    await page.getByRole('link',{name:'Edit placement two',exact:true}).click();
+    await page.getByRole('link',{name:/^Edit placement two:/}).click();
     await selectionSeen;
     await shellTab('detail','automation');
     await shellTab('view','mixer');
@@ -290,7 +423,7 @@ test('Studio views, Record entry and Mac placement commands retain drafts and Un
     const before = (await state()).revision;
     const beforeDuplicatePosts=posts.length;
     await key('Meta+d'); await block('one-copy').waitFor(); await ready();
-    assert.equal(await block('one-copy').getAttribute('data-placement-at'),'30720','duplicate appends after the last placement on its track');
+    assert.equal(await block('one-copy').getAttribute('data-placement-at'),'15360','duplicate appends after the last placement on its track');
     const duplicateSource=(await state()).source;
     assert.notEqual((await state()).revision,before);
     const duplicate=posts.slice(beforeDuplicatePosts).find(request=>new URL(request.url()).pathname==='/__actions/arrange');
@@ -368,6 +501,63 @@ test('Studio views, Record entry and Mac placement commands retain drafts and Un
     await key('Meta+d'); await rejected;
     assert.equal((await state()).source,fixture,'stale keyboard edit changed the score');
     assert.equal((await actionValues(posts.at(-1))).revision,'stale-revision');
+    await visit('?placement=one');
+    await page.locator('#transport-form button[value=play]').click();
+    await until(async()=>(await transport()).playing,'owner song playback did not start for held MIDI');
+    // A held Web MIDI note survives the local Session -> Arrange view switch.
+    // Opening a clip would remount Live, so it must refuse until note-off.
+    await shellTab('view','session');
+    await page.locator('[data-live-control=midi]').click();
+    await until(async()=>/MIDI enabled/.test(await page.locator('[data-live-status]').textContent()),'test MIDI input did not enable');
+    await shellTab('view','arrange');
+    await page.waitForFunction(()=>!document.querySelector('[data-live-note="60"]').disabled);
+    const liveNoteResponse=page.waitForResponse(async response=>{
+      if(new URL(response.url()).pathname!=='/__actions/live')return false;
+      const fields=await actionValues(response.request()).catch(()=>({}));
+      if(fields.type!=='input-batch')return false;
+      return JSON.parse(fields.messages).some(message=>message.type==='note'&&message.note==='60'&&message.on==='true');
+    });
+    await page.evaluate(()=>window.__clipTestMIDI(0x90,60,100));
+    assert.equal((await liveNoteResponse).status(),200,'held note-on was not accepted by the real Live service');
+    await until(async()=>await page.locator('[data-live-note="60"]').getAttribute('aria-pressed')==='true','MIDI note was not held');
+    await page.evaluate(()=>{window.__heldClipNavigationCount=0;document.addEventListener('gosx:navigate',()=>window.__heldClipNavigationCount++);});
+    const heldURL=page.url(), heldReleaseCount=liveReleases.length, heldSource=(await state()).source, heldPosts=posts.length;
+    await block('two').locator('.placement-select').click();
+    await block('two').locator('.placement-select').focus();
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(()=>document.documentElement.getAttribute('data-gosx-navigation-state')==='idle');
+    await page.waitForTimeout(150);
+    assert.match(await page.locator('[data-placement-edit-status]').textContent(),/Save or discard unsaved edits/);
+    assert.equal(await page.evaluate(()=>window.__heldClipNavigationCount),0,'clip activation navigated while a MIDI note was held');
+    assert.equal(page.url(),heldURL,'clip activation changed the location while a MIDI note was held');
+    assert.equal(await page.locator('[data-live-note="60"]').getAttribute('aria-pressed'),'true','clip activation released the held MIDI note');
+    assert.equal(liveReleases.length,heldReleaseCount,'clip activation released the Live lease');
+    for(const request of posts.slice(heldPosts)) {
+      assert.equal(new URL(request.url()).pathname,'/__actions/live','clip activation submitted a score action');
+      assert.equal((await actionValues(request)).type,'heartbeat','clip activation sent a note-off or lease release');
+    }
+    assert.equal((await state()).source,heldSource);
+    assert.equal((await transport()).playing,true,'clip activation stopped song playback');
+    // The player releases its own key normally; no forced lease release.
+    const liveNoteOffResponse=page.waitForResponse(async response=>{
+      if(new URL(response.url()).pathname!=='/__actions/live')return false;
+      const fields=await actionValues(response.request()).catch(()=>({}));
+      if(fields.type!=='input-batch')return false;
+      return JSON.parse(fields.messages).some(message=>message.type==='note'&&message.note==='60'&&message.on==='false');
+    });
+    await page.evaluate(()=>window.__clipTestMIDI(0x80,60,0));
+    assert.equal((await liveNoteOffResponse).status(),200,'matching MIDI note-off was not accepted');
+    await until(async()=>await page.locator('[data-live-note="60"]').getAttribute('aria-pressed')==='false','MIDI note-off did not release the note');
+    await block('two').locator('.placement-select').click();
+    await until(async()=>new URL(page.url()).searchParams.get('pattern')==='answer' && await page.locator('#detail-panel-clip .piano-roll[data-pattern-id=answer]').count()===1,'clip did not open after the matching MIDI note-off');
+    await ready();
+    assert.equal(new URL(page.url()).searchParams.get('placement'),'two');
+    assert.equal(new URL(page.url()).searchParams.get('track'),'lead');
+    assert.equal((await state()).source,heldSource,'opening after note-off changed the score');
+    assert.equal((await transport()).playing,true,'opening after note-off stopped song playback');
+    t.diagnostic('held MIDI note: pointer and Enter refuse clip opening without navigation, score write, note-off, lease release or transport stop; opening succeeds after matching note-off');
+    await page.locator('#transport-form button[value=stop]').click();
+    await until(async()=>!(await transport()).playing,'owner song playback did not stop after MIDI note-off');
     // Unload delivery is browser best effort. Exercise the actual pagehide
     // listener while this fixture document lives, then prove the same mount
     // releases its known lease with an advancing sequence on the next event.

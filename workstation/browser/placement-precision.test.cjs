@@ -27,7 +27,26 @@ test('placement precision and copy gestures retain musical offsets and commit on
  const coordinates=async(resize=false,id='far-in')=>{const control=block(id).locator(resize?'[data-placement-resize]':'.placement-select');await control.scrollIntoViewIfNeeded();const b=await control.boundingBox();return {x:b.x+(resize?b.width/2:Math.min(20,b.width/3)),y:b.y+b.height/2}};
  const gesture=async({dx=96,alt=false,shift=false,resize=false,hold=false,id='far-in'}={})=>{await page.getByRole('button',{name:'Show selected',exact:true}).click();const {x,y}=await coordinates(resize,id);if(alt)await page.keyboard.down('Alt');if(shift)await page.keyboard.down('Shift');await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x+dx,y,{steps:5});if(!hold){await page.mouse.up();if(alt)await page.keyboard.up('Alt');if(shift)await page.keyboard.up('Shift')}};
  try{
-  await page.goto(base+'/studio?tab=arrange&placement=far-in');await ready();baseline=(await state()).source;baselineRevision=(await state()).revision;assert.ok(baseline.includes(marker));
+  await page.goto(base+'/studio?tab=arrange&placement=far-home');await ready();baseline=(await state()).source;baselineRevision=(await state()).revision;assert.ok(baseline.includes(marker));
+  const audioLink=block().locator('.placement-select');
+  assert.match(await audioLink.getAttribute('title'),/audio placement/);
+  assert.equal(await audioLink.getAttribute('aria-label'),'Edit placement far-in: audio clip precision-clip');
+  const code=page.getByRole('textbox',{name:'Cicada score',exact:true}),clean=await code.inputValue();
+  await code.fill(clean+'\n// unsaved audio idea\n');
+  await page.evaluate(()=>{window.__audioEnterNavigations=0;document.addEventListener('gosx:navigate',()=>window.__audioEnterNavigations++);});
+  await audioLink.focus();await page.keyboard.press('Enter');await page.waitForTimeout(150);
+  assert.equal(await page.evaluate(()=>window.__audioEnterNavigations),0,'audio Enter navigated while Code had a draft');
+  assert.equal(new URL(page.url()).searchParams.get('placement'),'far-home');
+  assert.equal(await code.inputValue(),clean+'\n// unsaved audio idea\n');
+  assert.equal((await state()).source,baseline);
+  assert.match(await page.locator('[data-placement-edit-status]').innerText(),/Save or discard/);
+  await code.fill(clean);
+  await until(async()=>/No unsaved Code edits/.test(await page.locator('[data-source-recovery-status]').textContent()),'restored Code draft was not cleared');
+  await audioLink.focus();await page.keyboard.press('Enter');
+  await until(async()=>new URL(page.url()).searchParams.get('placement')==='far-in','Enter did not select the audio placement');await ready();
+  assert.equal(await page.locator('[data-placement-inspector=far-in]').evaluate(node=>node.open),true);
+  assert.equal((await state()).source,baseline);assert.equal(posts.length,0);
+  check('Enter on an audio placement retains its inspector selection and does not edit the score');
   await page.getByLabel('Timeline zoom',{exact:true}).selectOption('96');
   for(const step of [3840,960,480,320,240,160,120,1]){await choose(String(step));const count=posts.length;await block().locator('.placement-select').focus();await page.keyboard.press('ArrowRight');await value('at',16327+step);assert.equal(posts.length,count+1);await undo();assert.equal(await page.getByLabel('Snap step',{exact:true}).inputValue(),String(step))}
   check('all eight snap increments nudge an off-grid phrase once and preserve its seven-tick offset; one Undo restores exact source/revision');
@@ -61,7 +80,7 @@ test('placement precision and copy gestures retain musical offsets and commit on
   check('overlapping pattern copy returns a real form error, leaves the exact source and cleans up the preview');
   // Recover via the normal selection GET and verify protected Code/pending contexts.
   await block().locator('.placement-select').click();await ready();
-  const editor=page.getByRole('textbox',{name:'Cicada score',exact:true}),clean=await editor.inputValue();await editor.fill(clean+'\n// vocal draft\n');count=posts.length;await gesture();assert.equal(posts.length,count);assert.equal((await state()).source,baseline);await editor.fill(clean);await ready();
+  const editor=page.getByRole('textbox',{name:'Cicada score',exact:true});await editor.fill(clean+'\n// vocal draft\n');count=posts.length;await gesture();assert.equal(posts.length,count);assert.equal((await state()).source,baseline);await editor.fill(clean);await ready();
   let release,entered=false;const gate=new Promise(r=>release=r);await page.route('**/__actions/arrange',async route=>{entered=true;await gate;await route.continue()});await gesture();await until(()=>entered,'pending copy was not submitted: '+await page.evaluate(()=>JSON.stringify({status:document.querySelector('[data-placement-edit-status]')?.textContent,copy:document.querySelector('[name=placementCopy]')?.checked,edited:[...document.querySelectorAll('[data-edited=true]')].map(n=>({name:n.name,value:n.value,baseline:n.dataset.baseline,default:n.defaultValue})),navigation:window.__gosx?.navigation?.state}))).catch(e=>{release();throw e});count=posts.length;await gesture();assert.equal(posts.length,count);release();await value('at',20167,'far-in-copy');await page.unroute('**/__actions/arrange');await undo();
   check('unsaved Code and a real pending copy block additional gesture writes');
   await page.getByRole('tab',{name:'Session',exact:true}).click();await page.getByRole('tab',{name:'Arrange',exact:true}).click();assert.equal(await page.getByLabel('Copy on drag',{exact:true}).isChecked(),true);assert.equal(await page.getByLabel('Snap step',{exact:true}).inputValue(),'240');

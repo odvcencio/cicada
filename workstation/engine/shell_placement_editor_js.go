@@ -6,12 +6,14 @@ import (
 	"net/url"
 	"strconv"
 	"syscall/js"
+
+	enginewasm "m31labs.dev/gosx/engine/wasm"
 )
 
 // Studio gestures submit the same forms as the placement inspector. GoSX owns
 // pending/error state and managed returns; no second save queue or polling
 // workspace engine is mounted in the shell.
-func bindShellPlacementEditor(root js.Value) func() {
+func bindShellPlacementEditor(host enginewasm.Context, root js.Value) func() {
 	document := js.Global().Get("document")
 	status := func(message string) {
 		node := root.Call("querySelector", "[data-placement-edit-status]")
@@ -29,6 +31,8 @@ func bindShellPlacementEditor(root js.Value) func() {
 			reason = "Finish recording before moving placements."
 		case workspacePresent(root.Call("querySelector", "[data-gosx-form-state=pending]")):
 			reason = "Saving changes. Wait before editing another placement."
+		case workspaceAttr(document.Get("documentElement"), "data-gosx-navigation-state") == "pending":
+			reason = "Opening the workspace. Wait before editing a placement."
 		case hasUnsavedWork():
 			reason = "Save or discard unsaved edits before moving placements."
 		}
@@ -44,11 +48,50 @@ func bindShellPlacementEditor(root js.Value) func() {
 		return workspacePresent(node) && node.Get("closest").Type() == js.TypeFunction && root.Call("contains", node).Bool() && workspacePresent(node.Call("closest", "#view-panel-arrange"))
 	}
 	u.refresh = func(block js.Value) {
-		link := block.Call("querySelector", ".placement-select")
-		if workspacePresent(link) {
+		if link := block.Call("querySelector", ".placement-select"); workspacePresent(link) {
 			link.Call("click")
 		}
 	}
+	placementLink := func(block js.Value) js.Value {
+		if !workspacePresent(block) {
+			return js.Undefined()
+		}
+		id := workspaceAttr(block, "data-placement-block")
+		inspectors := root.Call("querySelectorAll", "[data-placement-inspector]")
+		for i := 0; i < inspectors.Length(); i++ {
+			inspector := inspectors.Index(i)
+			if workspaceAttr(inspector, "data-placement-inspector") != id {
+				continue
+			}
+			return inspector.Call("querySelector", "[data-placement-open]")
+		}
+		return js.Undefined()
+	}
+	openPlacement := func(block js.Value, focusEditor bool) bool {
+		link := placementLink(block)
+		if !workspacePresent(link) {
+			return false
+		}
+		if !blocked() {
+			selectPlacement(root, block)
+			_ = host.SetSignal("$dock", "clip")
+			root.Call("setAttribute", "data-phone-region", "detail")
+			location := shellCurrentURL()
+			location.Get("searchParams").Call("set", "dock", "clip")
+			location.Get("searchParams").Call("set", "region", "detail")
+			syncShellLocation(root, location)
+			if focusEditor {
+				// GoSX focuses a managed navigation's fragment target. Keyboard
+				// activation lands in the editor rather than the Arrange pane.
+				destination := js.Global().Get("URL").New(link.Get("href"))
+				destination.Set("hash", "patterns")
+				link.Set("href", destination.Get("href"))
+			}
+			link.Call("click")
+		}
+		return true
+	}
+	u.open = func(block js.Value) bool { return openPlacement(block, false) }
 	u.placementEdit = func(block js.Value, field string, value int64) {
 		if blocked() {
 			return
@@ -127,6 +170,22 @@ func bindShellPlacementEditor(root js.Value) func() {
 	listen("keydown", func(event js.Value) {
 		if event.Get("key").String() == "Tab" {
 			js.Global().Set(placementFocusKey, js.Undefined())
+		}
+		target := event.Get("target")
+		if event.Get("key").String() == "Enter" && !event.Get("ctrlKey").Bool() && !event.Get("metaKey").Bool() && !event.Get("altKey").Bool() && !event.Get("shiftKey").Bool() && workspacePresent(target) && target.Get("closest").Type() == js.TypeFunction {
+			control := target.Call("closest", ".placement-select")
+			if workspacePresent(control) && u.owned(control) {
+				if blocked() {
+					workspaceStop(event)
+					return
+				}
+				block := control.Call("closest", "[data-placement-block]")
+				if workspacePresent(placementLink(block)) {
+					workspaceStop(event)
+					openPlacement(block, true)
+					return
+				}
+			}
 		}
 		u.placementKeyDown(event)
 	})

@@ -49,6 +49,12 @@ func placementTimeline(p *project.Project, placements []project.Placement, selec
 	}
 	rows := []gosx.Node{gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-row")), gosx.El("span", gosx.Attrs(gosx.Attr("class", "placement-track")), gosx.Text("BARS")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-ruler")), gosx.Fragment(ruler...)))}
 	for trackIndex, track := range p.Tracks {
+		placementHint := "Select this pattern placement to edit it. Drag to move; Option/Alt-drag copies. Shift-drag moves freely. Arrow keys use Snap step; Shift changes one bar. Escape cancels."
+		placementAction := "pattern"
+		if track.Kind == "audio" {
+			placementHint = "Select this audio placement to edit it. Drag to move; Option/Alt-drag copies. Shift-drag moves freely. Arrow keys use Snap step; Shift changes one bar. Escape cancels."
+			placementAction = "audio clip"
+		}
 		var blocks []gosx.Node
 		var laneEnds []int64
 		for _, placement := range placements {
@@ -69,7 +75,7 @@ func placementTimeline(p *project.Project, placements []project.Placement, selec
 				gosx.Attr("data-placement-kind", track.Kind), gosx.Attr("data-placement-track", placement.Track), gosx.Attr("data-placement-content", placement.Content), gosx.Attr("data-placement-length", strconv.FormatInt(placement.LengthTicks, 10)),
 				gosx.Attr("data-placement-selected", strconv.FormatBool(placement.ID == selected)),
 				gosx.Attr("style", fmt.Sprintf("left:%s;width:%s;top:%dpx", position(placement.AtTick), position(placement.LengthTicks), 8+lane*68))),
-				gosx.El("a", gosx.Attrs(gosx.Attr("class", "placement-select"), gosx.Attr("href", placementURL(placement.ID)), gosx.Attr("draggable", "false"), gosx.Attr("title", "Drag to move; Option/Alt-drag copies. Shift-drag moves freely. Arrow keys use Snap step; Shift changes one bar. Escape cancels."), gosx.Attr("aria-label", "Edit placement "+placement.ID)), gosx.El("strong", gosx.Text(placement.ID)), gosx.El("span", gosx.Text(placement.Content)), clipPreview(p, placement.Content, placement.LengthTicks)),
+				gosx.El("a", gosx.Attrs(gosx.Attr("class", "placement-select"), gosx.Attr("href", placementURL(placement.ID)), gosx.Attr("draggable", "false"), gosx.Attr("title", placementHint), gosx.Attr("aria-label", "Edit placement "+placement.ID+": "+placementAction+" "+placement.Content)), gosx.El("strong", gosx.Text(placement.ID)), gosx.El("span", gosx.Text(placement.Content)), clipPreview(p, placement.Content, placement.LengthTicks)),
 				gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.BoolAttr("data-placement-resize"), gosx.Attr("aria-label", "Resize placement "+placement.ID), gosx.Attr("title", "Drag or use arrow keys to resize")), gosx.El("span", gosx.Attrs(gosx.Attr("aria-hidden", "true")), gosx.Text("⋮")))))
 		}
 		rows = append(rows, gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-row"), gosx.Attr("data-arrange-kind", track.Kind), gosx.Attr("data-track-color", strconv.Itoa(trackIndex%trackColors))),
@@ -142,11 +148,18 @@ func (s *studioApp) placementEditors(ctx *server.Context, v workspace, csrf stri
 	}
 	var editors []gosx.Node
 	for _, placement := range placements {
-		contentURL := patternURL(placement.Content, 1, "", "")
+		contentURL := patternContextURL(patternURL(placement.Content, 1, "", ""), placement.Track, "")
+		contentURL += "&placement=" + url.QueryEscape(placement.ID)
+		patternPlacement := true
 		for _, track := range p.Tracks {
 			if track.ID == placement.Track && track.Kind == "audio" {
 				contentURL = "/?panel=takes&clip=" + url.QueryEscape(placement.Content)
+				patternPlacement = false
 			}
+		}
+		openAttrs := gosx.Attrs(gosx.Attr("href", contentURL))
+		if patternPlacement {
+			openAttrs = append(openAttrs, gosx.BoolAttr("data-placement-open"))
 		}
 		copyStart := placement.AtTick + placement.LengthTicks
 		for _, other := range placements {
@@ -173,7 +186,7 @@ func (s *studioApp) placementEditors(ctx *server.Context, v workspace, csrf stri
 		editors = append(editors, gosx.El("details", attrs, gosx.El("summary", gosx.El("strong", gosx.Text(placement.ID)), gosx.El("span", gosx.Text(fmt.Sprintf("%s · %s → %s", placement.Track, placementPosition(v.Project.MeterMap(), placement.AtTick), placementPosition(v.Project.MeterMap(), placement.AtTick+placement.LengthTicks))))),
 			gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), update),
 			s.placementListening(v, csrf, placement.ID),
-			gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), gosx.El("a", gosx.Attrs(gosx.Attr("href", contentURL)), gosx.Text("Edit "+placement.Content)), gosx.El("a", gosx.Attrs(gosx.Attr("href", "/?panel=sampler&placement="+url.QueryEscape(placement.ID))), gosx.Text("Sample into pads")), remove),
+			gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), gosx.El("a", openAttrs, gosx.Text("Edit "+placement.Content)), gosx.El("a", gosx.Attrs(gosx.Attr("href", "/?panel=sampler&placement="+url.QueryEscape(placement.ID))), gosx.Text("Sample into pads")), remove),
 			s.placementVariation(ctx, v, csrf, placement),
 			gosx.El("details", gosx.Attrs(gosx.Attr("class", "placement-copy")), gosx.El("summary", gosx.Text("Make a copy")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), duplicate))))
 	}

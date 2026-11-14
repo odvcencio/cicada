@@ -29,10 +29,11 @@ func (s *studioApp) performanceTime(ctx *server.Context, v workspace, csrf strin
 		message = state.Message()
 	}
 	returnTo := patternContextURL(patternURL(p.ID, 1, "", "")+fmt.Sprintf("&note=%d", selected), ctx.Request.URL.Query().Get("track"), ctx.Request.URL.Query().Get("scene"))
+	returnTo = samePatternPlacementURL(returnTo, ctx.Request.URL.Query().Get("pattern"), ctx.Request.URL.Query().Get("placement"))
 	return gosx.El("section", gosx.Attrs(gosx.Attr("class", "performance-time"), gosx.Attr("data-performance-time", p.ID), gosx.Attr("data-gosx-key", "performance-time-"+p.ID)),
 		gosx.El("h3", gosx.Text("Shape time")),
 		gosx.El("p", gosx.Text("Move the notes, gates and gestures together. Pitch and project tempo stay the same.")),
 		gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), ui.Form(ui.FormProps{Action: "/__actions/pattern", CSRF: csrf, Revision: v.Revision, ReturnTo: returnTo, Class: "action-form"},
-			hidden("pattern", p.ID), hidden("action", "performance-scale"), hidden("source_revision", v.SourceRevision), hidden("track", ctx.Request.URL.Query().Get("track")), hidden("scene", ctx.Request.URL.Query().Get("scene")), gosx.Fragment(buttons...), gosx.El("p", gosx.Attrs(gosx.Attr("class", "form-status"), gosx.Attr("role", "status")), gosx.Text(message)))),
+			hidden("pattern", p.ID), hidden("action", "performance-scale"), hidden("source_revision", v.SourceRevision), hidden("track", ctx.Request.URL.Query().Get("track")), hidden("scene", ctx.Request.URL.Query().Get("scene")), hidden("context_placement", placementForPattern(ctx.Request.URL.Query(), p.ID)), gosx.Fragment(buttons...), gosx.El("p", gosx.Attrs(gosx.Attr("class", "form-status"), gosx.Attr("role", "status")), gosx.Text(message)))),
 		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Changes every use of this pattern. Existing song blocks keep their length. Make a variation first to develop one use; Undo restores the original timing.")))
 }
