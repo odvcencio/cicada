@@ -38,6 +38,8 @@ github.com/ledongthuc/pdf v0.0.0-20220302134840-0c2507a12d80 h1:6Yzfa6GP0rIo/kUL
 github.com/ledongthuc/pdf v0.0.0-20220302134840-0c2507a12d80/go.mod h1:imJHygn/1yfhB7XSJJKlFZKl/J+dCPAknuiaGOshXAs=
 github.com/odvcencio/corkscrewdb v0.2.0 h1:D4M0z1ieIqWLlhsnQbI5aU0Ed1EiV1P0WZt6JsjTP/8=
 github.com/odvcencio/corkscrewdb v0.2.0/go.mod h1:vFCTXziHnHyS3ewGW6rnw9KwTUtWtNHyIDFLK29hn7Q=
+github.com/odvcencio/gosx v0.0.0-20261114065752-bad9f7d88736 h1:kqXmRY5cS9ypqd0Brs1jTZsz3M9jKrUm/Y8Quzv2Kd8=
+github.com/odvcencio/gosx v0.0.0-20261114065752-bad9f7d88736/go.mod h1:HvK187xNEwIbzK/RJqWO651DnT1R4lxR9BB2e4LrP7M=
 github.com/odvcencio/gotreesitter v0.56.0 h1:2cyxAbG9yAMs1d8xTAxq3HWrKh8m7mi7pAjRBZd1Pp8=
 github.com/odvcencio/gotreesitter v0.56.0/go.mod h1:hBVkghd0paaYAVwd2087vfwdeU984bQbMo9LvpE0moo=
 github.com/odvcencio/turboquant v0.1.3 h1:ec4FowLEwU2us/TderujmxI9nxMbFaLJTsPaa/TRs3o=

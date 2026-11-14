@@ -35,6 +35,6 @@ require (
 	m31labs.dev/turboquant v0.2.1 // indirect
 )
 
-replace m31labs.dev/gosx => github.com/jvcencio/gosx v0.0.0-20261022012508-bd6bed6dfdc3
+replace m31labs.dev/gosx => github.com/odvcencio/gosx v0.0.0-20261114065752-bad9f7d88736
 
 tool m31labs.dev/gosx/cmd/gosx
