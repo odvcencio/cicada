@@ -11,6 +11,9 @@ const fixture=`// ${marker}\n`+fs.readFileSync(path.join(__dirname,'../../exampl
 if(process.argv[2]==='--write-fixture'){fs.writeFileSync(path.join(path.dirname(process.argv[3]),'precision.wav'),wave,{flag:'wx'});fs.writeFileSync(process.argv[3],fixture,{flag:'wx'});process.exit(0)}
 function playwright(){const p=process.env.CICADA_PLAYWRIGHT_MODULE;return p?createRequire(path.resolve(p,'package.json'))(p):require('playwright')}
 async function until(fn,label){const end=Date.now()+15000;while(Date.now()<end){if(await fn())return;await new Promise(r=>setTimeout(r,40))}assert.fail(label)}
+// The local owner capability is one-use. Reuse the first test's session for
+// the second rather than silently exercising the destination as a viewer.
+let precisionOwnerStorage;
 test('placement precision and copy gestures retain musical offsets and commit once',{timeout:180000},async()=>{
  const base=process.env.CICADA_STUDIO_URL;assert.ok(base&&['127.0.0.1','localhost','[::1]'].includes(new URL(base).hostname));
  const browser=await playwright().chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--no-sandbox']});
@@ -74,13 +77,14 @@ test('placement precision and copy gestures retain musical offsets and commit on
   await page.setViewportSize({width:1440,height:1000});await page.goto(base+'/?panel=session&placement=far-in');await page.locator('#cicada-workspace[data-workspace-reactive=ready]').waitFor();await page.getByLabel('Timeline zoom',{exact:true}).selectOption('96');await page.getByLabel('Copy on drag',{exact:true}).check();count=posts.length;await gesture();await until(async()=>await block('far-in-copy').count()===1&&await block('far-in-copy').getAttribute('data-placement-at')==='20167','panel copy saved');assert.equal(posts.length,count+1);assert.equal(await block('far-in-copy').getAttribute('data-placement-selected'),'true');await until(()=>block('far-in-copy').locator('.placement-select').evaluate(e=>e===document.activeElement),'panel copy focused');await page.getByRole('button',{name:'Undo',exact:true}).click();await until(async()=>(await state()).source===baseline,'panel exact Undo');await page.getByLabel('Copy on drag',{exact:true}).uncheck();
   check('panel Session uses the same guarded copy gesture, selects and focuses the new copy, and exact Undo restores the song');
   if(proof)fs.writeFileSync(path.join(proof,'report.json'),JSON.stringify({checks,errors,arrangePOSTs:posts.length,sourceSHA256:crypto.createHash('sha256').update(baseline).digest('hex'),finalRevision:(await state()).revision,platform:process.platform,browser:browser.version(),physicalAudioVerified:false},null,2));
+  precisionOwnerStorage=await page.context().storageState();
  }catch(error){if(proof){fs.mkdirSync(proof,{recursive:true});fs.writeFileSync(path.join(proof,'failure.json'),JSON.stringify({error:String(error),checks,posts:posts.map(r=>r.postData()),status:await page.locator('[data-placement-edit-status]').innerText()},null,2));await page.screenshot({path:path.join(proof,'failure.png')})}throw error}finally{await browser.close()}
 });
 
 test('audio placement destinations preserve Code drafts and pending edits',{timeout:90000},async()=>{
  const base=process.env.CICADA_STUDIO_URL;assert.ok(base);
  const browser=await playwright().chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--no-sandbox']});
- const page=await browser.newPage({viewport:{width:1440,height:1000}});page.setDefaultTimeout(15000);
+ const context=await browser.newContext({viewport:{width:1440,height:1000},storageState:precisionOwnerStorage});const page=await context.newPage();page.setDefaultTimeout(15000);
  try {
   await page.goto(base);await page.goto(new URL('/studio?placement=far-in',base).href);
   await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
@@ -113,6 +117,7 @@ test('audio placement destinations preserve Code drafts and pending edits',{time
   await page.unroute('**/__actions/arrange');
   assert.equal(new URL(page.url()).searchParams.get('clip'),'precision-clip','finishing the pending edit retains the chosen destination');
   assert.notEqual(await page.locator('#browser-takes').getAttribute('open'),null);
+  await until(async()=>await page.locator('#undo-form input[name=revision]').inputValue()===(await state()).revision&&await page.getByRole('button',{name:'Undo',exact:true}).getAttribute('aria-disabled')!=='true','Undo reflects the completed edit');
   await page.getByRole('button',{name:'Undo',exact:true}).click();
   await until(async()=>(await state()).source===savedBefore,'Undo restores the score after navigation during a pending edit');
  } finally {await page.close();await browser.close()}
