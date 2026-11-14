@@ -70,7 +70,7 @@ func bindShellEdits(ctx context.Context, root js.Value, props workspaceProps) fu
 			u.clearQueue()
 			u.restoreAll()
 			u.status.Set("Refreshing saved state…")
-			u.jobs <- workspaceJob{method: methodGet, form: js.Undefined(), refresh: true, regions: u.shellRegions(workspaceJob{}, regionsAll)}
+			u.jobs <- workspaceJob{method: methodGet, form: js.Undefined(), refresh: true, regions: u.shellRegions(workspaceJob{}, regionsAll), statusGeneration: u.statusGeneration}
 		}
 	})
 	// A stale region refreshes when its tab, pane, section or dialog opens. A

@@ -25,7 +25,7 @@ test('tempo forms move, change and remove steps with history, source conflicts, 
  const row=bar=>page.locator(`[data-tempo-step="@${bar}.1.1"]`),add=()=>page.locator('[data-tempo-add] form');
  const saved=async check=>{await until(()=>check(owner()),'tempo source saved');await ready();if(!fixture.primary)assert.equal(fs.readFileSync(fixture.score,'utf8'),entry)};
  async function submit(form,values,label){await open();for(const [name,value]of Object.entries(values))await form.locator(`[name="${name}"]`).fill(value);const reply=page.waitForResponse(r=>new URL(r.url()).pathname==='/__actions/arrange'&&r.request().method()==='POST');const action=form.getByRole('button',{name:label,exact:true});if(label==='Save tempo step')await action.press('Enter');else await action.click();await reply;await ready()}
- async function history(name,source){await page.locator(name==='Undo'?'#undo-form button':'#redo-form button').click();await saved(value=>value===source);await open()}
+ async function history(name,source){const response=page.waitForResponse(r=>new URL(r.url()).pathname===`/__actions/${name.toLowerCase()}`&&r.request().method()==='POST');await page.locator(name==='Undo'?'#undo-form button':'#redo-form button').click();assert.ok((await response).ok());await saved(value=>value===source);await page.waitForFunction(()=>!document.querySelector('#studio-shell[aria-busy=true]'));await open()}
  async function render(name){await page.getByRole('toolbar',{name:'Transport'}).getByRole('button',{name:'Export',exact:true}).click();const previous=(await read('export')).id;await page.locator('#export').getByRole('button',{name:'Render WAV',exact:true}).click();let job;await until(async()=>{job=await read('export');assert.notEqual(job.state,'failed',JSON.stringify(job));return job.id!==previous&&['succeeded','shortfall'].includes(job.state)},'WAV render');const r=await page.request.get(new URL(job.downloadURL,origin).href);assert.equal(r.status(),200);const wav=await r.body();assert.equal(wav.subarray(0,4).toString(),'RIFF');fs.writeFileSync(path.join(proof,name),wav);await page.keyboard.press('Escape');return wav}
  await page.goto(startup.href);await page.goto(origin+'/studio?tab=arrange&placement=run');await open();
  const audio=await read('audio/config');assert.equal(audio.options.inputEnabled,false);assert.equal(String(audio.inventory.backendName||audio.inventory.backend).toLowerCase(),'null');
@@ -40,8 +40,23 @@ test('tempo forms move, change and remove steps with history, source conflicts, 
  await submit(add(),{bar:'4',bpm:'96'},'Add tempo step');await saved(source=>source.includes('tempo @4.1.1 96'));await row(4).waitFor();
  await submit(row(4).locator('form'),{bpm:'98.125'},'Save tempo step');await saved(source=>source.includes('tempo @4.1.1 98.125'));await row(6).locator('[name=bpm]').fill('140');await submit(add(),{bar:'2',bpm:'110'},'Add tempo step');await saved(source=>source.includes('tempo @2.1.1 110'));assert.equal(await row(6).locator('[name=bpm]').inputValue(),'140');assert.equal(await row(4).locator('[name=bpm]').inputValue(),'98.125');await submit(row(2).locator('form'),{},'Remove step');await saved(source=>!source.includes('tempo @2.1.1'));assert.equal(await row(6).locator('[name=bpm]').inputValue(),'140');await row(6).locator('[name=bpm]').fill('137.333');checks.push('an unsaved tempo value stays with its step while another step is added and removed');const all=owner();
  await submit(row(4).locator('form'),{bar:'6'},'Save tempo step');assert.equal(owner(),all);await until(async()=>/already has a tempo step/.test(await page.locator('body').innerText()),'occupied bar refused');await row(4).locator('[name=bar]').fill('4');checks.push('adding out of order keeps steps sorted; occupied bars refuse without changing source');
- await submit(row(6).locator('form'),{bar:'7',bpm:''},'Remove step');await saved(source=>!source.includes('tempo @6.1.1')&&!source.includes('tempo @7.1.1'));await history('Undo',all);checks.push('remove targets the original step even with unsaved invalid field values');
- for(const bar of [1,4,6]){await submit(row(bar).locator('form'),{},'Remove step');await saved(source=>!source.includes(`tempo @${bar}.1.1`))}
+ await submit(row(6).locator('form'),{bar:'7',bpm:''},'Remove step');await saved(source=>!source.includes('tempo @6.1.1')&&!source.includes('tempo @7.1.1'));
+ if(!fixture.primary){
+  let release,received,finished;const held=new Promise(resolve=>release=resolve),committed=new Promise(resolve=>received=resolve),fulfilled=new Promise(resolve=>finished=resolve);let posts=0;
+  const count=request=>{if(new URL(request.url()).pathname==='/__actions/arrange'&&request.method()==='POST')posts++};page.on('request',count);
+  await page.route('**/__actions/undo',async route=>{try{const response=await route.fetch();assert.ok(response.ok());received();await held;await route.fulfill({response})}finally{finished()}});
+  try{
+   await page.locator('#undo-form button').click();await committed;await until(()=>owner()===all,'Undo wrote owning source');
+   await row(1).locator('[name=bpm]').fill('121');await row(1).getByRole('button',{name:'Remove step'}).click();
+   await until(async()=>/Studio is updating.*submit again/i.test(await page.locator('[data-workspace-status]').textContent()),'pending Undo refused tempo submission');
+   assert.equal(posts,0);assert.equal(owner(),all);assert.equal(await row(1).locator('[name=bpm]').inputValue(),'121');
+  }finally{release();await fulfilled;await page.unroute('**/__actions/undo');page.off('request',count)}
+  await page.waitForFunction(()=>!document.querySelector('#studio-shell[aria-busy=true]'));await until(async()=>await row(6).count()===1,'Undo projection applied');
+  assert.match(await page.locator('[data-workspace-status]').textContent(),/Studio is updating.*submit again/i,'retry guidance survives Undo completion');
+  assert.equal(owner(),all);await row(1).locator('[name=bpm]').fill('120');
+ }else await history('Undo',all);
+ checks.push('remove targets the original step even with unsaved invalid field values');
+ for(const bar of [1,4,6]){await submit(row(bar).locator('form'),{},'Remove step');await saved(source=>!source.includes(`tempo @${bar}.1.1`));if(!fixture.primary&&bar===1)assert.doesNotMatch(await page.locator('[data-workspace-status]').textContent(),/Studio is updating.*submit again/i,'successful retry clears the retry guidance')}
  assert.equal(await page.locator('[data-tempo-step]').count(),0);assert.ok((await render('constant.wav')).equals(baseline));checks.push('removing all steps restores the original constant-tempo audio');
  for(let i=0;i<3;i++){await page.locator('#undo-form button').click();await ready();await until(async()=>await page.locator('[data-tempo-step]').count()===i+1,'Undo tempo removal');await open()}
  assert.equal(owner(),all);const finished=await render('finished.wav');assert.notEqual(digest(finished),digest(baseline));
