@@ -218,8 +218,9 @@ func (s *studioApp) fileHistory(command string) action.Handler {
 func (s *studioApp) actions() map[string]action.Handler {
 	edit := func(f map[string]string) map[string]any { return map[string]any{"revision": f["revision"]} }
 	return map[string]action.Handler{
-		"midi-learn": s.learnPortableMIDI,
-		"midi-bind":  s.bindPortableMIDI,
+		"split-placement": s.splitPlacement,
+		"midi-learn":      s.learnPortableMIDI,
+		"midi-bind":       s.bindPortableMIDI,
 		"preset-save": s.mutation("/api/library/save", func(f map[string]string) (any, error) {
 			if f["source_revision"] == "" {
 				return nil, fmt.Errorf("refresh Studio before saving a preset")

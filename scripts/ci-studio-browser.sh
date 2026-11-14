@@ -33,7 +33,7 @@ shard_count=4
 # shard_segments SHARD prints the segments the shard runs, in order.
 shard_segments() {
 	case "$1" in
-	1) echo "print_sources placements performance_pitch performance_sources placement_commands code_recovery pattern_machine portable_midi macro_controls preset_save" ;;
+	1) echo "print_sources placements performance_pitch performance_sources placement_commands split_placement code_recovery pattern_machine portable_midi macro_controls preset_save" ;;
 	2) echo "pattern_song precision first_song gestures portable_song sound_context continuity modulation_source collaboration columns midi_pickup shared_capture vocals vocal_levels dock_fit" ;;
 	3) echo "owner_session chrome_gpu_raster page_stall scene_launch_keys pattern_grid tempo_editor recording_sources autoscroll arrangement_sources solo_clock mixer_strips navigation sampler_waveform export_sources library_recording midi_binding studio_edits recording_setup recording_levels meter_performance performance amp_automation" ;;
 	4) echo "shutdown_proof live_write grid_sources shell direct_variation placement_variation editor performance_time startup tempo_clock export_stems chorus observation_clock note_editor engine_requests" ;;
@@ -73,6 +73,7 @@ segment_runs() {
 	sampler_waveform) echo sampler-waveform ;;
 	autoscroll) echo placement-autoscroll ;;
 	placement_commands) echo placement-commands ;;
+	split_placement) echo split-placement ;;
 	arrangement_sources) echo arrangement-sources@edit arrangement-sources@reopen ;;
 	tempo_editor) echo tempo-editor@primary-edit tempo-editor@primary-reopen tempo-editor@secondary-edit tempo-editor@secondary-reopen ;;
 	solo_clock) echo solo-clock ;;
@@ -563,6 +564,13 @@ seg_placement_commands() { # 13 s
 	node workstation/browser/placement-commands.test.cjs --write-fixture "$browser_root/placement-commands.cicada"
 	start_studio "$browser_root/placement-commands.cicada" build/studio-placement-commands-server.log
 	run_suite placement-commands node --test workstation/browser/placement-commands.test.cjs | tee build/studio-placement-commands-report.txt
+	stop_studio
+}
+
+seg_split_placement() {
+	node workstation/browser/split-placement.test.cjs --write-fixture "$browser_root/split-placement"
+	start_studio "$browser_root/split-placement/main.cicada" build/studio-split-placement-server.log
+	run_suite split-placement env CICADA_SPLIT_DIR="$browser_root/split-placement" node --test workstation/browser/split-placement.test.cjs | tee build/studio-split-placement-report.txt
 	stop_studio
 }
 
