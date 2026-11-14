@@ -387,6 +387,13 @@ func (s *studioApp) patterns(ctx *server.Context, v workspace, csrf string) gosx
 	if v.Project == nil {
 		return failure(fmt.Errorf("save a valid score to open the pattern editor"))
 	}
+	if q := ctx.Request.URL.Query(); q.Get("createScene") == "1" {
+		track, scene := q.Get("track"), q.Get("scene")
+		if !silentSongScenes(v.Project, track)[scene] {
+			return ui.Panel(ui.PanelProps{ID: "patterns", Title: "Create pattern", Description: "This scene is no longer silent on that track. Select a silent cell to start again."})
+		}
+		return ui.Panel(ui.PanelProps{ID: "patterns", Title: "Create pattern", Description: "Create a pattern for the selected scene."}, s.patternCreationForTracks(ctx, v, csrf, track, v.Project.Tracks, false, scene))
+	}
 	if ctx.Request.URL.Query().Get("machine") == "1" {
 		return s.patternMachine(ctx, v, csrf)
 	}

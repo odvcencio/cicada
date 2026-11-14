@@ -340,6 +340,13 @@ func dockSelection(v workspace, query url.Values) (dockClip, string) {
 		}
 		clip = dockClip{name: p.ID, detail: strings.Join(parts, " · ")}
 	}
+	if query.Get("createScene") == "1" {
+		clip = dockClip{}
+		trackID, sceneID := query.Get("track"), query.Get("scene")
+		if silentSongScenes(v.Project, trackID)[sceneID] {
+			clip = dockClip{name: "New pattern", detail: trackID + " · " + sceneID}
+		}
+	}
 	track := ""
 	if t := deviceTrack(v.Project, query); t != nil {
 		track = t.ID + " · " + t.Kind

@@ -1284,6 +1284,9 @@ jobs:
             build/studio-pattern-song-*-report.txt
             build/studio-pattern-song-*-server.log
             build/studio-pattern-song-*-proof/
+            build/studio-silent-scene-create-report.txt
+            build/studio-silent-scene-create-server.log
+            build/studio-silent-scene-create-proof/
             build/studio-pattern-grid-*-report.txt
             build/studio-pattern-grid-*-server.log
             build/studio-pattern-grid-proof/

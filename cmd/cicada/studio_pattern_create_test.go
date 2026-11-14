@@ -25,6 +25,10 @@ func TestStudioCreatePatternAndAssignmentUndoTogether(t *testing.T) {
 		t.Fatalf("add sound: %d %s", response.Code, response.Body)
 	}
 	before := read()
+	response = studioCall(t, handler, "/api/pattern", studioEdit{SourceRevision: strings.Repeat("0", 64), Revision: studioRevision(before), Action: "create", NewName: "glow", Track: "keys", Scene: "main", Length: 16, Starter: "empty"})
+	if response.Code != http.StatusConflict || !bytes.Equal(read(), before) {
+		t.Fatalf("stale project sources were not refused intact: %d %s", response.Code, response.Body)
+	}
 	response = studioCall(t, handler, "/api/pattern", studioEdit{SourceRevision: studioProjectReceipt(t, s.path), Revision: studioRevision(before), Action: "create", NewName: "glow", Track: "keys", Scene: "main", Length: 16, Starter: "chords"})
 	if response.Code != http.StatusOK {
 		t.Fatalf("create and assign: %d %s", response.Code, response.Body)
