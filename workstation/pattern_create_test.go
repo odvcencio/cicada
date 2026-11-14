@@ -7,12 +7,49 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
+
+func TestSilentSceneCreationKeepsItsTrackAndScene(t *testing.T) {
+	p := &project.Project{Title: "Silent scenes", TempoMilli: 120000,
+		Tracks: []project.Track{{ID: "lead", Kind: "acid"}, {ID: "vox", Kind: "audio"}},
+		Scenes: []project.Scene{{ID: "air", Bindings: map[string]string{"lead": "keep"}}, {ID: "tone", Bindings: map[string]string{"lead": "pulse"}}, {ID: "quiet", Bindings: map[string]string{"lead": "off"}}, {ID: "carry", Bindings: map[string]string{"lead": "keep"}}},
+		Song:   []project.SongEntry{{Scene: "air", Bars: 1}, {Scene: "tone", Bars: 1}, {Scene: "air", Bars: 1}, {Scene: "quiet", Bars: 1}, {Scene: "carry", Bars: 1}, {Scene: "quiet", Bars: 1}}}
+	address, client, edits := testAppWorkspace(t, &workspace{Revision: "current", SourceRevision: "all-sources", Valid: true, Project: p})
+	page := getPage(t, client, address+"/studio?tab=arrange")
+	links := regexp.MustCompile(`<a[^>]*data-scene-create="[^"]+"[^>]*>`).FindAllString(page, -1)
+	if len(links) != 3 {
+		t.Fatalf("want two quiet and one carried silent cell, got %v", links)
+	}
+	for _, link := range links {
+		if strings.Contains(link, "air") || strings.Contains(link, "vox") {
+			t.Fatalf("mixed-state scene or audio track offered creation: %s", link)
+		}
+	}
+	page = getPage(t, client, address+"/studio?dock=clip&createScene=1&track=lead&scene=quiet")
+	for _, want := range []string{`<strong>New pattern</strong>`, `lead · quiet`, `data-gosx-key="create-pattern-lead"`, `name="track" value="lead"`, `name="scene" value="quiet"`, `name="source_revision" value="all-sources"`, `value="empty" selected`, `aria-describedby="scene-create-scope"`, `data-scene-create-scope`, "including Stop", "every occurrence", "following carried sections", "live scene launches"} {
+		if !strings.Contains(page, want) {
+			t.Fatalf("scene creation missing %q", want)
+		}
+	}
+	if len(*edits) != 0 {
+		t.Fatal("opening a silent scene wrote to the score")
+	}
+	form := url.Values{"csrf_token": {tokenFromPage(t, page)}, "revision": {"current"}, "source_revision": {"all-sources"}, "action": {"create"}, "createFor": {"lead"}, "newName": {"lead-pattern"}, "track": {"lead"}, "scene": {"quiet"}, "length": {"16"}, "starter": {"empty"}, "__gosx_return_to": {"/studio?dock=clip&createScene=1&track=lead&scene=quiet"}}
+	r := post(t, client, address+"/__actions/pattern", form, false, address)
+	defer r.Body.Close()
+	if r.StatusCode != 303 || len(*edits) != 1 || (*edits)[0]["track"] != "lead" || (*edits)[0]["scene"] != "quiet" || (*edits)[0]["source_revision"] != "all-sources" {
+		t.Fatalf("create lost its context: %d %+v", r.StatusCode, *edits)
+	}
+	if stale := getPage(t, client, address+"/studio?dock=clip&createScene=1&track=lead&scene=air"); !strings.Contains(stale, "This scene is no longer silent on that track") {
+		t.Fatal("a mixed-state scene was offered creation by direct URL")
+	}
+}
 
 func TestEmptyPatternLibraryOffersCreationAndRetainsNativeErrors(t *testing.T) {
 	// Audio-only arrangements can have no note patterns. A newly added

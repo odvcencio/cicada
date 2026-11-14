@@ -34,7 +34,7 @@ shard_count=4
 shard_segments() {
 	case "$1" in
 	1) echo "print_sources placements performance_pitch performance_sources placement_commands code_recovery pattern_machine portable_midi macro_controls preset_save" ;;
-	2) echo "pattern_song precision first_song gestures portable_song sound_context continuity modulation_source collaboration columns midi_pickup shared_capture vocals vocal_levels dock_fit" ;;
+	2) echo "pattern_song precision first_song silent_scene_create gestures portable_song sound_context continuity modulation_source collaboration columns midi_pickup shared_capture vocals vocal_levels dock_fit" ;;
 	3) echo "owner_session chrome_gpu_raster page_stall scene_launch_keys pattern_grid tempo_editor recording_sources autoscroll arrangement_sources solo_clock mixer_strips navigation sampler_waveform export_sources library_recording midi_binding studio_edits recording_setup recording_levels meter_performance performance amp_automation" ;;
 	4) echo "shutdown_proof live_write grid_sources shell direct_variation placement_variation editor performance_time startup tempo_clock export_stems chorus observation_clock note_editor engine_requests" ;;
 	*) echo "unknown shard: $1" >&2; return 1 ;;
@@ -60,6 +60,7 @@ segment_runs() {
 	engine_requests) echo engine-requests ;;
 	columns) echo columns ;;
 	first_song) echo first-song@compose first-song@reopen ;;
+	silent_scene_create) echo silent-scene-create ;;
 	portable_song) echo portable-song@select portable-song@reopen ;;
 	code_recovery) echo code-recovery@capture code-recovery@recover code-recovery@verify ;;
 	export_sources) echo export-sources ;;
@@ -521,6 +522,13 @@ seg_navigation() { # 12 s
 	node workstation/browser/placements.test.cjs --write-fixture "$browser_root/navigation.cicada"
 	start_studio "$browser_root/navigation.cicada" build/studio-navigation-server.log
 	run_suite arrangement-navigation env CICADA_ARRANGEMENT_PROOF_DIR="$PWD/build/studio-arrangement-proof" node --test workstation/browser/arrangement-navigation.test.cjs | tee build/studio-navigation-report.txt
+	stop_studio
+}
+
+seg_silent_scene_create() {
+	node workstation/browser/silent-scene-create.test.cjs --write-fixture "$browser_root/silent-scene-create.cicada"
+	start_studio "$browser_root/silent-scene-create.cicada" build/studio-silent-scene-create-server.log
+	run_suite silent-scene-create env CICADA_SILENT_SCENE_SCORE="$browser_root/silent-scene-create.cicada" CICADA_SILENT_SCENE_PROOF_DIR="$PWD/build/studio-silent-scene-create-proof" node --test workstation/browser/silent-scene-create.test.cjs | tee build/studio-silent-scene-create-report.txt
 	stop_studio
 }
 

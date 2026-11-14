@@ -70,6 +70,7 @@ func (s *studioApp) arrangement(ctx *server.Context, v workspace, csrf, selected
 	rows = append(rows, gosx.El("div", gosx.Attrs(gosx.Attr("class", "timeline-row"), gosx.Attr("style", style)), gosx.Fragment(ruler...)))
 	for trackIndex, track := range p.Tracks {
 		cells := []gosx.Node{gosx.El("span", gosx.Attrs(gosx.Attr("class", "timeline-track")), gosx.El("strong", gosx.Text(track.ID)), gosx.El("small", gosx.Text(track.Kind)), rail(track.ID))}
+		silentScenes := silentSongScenes(p, track.ID)
 		inherited := "off"
 		for _, entry := range p.Song {
 			binding := scenes[entry.Scene].Bindings[track.ID]
@@ -105,6 +106,10 @@ func (s *studioApp) arrangement(ctx *server.Context, v workspace, csrf, selected
 					}
 				}
 				cells = append(cells, gosx.El("a", append(attrs, gosx.Attr("href", href)), gosx.Fragment(content...)))
+			} else if silentScenes[entry.Scene] {
+				q := url.Values{"panel": {"patterns"}, "createScene": {"1"}, "track": {track.ID}, "scene": {entry.Scene}, "dock": {"clip"}, "region": {"detail"}}
+				attrs = append(attrs, gosx.BoolAttr("data-scene-pattern-open"), gosx.Attr("data-scene-create", entry.Scene), gosx.Attr("aria-label", "Create a pattern for "+track.ID+" in scene "+entry.Scene), gosx.Attr("href", "/?"+q.Encode()))
+				cells = append(cells, gosx.El("a", attrs, gosx.El("span", gosx.Attrs(gosx.Attr("class", "clip-name")), gosx.Text("+ Create pattern"))))
 			} else {
 				cells = append(cells, gosx.El("span", attrs, gosx.Fragment(content...)))
 			}
@@ -119,6 +124,47 @@ func (s *studioApp) arrangement(ctx *server.Context, v workspace, csrf, selected
 	appendBlock := s.form(v, csrf, "session", "song", hidden("action", "append"), field("Scene", selectInput("scene", "", sceneNames)), field("Bars", wholeInput("bars", 4, 1, 999)), submit("", "", "Add to arrangement"))
 	settings := s.form(v, csrf, "session", "project", field("Title", textInput("title", p.Title)), field("Tempo (BPM)", numberInput("tempo", strconv.FormatFloat(float64(p.TempoMilli)/1000, 'f', -1, 64), "20", "300")), field("Key", selectInput("root", phraseKeys[p.Key.Root], phraseKeys)), field("Scale", selectInput("scale", p.Key.Scale, phraseScales)), submit("", "", "Save project settings"))
 	return ui.Panel(ui.PanelProps{ID: "arrangement", Title: "Arrangement", Description: length}, gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll timeline"), gosx.Attr("aria-label", "Song timeline")), gosx.Fragment(rows...)), gosx.El("p", gosx.Attrs(gosx.BoolAttr("data-scene-open-status"), gosx.Attr("role", "status"), gosx.Attr("aria-live", "polite"), gosx.BoolAttr("hidden"))), s.sessionListening(v, csrf, selected, p.MeterMap().BarStart(int64(bar-1))), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Click a scene header to play from that block; click a clip to edit its pattern. ↳ carries the previous pattern.")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "arrangement-blocks")), gosx.Fragment(blocks...)), gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), appendBlock), gosx.El("details", gosx.Attrs(gosx.Attr("class", "pattern-management")), gosx.El("summary", gosx.Text("Project settings")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), settings), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Changing the key retunes scale-degree notes. Explicit letter pitches retain their pitch."))))
+}
+
+// silentSongScenes contains only scenes whose every song occurrence is
+// silent for this track. A keep binding can be silent in one occurrence and
+// carry a sounding pattern in another, so one cell alone is not sufficient.
+func silentSongScenes(p *project.Project, trackID string) map[string]bool {
+	if p == nil || p.Arrange != nil {
+		return nil
+	}
+	eligible := false
+	for _, track := range p.Tracks {
+		if track.ID == trackID && patternKindForTrack(p, track) != "" {
+			eligible = true
+			break
+		}
+	}
+	if !eligible {
+		return nil
+	}
+	scenes := make(map[string]project.Scene, len(p.Scenes))
+	for _, scene := range p.Scenes {
+		scenes[scene.ID] = scene
+	}
+	silent := make(map[string]bool)
+	playing := "off"
+	for _, entry := range p.Song {
+		scene, ok := scenes[entry.Scene]
+		if !ok {
+			return nil
+		}
+		if binding := scene.Bindings[trackID]; binding != "" && binding != "keep" {
+			playing = binding
+		}
+		if _, seen := silent[entry.Scene]; !seen {
+			silent[entry.Scene] = true
+		}
+		if playing != "off" {
+			silent[entry.Scene] = false
+		}
+	}
+	return silent
 }
 
 // trackColors is the size of the Arrange track palette; tracks take its colors
