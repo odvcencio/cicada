@@ -62,7 +62,7 @@ func run(args []string) error {
 	}
 	finished := make(chan error, 1)
 	go func() { finished <- server.Serve(listener) }()
-	startupPath := "/"
+	startupPath := "/studio"
 	if local, ok := handler.(interface{ StartupPath() string }); ok {
 		startupPath = local.StartupPath()
 	}
