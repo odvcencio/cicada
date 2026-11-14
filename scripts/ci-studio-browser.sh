@@ -36,7 +36,7 @@ shard_segments() {
 	1) echo "print_sources placements performance_pitch performance_sources placement_commands code_recovery pattern_machine portable_midi macro_controls preset_save" ;;
 	2) echo "pattern_song precision first_song gestures portable_song sound_context continuity modulation_source collaboration columns midi_pickup shared_capture vocals vocal_levels dock_fit" ;;
 	3) echo "owner_session chrome_gpu_raster page_stall scene_launch_keys pattern_grid tempo_editor recording_sources autoscroll arrangement_sources solo_clock mixer_strips navigation sampler_waveform export_sources library_recording midi_binding studio_edits recording_setup recording_levels meter_performance performance amp_automation" ;;
-	4) echo "shutdown_proof live_write grid_sources shell direct_variation placement_variation editor performance_time startup tempo_clock export_stems chorus observation_clock note_editor engine_requests" ;;
+	4) echo "shutdown_proof live_write grid_sources shell direct_variation placement_variation editor performance_time startup scene_blocks tempo_clock export_stems chorus observation_clock note_editor engine_requests" ;;
 	*) echo "unknown shard: $1" >&2; return 1 ;;
 	esac
 }
@@ -70,6 +70,7 @@ segment_runs() {
 	gestures) echo placement-gestures ;;
 	precision) echo placement-precision ;;
 	startup) echo startup ;;
+	scene_blocks) echo scene-blocks ;;
 	sampler_waveform) echo sampler-waveform ;;
 	autoscroll) echo placement-autoscroll ;;
 	placement_commands) echo placement-commands ;;
@@ -542,6 +543,14 @@ seg_startup() { # 13 s
 	node workstation/browser/placements.test.cjs --write-fixture "$browser_root/startup.cicada"
 	start_studio "$browser_root/startup.cicada" build/studio-startup-server.log
 	run_suite startup env CICADA_STARTUP_PROOF_DIR="$PWD/build/studio-startup-proof" node --test workstation/browser/startup.test.cjs | tee build/studio-startup-report.txt
+	stop_studio
+}
+
+seg_scene_blocks() {
+	mkdir -p "$browser_root/scene-blocks"
+	node workstation/browser/scene-blocks.test.cjs --write-fixture "$browser_root/scene-blocks/main.cicada"
+	start_studio "$browser_root/scene-blocks/main.cicada" build/studio-scene-blocks-server.log
+	run_suite scene-blocks node --test workstation/browser/scene-blocks.test.cjs | tee build/studio-scene-blocks-report.txt
 	stop_studio
 }
 

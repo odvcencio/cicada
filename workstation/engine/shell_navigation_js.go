@@ -96,6 +96,34 @@ func bindShellNavigation(host enginewasm.Context, root js.Value) (func(), error)
 		if !workspacePresent(target) || target.Get("closest").Type() != js.TypeFunction {
 			return nil
 		}
+		// Selecting a scene block uses the already-rendered forms: it must not
+		// navigate away from a Live engine that may be holding notes.
+		edit := target.Call("closest", ".timeline-edit[data-song-index]")
+		if workspacePresent(edit) {
+			index := workspaceAttr(edit, "data-song-index")
+			blocks := root.Call("querySelectorAll", ".arrangement-block[data-song-index]")
+			var selected js.Value
+			for i := 0; i < blocks.Length(); i++ {
+				block := blocks.Index(i)
+				block.Call("removeAttribute", "data-song-selected")
+				if workspaceAttr(block, "data-song-index") == index {
+					selected = block
+				}
+			}
+			if workspacePresent(selected) {
+				event.Call("preventDefault")
+				selected.Call("setAttribute", "data-song-selected", "")
+				selected.Set("open", true)
+				summary := selected.Call("querySelector", "summary")
+				if workspacePresent(summary) {
+					summary.Call("scrollIntoView", map[string]any{"block": "nearest", "inline": "nearest", "behavior": "auto"})
+					if event.Get("detail").Int() == 0 {
+						summary.Call("focus", map[string]any{"preventScroll": true})
+					}
+				}
+			}
+			return nil
+		}
 		// Managed navigation retains the shell controller, so an explicit URL
 		// alone does not switch the existing dock signal. Reveal Automation
 		// before following the catalog-selected amp curve link.
