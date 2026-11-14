@@ -48,16 +48,26 @@ func bindShellNavigation(host enginewasm.Context, root js.Value) (func(), error)
 	document := js.Global().Get("document")
 	remember := js.FuncOf(func(_ js.Value, args []js.Value) any {
 		if len(args) > 0 && root.Get("isConnected").Bool() {
+			rememberRevealActivation(args[0])
 			rememberPendingShellChoice(root, args[0])
 		}
 		return nil
 	})
 	restore := js.FuncOf(func(js.Value, []js.Value) any {
 		restorePendingShellChoice(host, root)
+		revealShellBrowserDestination(host, root)
 		return nil
 	})
 	document.Call("addEventListener", "click", remember, true)
 	document.Call("addEventListener", "gosx:navigate", restore)
+	focusChanged := js.FuncOf(func(js.Value, []js.Value) any {
+		intent := js.Global().Get("__cicadaRevealActivation")
+		if workspacePresent(intent) {
+			intent.Set("focusChanged", true)
+		}
+		return nil
+	})
+	document.Call("addEventListener", "focusin", focusChanged, true)
 	// Keep can commit before the refreshed history forms arrive. Block direct
 	// form submits while the history lock holds (history_lock.go).
 	historyPending := js.FuncOf(func(_ js.Value, args []js.Value) any {
@@ -73,6 +83,7 @@ func bindShellNavigation(host enginewasm.Context, root js.Value) (func(), error)
 	})
 	document.Call("addEventListener", "submit", historyPending, true)
 	restorePendingShellChoice(host, root)
+	revealShellBrowserDestination(host, root)
 	localClick := js.FuncOf(func(_ js.Value, args []js.Value) any {
 		if len(args) == 0 || !root.Get("isConnected").Bool() {
 			return nil
@@ -128,6 +139,9 @@ func bindShellNavigation(host enginewasm.Context, root js.Value) (func(), error)
 				}
 				root.Call("setAttribute", "data-phone-region", region)
 				url := shellCurrentURL()
+				if region != "browser" {
+					url.Get("searchParams").Call("delete", "reveal")
+				}
 				url.Get("searchParams").Call("set", "region", region)
 				syncShellLocation(root, url)
 				break
@@ -157,10 +171,12 @@ func bindShellNavigation(host enginewasm.Context, root js.Value) (func(), error)
 	return func() {
 		document.Call("removeEventListener", "click", remember, true)
 		document.Call("removeEventListener", "gosx:navigate", restore)
+		document.Call("removeEventListener", "focusin", focusChanged, true)
 		document.Call("removeEventListener", "submit", historyPending, true)
 		historyPending.Release()
 		remember.Release()
 		restore.Release()
+		focusChanged.Release()
 		for _, release := range releases {
 			release()
 		}
@@ -169,6 +185,70 @@ func bindShellNavigation(host enginewasm.Context, root js.Value) (func(), error)
 		nativeKeys.Release()
 		localClick.Release()
 	}, nil
+}
+
+func rememberRevealActivation(event js.Value) {
+	target := event.Get("target")
+	if !workspacePresent(target) || target.Get("closest").Type() != js.TypeFunction {
+		return
+	}
+	link := target.Call("closest", "a[href]")
+	if !workspacePresent(link) {
+		return
+	}
+	url := js.Global().Get("URL").New(link.Get("href"), js.Global().Get("location").Get("href"))
+	panel := url.Get("searchParams").Call("get", "reveal")
+	if panel.IsNull() || (panel.String() != "sampler" && panel.String() != "takes") {
+		js.Global().Set("__cicadaRevealActivation", js.Undefined())
+		return
+	}
+	intent := js.Global().Get("Object").New()
+	intent.Set("keyboard", event.Get("detail").Int() == 0)
+	intent.Set("panel", panel.String())
+	intent.Set("focusChanged", false)
+	js.Global().Set("__cicadaRevealActivation", intent)
+}
+
+// Apply a destination only after navigation succeeds (or when its URL is
+// loaded directly), so a blocked navigation never changes the current layout.
+func revealShellBrowserDestination(host enginewasm.Context, root js.Value) {
+	if !root.Get("isConnected").Bool() {
+		return
+	}
+	url := shellCurrentURL()
+	panel := url.Get("searchParams").Call("get", "reveal")
+	if panel.IsNull() || (panel.String() != "sampler" && panel.String() != "takes") {
+		js.Global().Set("__cicadaRevealActivation", js.Undefined())
+		return
+	}
+	activation := js.Global().Get("__cicadaRevealActivation")
+	js.Global().Set("__cicadaRevealActivation", js.Undefined())
+	_ = host.SetSignal("$layout.browserOpen", true)
+	_ = host.SetSignal("$layout."+panel.String()+"Open", true)
+	root.Call("setAttribute", "data-phone-region", "browser")
+	url.Get("searchParams").Call("set", "region", "browser")
+	// The signals persist the user's resulting layout. Consume the instruction
+	// so a later explicit close remains closed after reload.
+	url.Get("searchParams").Call("delete", "reveal")
+	syncShellLocation(root, url)
+	document := js.Global().Get("document")
+	focus := document.Get("activeElement")
+	var reveal js.Func
+	reveal = js.FuncOf(func(js.Value, []js.Value) any {
+		defer reveal.Release()
+		if !root.Get("isConnected").Bool() || !document.Get("activeElement").Equal(focus) || workspaceAttr(root, "data-phone-region") != "browser" {
+			return nil
+		}
+		section := root.Call("querySelector", "#browser-"+panel.String()+" > summary")
+		if workspacePresent(section) {
+			section.Call("scrollIntoView", map[string]any{"block": "nearest", "inline": "nearest", "behavior": "auto"})
+			if workspacePresent(activation) && activation.Get("keyboard").Bool() && !activation.Get("focusChanged").Bool() {
+				section.Call("focus", map[string]any{"preventScroll": true})
+			}
+		}
+		return nil
+	})
+	js.Global().Call("requestAnimationFrame", reveal)
 }
 
 func shellCurrentURL() js.Value {
@@ -247,6 +327,9 @@ func shellContextTarget(target, current js.Value) bool {
 
 func copyShellContext(target, current js.Value) {
 	for _, key := range []string{"tab", "dock", "region"} {
+		if key == "region" && !target.Get("searchParams").Call("get", "reveal").IsNull() {
+			continue
+		}
 		value := current.Get("searchParams").Call("get", key)
 		if value.IsNull() {
 			target.Get("searchParams").Call("delete", key)

@@ -257,19 +257,23 @@ footer { padding:20px 28px; color:var(--muted); border-top:1px solid var(--borde
 .placement-listening { margin: 12px 0; }
 .listening-status { flex-basis: 100%; color: var(--amber); overflow-wrap: anywhere; }
 #sampler-panel { container:sampler / inline-size; min-width:0; }
+#sampler-expand-control { display:none; }
 #cicada-sampler { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.15fr); gap:18px; align-items:start; }
-.sampler-pad-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; grid-column:1; grid-row:1/5; }
+.sampler-pad-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; grid-column:1; grid-row:1/5; padding:14px; border:1px solid #414c57; border-radius:10px; background:linear-gradient(155deg,#313b45 0%,#1b222b 48%,#10161d 100%); box-shadow:inset 0 1px #ffffff24,inset 0 -2px #0009,0 5px 12px #0005; }
 .sampler-pad { min-width:0; }
-.sampler-pad button { position:relative; display:flex; flex-direction:column; justify-content:center; gap:8px; width:100%; min-height:118px; padding:26px 10px 22px; text-align:left; background:var(--raised); border-color:var(--clip-edge); touch-action:none; }
+.sampler-pad button { position:relative; display:flex; flex-direction:column; justify-content:center; gap:8px; width:100%; min-height:118px; padding:26px 10px 22px; text-align:left; color:var(--text); background:linear-gradient(150deg,#526168 0%,#35444a 48%,#263339 100%); border:1px solid #718087; border-radius:8px; box-shadow:inset 0 1px 2px #ffffff42,inset 0 -5px 8px #0b141b80,0 4px 0 #10171d,0 6px 6px #0008; touch-action:none; transition:transform 60ms ease-out,box-shadow 60ms ease-out,background 100ms ease-out; }
 #sampler-panel .sampler-pad button { min-height:118px; padding:26px 10px 22px; }
+.sampler-pad button:not(:disabled):hover { background:linear-gradient(150deg,#5a6b71,#3a4b50 48%,#29383d); }
+.sampler-pad button:not(:disabled):active { transform:translateY(3px); box-shadow:inset 0 2px 7px #0b141b99,0 1px 0 #10171d; }
 .sampler-pad strong { line-height:1.25; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%; font-size:13px; }
 .sampler-pad small { color:var(--muted); font-size:11px; line-height:1.25; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%; }
 .sampler-pad .pad-number { position:absolute; top:8px; left:10px; color:var(--mint); font:12px monospace; }
 .sampler-pad kbd { position:absolute; bottom:7px; right:9px; font:11px monospace; color:var(--muted); }
 .sampler-pad a { display:block; padding:5px 2px; font-size:11px; }
 .sampler-pad[data-pad-selected=true] button { border-color:var(--amber); }
-.sampler-pad button[data-playing=true] { background:var(--mint); color:var(--bg); }
-.sampler-pad button[data-playing=true] small,.sampler-pad button[data-playing=true] .pad-number { color:var(--bg); }
+.sampler-pad button[data-playing=true],.sampler-pad button[data-playing=true]:hover { background:linear-gradient(150deg,#b2f7df,#65cda8 54%,#369e80); border-color:#c7ffeb; color:#10271f; box-shadow:inset 0 1px 3px #ffffffa0,inset 0 -5px 8px #14533f55,0 4px 0 #12392f,0 0 14px #79dfbd80; }
+.sampler-pad button[data-playing=true] small,.sampler-pad button[data-playing=true] .pad-number,.sampler-pad button[data-playing=true] kbd { color:#173f33; }
+@media (prefers-reduced-motion:reduce) { .sampler-pad button { transition:none; } }
 .sampler-wave { min-width:0; grid-column:2; grid-row:1; }
 .sampler-wave-plot { position:relative; height:180px; overflow:hidden; border:1px solid var(--border); border-radius:6px; touch-action:none; }
 .sampler-wave-plot svg { display:block; width:100%; height:100%; }
@@ -308,6 +312,9 @@ footer { padding:20px 28px; color:var(--muted); border-top:1px solid var(--borde
  .sampler-pad strong { font-size:11px; }
  .sampler-pad small { font-size:10px; }
  .sampler-wave,.sampler-performance,.sampler-event-strip,#cicada-sampler > details { margin-bottom:18px; }
+}
+@container sampler (max-width:380px) {
+ .sampler-pad-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
 
 /* Session vocals share the arrangement's fields, surfaces and focus treatment. */

@@ -61,6 +61,13 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
 .gsx-collapsible > summary { padding:var(--gsx-space-xs) var(--gsx-space-sm); cursor:pointer; }
 .shell .shell-collapsible > summary { height:36px; padding:8px 12px; background:var(--raised); border-bottom:1px solid var(--border); font-weight:600; }
 .shell #studio-browser { background:var(--panel); }
+/* The expanded sampler uses the existing Library mount and leaves the user's
+   stored splitter width alone. Closing it restores that width. */
+@media (min-width:800px) {
+	.shell #sampler-expand-control { display:inline-flex; align-items:center; gap:8px; margin:0 0 12px; cursor:pointer; }
+	.shell #sampler-expand-control input { margin:0; }
+	.shell:has(#studio-browser .shell-collapsible[open] #browser-sampler[open] #sampler-expand:checked) .gsx-dock { --studio-browser-column:min(640px,calc(100vw - 480px)); }
+}
 
 /* Top bar: project identity, transport, position and tempo, then the
    workspace actions. One 52px row at desktop widths. */

@@ -113,7 +113,7 @@ func (p *shellPage) panel(name string) gosx.Node {
 	if name == "code" {
 		v = p.codeView
 	}
-	return shellLinks(p.ctx.Request.URL, p.s.shellPanel(p.ctx, v, p.csrf, name))
+	return shellPanelLinks(p.ctx.Request.URL, p.s.shellPanel(p.ctx, v, p.csrf, name), name == "session")
 }
 
 // regionContent renders one update region's content. The bar and step readout
@@ -209,6 +209,9 @@ func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, boo
 	}
 	state := p.transport()
 	browserOpen, codeOpen := shellPanes(ctx.Request)
+	if query.Get("reveal") == "sampler" || query.Get("reveal") == "takes" {
+		browserOpen = true
+	}
 	registerShell(ctx, tab, dock, browserOpen, codeOpen)
 	registerArrangementTempos(ctx)
 
@@ -251,8 +254,8 @@ func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, boo
 	browser := ui.Browser(ui.BrowserProps{Open: browserOpen, Width: strconv.Itoa(shellBrowserWidth)},
 		ui.BrowserSection(ui.BrowserSectionProps{ID: "browser-instruments", Signal: "$layout.instrumentsOpen", Title: "Instruments", Open: true}, p.region("browser-instruments")),
 		ui.BrowserSection(ui.BrowserSectionProps{ID: "browser-generate", Signal: "$layout.generateOpen", Title: "Generate"}, p.region("browser-generate")),
-		ui.BrowserSection(ui.BrowserSectionProps{ID: "browser-takes", Signal: "$layout.takesOpen", Title: "Takes"}, p.region("browser-takes")),
-		ui.BrowserSection(ui.BrowserSectionProps{ID: "browser-sampler", Signal: "$layout.samplerOpen", Title: "Sampler"}, p.region("browser-sampler")),
+		ui.BrowserSection(ui.BrowserSectionProps{ID: "browser-takes", Signal: "$layout.takesOpen", Title: "Takes", Open: query.Get("reveal") == "takes"}, p.region("browser-takes")),
+		ui.BrowserSection(ui.BrowserSectionProps{ID: "browser-sampler", Signal: "$layout.samplerOpen", Title: "Sampler", Open: query.Get("reveal") == "sampler"}, p.region("browser-sampler")),
 	)
 	center := ui.Center(ui.CenterProps{
 		View:        tab,
@@ -501,6 +504,10 @@ var (
 // "/". A GET form keeps the shell selection and file as hidden fields and drops
 // the legacy "panel" field.
 func shellLinks(current *url.URL, node gosx.Node) gosx.Node {
+	return shellPanelLinks(current, node, false)
+}
+
+func shellPanelLinks(current *url.URL, node gosx.Node, arrange bool) gosx.Node {
 	rendered := gosx.RenderHTML(node)
 	if !strings.Contains(rendered, `href="/?`) && !shellGetForm.MatchString(rendered) {
 		return node
@@ -517,7 +524,23 @@ func shellLinks(current *url.URL, node gosx.Node) gosx.Node {
 	})
 	return gosx.RawHTML(shellLinkPattern.ReplaceAllStringFunc(rendered, func(match string) string {
 		target := html.UnescapeString(shellLinkPattern.FindStringSubmatch(match)[1])
-		return `href="` + html.EscapeString(shellDestination(current, target, true)) + `"`
+		destination := shellDestination(current, target, true)
+		if arrange {
+			legacy, err := url.Parse(target)
+			if err == nil {
+				q := legacy.Query()
+				panel := q.Get("panel")
+				if (panel == "sampler" && q.Get("placement") != "") || (panel == "takes" && q.Get("clip") != "") {
+					resolved, _ := url.Parse(destination)
+					query := resolved.Query()
+					query.Set("reveal", panel)
+					query.Set("region", "browser")
+					resolved.RawQuery = query.Encode()
+					destination = resolved.String()
+				}
+			}
+		}
+		return `href="` + html.EscapeString(destination) + `"`
 	}))
 }
 

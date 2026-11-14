@@ -76,3 +76,44 @@ test('placement precision and copy gestures retain musical offsets and commit on
   if(proof)fs.writeFileSync(path.join(proof,'report.json'),JSON.stringify({checks,errors,arrangePOSTs:posts.length,sourceSHA256:crypto.createHash('sha256').update(baseline).digest('hex'),finalRevision:(await state()).revision,platform:process.platform,browser:browser.version(),physicalAudioVerified:false},null,2));
  }catch(error){if(proof){fs.mkdirSync(proof,{recursive:true});fs.writeFileSync(path.join(proof,'failure.json'),JSON.stringify({error:String(error),checks,posts:posts.map(r=>r.postData()),status:await page.locator('[data-placement-edit-status]').innerText()},null,2));await page.screenshot({path:path.join(proof,'failure.png')})}throw error}finally{await browser.close()}
 });
+
+test('audio placement destinations preserve Code drafts and pending edits',{timeout:90000},async()=>{
+ const base=process.env.CICADA_STUDIO_URL;assert.ok(base);
+ const browser=await playwright().chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--no-sandbox']});
+ const page=await browser.newPage({viewport:{width:1440,height:1000}});page.setDefaultTimeout(15000);
+ try {
+  await page.goto(base);await page.goto(new URL('/studio?placement=far-in',base).href);
+  await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
+  const inspector=()=>page.locator('[data-placement-inspector="far-in"]');
+  const editLink=()=>inspector().getByRole('link',{name:'Edit precision-clip',exact:true});
+  if(await inspector().getAttribute('open')===null)await inspector().locator('summary').click();
+  const code=page.locator('#studio-code textarea').first();
+  if(!await code.isVisible())await page.locator('[data-pane="code"][data-pane-action="show"]').click();
+  const original=await code.inputValue(),draft=original+'\n// navigation draft\n';await code.fill(draft);
+  await editLink().click();
+  await page.locator('#browser-takes[open]').waitFor();
+  assert.equal(new URL(page.url()).searchParams.get('clip'),'precision-clip');
+  assert.equal(await page.locator('#studio-code textarea').first().inputValue(),draft,'audio destination preserves the Code draft');
+  assert.equal(await page.locator('#browser-takes > summary').evaluate(el=>{const r=el.getBoundingClientRect();return r.bottom>0&&r.top<innerHeight}),true);
+  await page.locator('#studio-code textarea').first().fill(original);
+  await page.goto(new URL('/studio?placement=far-in',base).href);await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
+  if(await page.locator('#browser-takes').getAttribute('open')!==null)await page.locator('#browser-takes > summary').click();
+  if(await inspector().getAttribute('open')===null)await inspector().locator('summary').click();
+  const state=async()=>(await(await page.request.get(new URL('/api/state',base).href)).json());
+  const savedBefore=(await state()).source;
+  let release,entered;const held=new Promise(resolve=>release=resolve),requested=new Promise(resolve=>entered=resolve);
+  await page.route('**/__actions/arrange',async route=>{entered();await held;await route.continue()});
+  const start=inspector().getByLabel('Start',{exact:true});await start.fill('@5.3.1');
+  await inspector().getByRole('button',{name:'Update placement',exact:true}).click();await requested;
+  await editLink().click();
+  await page.locator('#browser-takes[open]').waitFor();
+  const response=page.waitForResponse(r=>r.request().method()==='POST'&&new URL(r.url()).pathname==='/__actions/arrange');
+  release();const result=await response;assert.ok([200,303].includes(result.status()),`pending placement edit: HTTP ${result.status()}`);
+  await until(async()=>(await state()).source.includes('at = @5.3.1'),'pending edit reaches saved score');
+  await page.unroute('**/__actions/arrange');
+  assert.equal(new URL(page.url()).searchParams.get('clip'),'precision-clip','finishing the pending edit retains the chosen destination');
+  assert.notEqual(await page.locator('#browser-takes').getAttribute('open'),null);
+  await page.getByRole('button',{name:'Undo',exact:true}).click();
+  await until(async()=>(await state()).source===savedBefore,'Undo restores the score after navigation during a pending edit');
+ } finally {await page.close();await browser.close()}
+});
