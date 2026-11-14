@@ -238,6 +238,25 @@ raw and 120,863-byte Brotli gates. WAM2 export automatically packages the requir
 from beside the configured core file. `make build-wam2` prepares both the core
 and vocal modules; modeled keys require `make build-keys-wasm`.
 
+## Reverb returns
+
+An edition-2 score can route up to seven `reverb` returns, so a short room and a long hall can sit side by side. Each track reaches a reverb by name with its own `send`, post-fader unless it says `pre`:
+
+```cicada
+cicada 2
+tempo 72
+fx hall reverb { size = 1.4 decay = 6s damp = 3500Hz }
+fx room reverb { size = 0.5 decay = 600ms damp = 7000Hz }
+track keys piano { send hall = -12dB send room = -18dB pre }
+pattern chords { [c4 e4 g4] - - - | [a3 c4 e4] - - - }
+scene main { keys = chords }
+song { main*2 }
+```
+
+The first reverb a score declares is return slot B, as it always was; each later one takes the next of slots C to H. The mix adds the returns in slot order (the delay or tape echo, then slot B, then C to H), so a score with one echo and one reverb renders the same bytes as before. A score with more than one reverb renders through the scheduled engine (`render`, `play` and Studio's native playback).
+
+What a later reverb does not have yet: scenes, `automate`, routes and macros reach only the first reverb's controls and its send, so a path such as `room.decay`, or a send path such as `keys.send.room`, is refused with `CICADA-UNSUPPORTED` (`keys.send.reverb` is the send to the first reverb, not to `room`); Studio meters only the first reverb, and its knob for a send to a later reverb shows the written level but cannot preview a change while it plays; `cicada stems` refuses the score, because the stems folder has a `return-b.wav` and no file for the others; and a portable (browser or WAM2) image refuses it with "portable images hold one reverb return until image version 19", rather than drop the later reverbs' sends. `cicada check --profile browser` names each later reverb, for example `effect room is reverb return 2 of 2`. Edition 1 addresses returns by kind (`send_b`), so a second reverb there reports `CICADA-VERSION`, and an eighth reverb reports `CICADA-LIMIT` at its declaration.
+
 ## Tape echo
 
 `tape` is a delay return that behaves like a tape echo. Declare it where you

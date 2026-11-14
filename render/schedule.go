@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"strings"
 	"time"
 
 	"m31labs.dev/cicada/host/schedule"
@@ -42,6 +43,13 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 	cfg, err := schedule.CompileWithOptions(p, root, opts.SampleRate, opts.Block, schedule.Options{MaxResidentPCM: opts.MaxResidentPCM})
 	if err != nil {
 		return report, err
+	}
+	if stemsDir != "" && cfg.Routing != nil && len(cfg.Routing.Returns) > 0 && !opts.TrackStemsOnly {
+		names := make([]string, len(cfg.Routing.Returns))
+		for i, r := range cfg.Routing.Returns {
+			names[i] = r.Name
+		}
+		return report, fmt.Errorf("stems cannot yet write a file for each reverb return: this score routes %d more reverb return(s) (%s) beyond return-b, so the stems would not sum to the mix; render and play support it", len(names), strings.Join(names, ", "))
 	}
 	cfg.MasterGainDB = scheduledMasterGainDB(cfg.MasterGainDB, opts)
 	cfg.MasterBiasL, cfg.MasterBiasR = opts.MasterBiasL, opts.MasterBiasR

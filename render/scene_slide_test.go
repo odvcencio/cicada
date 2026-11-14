@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 
+	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -108,5 +110,86 @@ func TestSlideAtFullGateAcrossASceneSwitch(t *testing.T) {
 	direct, engine := renderSceneSlide(t, slide, false), renderSceneSlide(t, slide, true)
 	if !bytes.Equal(direct, engine) {
 		t.Errorf("slide at full gate: direct %s, engine %s", sceneSlideHash(direct), sceneSlideHash(engine))
+	}
+}
+
+// chainSlideScore is a bass track whose chain plays ca, then cb (whose one
+// note slides), so cb starts at bar 2, before a scene switches the track to ay
+// at bar 3. ay's grid is a whole note, so bar 3 is its step 2.
+func chainSlideScore(t *testing.T, last, ay string) *notation.Score {
+	t.Helper()
+	source := "cicada 2\ntempo 120\ntrack bass acid { chain = ca cb }\npattern ca { step = 1/1 3 }\npattern cb { step = 1/1 " + last + " }\npattern ay { " + ay + " }\nscene x {}\nscene y { bass = ay }\nsong { x*2 y*2 }\n"
+	score, ds := notation.Parse([]byte(source))
+	for _, d := range ds {
+		if d.Severity == "error" {
+			t.Fatal(d.Error())
+		}
+	}
+	return score
+}
+
+// sceneSlideGlides renders score on one path and reports, for each note start,
+// whether it glides from the note before (the Slide flag the voice receives).
+func sceneSlideGlides(t *testing.T, score *notation.Score, scheduled bool) map[int64]bool {
+	t.Helper()
+	glides := map[int64]bool{}
+	opts := Options{Bits: 32, TailSec: 0.1, NoteTap: func(_ int, event seq.Event) {
+		if event.Kind == seq.NoteOn {
+			glides[event.Tick] = event.Slide
+		}
+	}}
+	var err error
+	if scheduled {
+		_, err = renderScheduleWAV(score, opts, io.Discard, "", 1)
+	} else {
+		_, err = WAV(score, opts, io.Discard)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	return glides
+}
+
+// A slide from a chained pattern into the next scene glides on both paths. The
+// direct mixer planned the transition at the start of the bar, before the chain
+// moved on to cb inside it, so it never saw the sliding note; the engine counted
+// the new pattern's step from cb's start (bar 2) instead of from the song's
+// start, so with a swung target it aimed the glide one swing late and dropped
+// it. The glide is checked through the note tap: the bytes differ from the
+// score without the slide even when the glide is dropped, because the slide
+// also lengthens the sliding note.
+func TestSlideFromAChainAcrossASceneSwitch(t *testing.T) {
+	for _, c := range []struct{ name, ay string }{
+		{"straight target", "step = 1/1 5"},
+		{"swung target", "step = 1/1 swing = 60% 5"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			slide := chainSlideScore(t, "1~", c.ay)
+			for _, scheduled := range []bool{false, true} {
+				if glides := sceneSlideGlides(t, slide, scheduled); !glides[7680] {
+					t.Errorf("scheduled %v: the note at bar 3 (tick 7680) does not glide: %v", scheduled, glides)
+				}
+			}
+			if direct, engine := renderSceneSlide(t, slide, false), renderSceneSlide(t, slide, true); !bytes.Equal(direct, engine) {
+				t.Errorf("direct %s, engine %s", sceneSlideHash(direct), sceneSlideHash(engine))
+			}
+		})
+	}
+}
+
+// A chain advance is a restart, and the scheduler swings the new pattern's
+// first step by its absolute index: cb starts at bar 2, step 1 of a whole-note
+// grid, so its note starts at tick 3840 plus the swing (768). The engine must
+// aim the glide from ca's sliding note at that start. (The direct mixer does
+// not glide across a chain advance at all yet; that is a separate fix.)
+func TestEngineSlidesAcrossAChainAdvanceIntoASwungPattern(t *testing.T) {
+	score, ds := notation.Parse([]byte("cicada 2\ntempo 120\ntrack bass acid { chain = ca cb }\npattern ca { step = 1/1 3~ }\npattern cb { step = 1/1 swing = 60% 5 }\nscene x {}\nsong { x*4 }\n"))
+	for _, d := range ds {
+		if d.Severity == "error" {
+			t.Fatal(d.Error())
+		}
+	}
+	if glides := sceneSlideGlides(t, score, true); !glides[4608] {
+		t.Fatalf("engine: the swung note at tick 4608 does not glide from ca: %v", glides)
 	}
 }

@@ -996,6 +996,11 @@ func normalizeProjectMeaning(source *Project) Project {
 		p.Effects[i].Kind = kind
 		effectIDs[kind] = p.Effects[i].ID
 	}
+	// The legacy send B is the send to the first reverb (return slot B), not
+	// to whichever reverb is declared last.
+	if first := firstReverbName(source); first != "" {
+		effectIDs["reverb"] = first
+	}
 	for i := range p.Tracks {
 		m := &p.Tracks[i].Mixer
 		m.Sends = append([]MixerSend{}, m.Sends...)

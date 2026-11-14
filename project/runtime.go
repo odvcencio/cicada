@@ -137,6 +137,10 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 	var delayParams *fx.DelayParams
 	var tapeParams *tape.Params
 	var reverbParams *fx.ReverbParams
+	// returnSlots maps each reverb to its slot: the first declared reverb is
+	// slot B (ReverbB); later ones take slots C to H in declaration order.
+	returnSlots := map[string]uint8{}
+	var routing engine.RoutingConfig
 	var compParams *fx.CompParams
 	var compSidechain string
 	for _, effect := range p.Effects {
@@ -162,7 +166,14 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 			if err != nil {
 				return cfg, err
 			}
-			reverbParams = &params
+			if reverbParams == nil {
+				reverbParams = &params
+				returnSlots[effect.ID] = 1
+			} else {
+				slot := uint8(2 + len(routing.Returns))
+				routing.Returns = append(routing.Returns, engine.ReturnConfig{Name: effect.ID, Slot: slot, Reverb: &params})
+				returnSlots[effect.ID] = slot
+			}
 		} else if kind == "comp" && (!trackHasInsert(p, effect.ID) || musicHasInsert(p, effect.ID)) {
 			params, sidechain, err := CompSpecFromValues(effect.Params)
 			if err != nil {
@@ -229,6 +240,13 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 				config.SendA = gain
 				config.SendAPre = send.Tap == "pre"
 			case "reverb":
+				if slot := returnSlots[send.To]; slot >= 2 {
+					for len(routing.TrackSends) <= ti {
+						routing.TrackSends = append(routing.TrackSends, nil)
+					}
+					routing.TrackSends[ti] = append(routing.TrackSends[ti], engine.SendConfig{Slot: slot, Gain: gain, Pre: send.Tap == "pre"})
+					continue
+				}
 				config.SendB = gain
 				config.SendBPre = send.Tap == "pre"
 			}
@@ -542,6 +560,9 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 				return cfg, fmt.Errorf("automation %s.%s tick %d: %w", p.Tracks[control.Track].ID, kernel.Params[control.Index].Path, control.Tick, err)
 			}
 		}
+	}
+	if len(routing.Returns) > 0 {
+		cfg.Routing = &routing
 	}
 	if purpose == compilePortable {
 		cfg.PortableEffectsBudget = true

@@ -33,10 +33,13 @@
 #                    (amd64, arm64); nightly, and on these pull requests
 #   lane_stress      render lanes under the race detector with the lanestress
 #                    hook (short version)
+#   detmath_proofs   the exhaustive fast-path proofs of kernel/dsp/detmath
+#                    (amd64 at GOAMD64 v1 and v3, arm64; Go from go.mod and Go
+#                    1.27.3), which the required check judges
 #
-# m2_gates, wav_sweep and lane_stress are decided the other way round: each is
-# on only when a changed path is one of its inputs (gate_input, sweep_input and
-# lane_input below). m2_gates runs on a single shared machine, where every
+# m2_gates, wav_sweep, lane_stress and detmath_proofs are decided the other way
+# round: each is on only when a changed path is one of its inputs (gate_input,
+# sweep_input, lane_input and proof_input below). m2_gates runs on a single shared machine, where every
 # queued run waits for the one before it; wav_sweep renders every example four
 # ways on two runners (about half an hour each); lane_stress runs the render
 # lanes under the race detector. An empty list, --all (push, schedule, manual
@@ -45,7 +48,7 @@
 # not appear here.
 set -euo pipefail
 
-groups=(root studio_cli parity workstation studio_browser macos_desktop macos_contracts m2 m2_gates bench wav_sweep lane_stress)
+groups=(root studio_cli parity workstation studio_browser macos_desktop macos_contracts m2 m2_gates bench wav_sweep lane_stress detmath_proofs)
 
 # classify_path prints the groups a path turns on, or "all" or "none".
 #
@@ -165,6 +168,21 @@ sweep_input() {
 	return 1
 }
 
+# proof_input PATH succeeds when a change to PATH can change what the
+# exhaustive fast-path proofs of kernel/dsp/detmath compute or how they run:
+# the package itself; the Go version and module graph (go.mod, go.sum), which
+# pick the compiler; the workflow, which sets the toolchains and GOAMD64 levels
+# the proofs run under; the Makefile and the proof runner; and the multiply-add
+# check, which guards the same code generation. No caller is an input: the
+# package imports only "math", and each proof covers every input of its fast
+# path, so a change in what a caller passes cannot reach an unproven input.
+proof_input() {
+	case "$1" in
+	kernel/dsp/detmath/* | go.mod | go.sum | .github/workflows/ci.yml | Makefile | scripts/detmath-proofs.sh | scripts/check-fma.sh) return 0 ;;
+	esac
+	return 1
+}
+
 emit() { # emit GROUP... : print every group, true when listed
 	local group value
 	for group in "${groups[@]}"; do
@@ -182,11 +200,12 @@ if [[ "${1:-}" == "--all" ]]; then
 fi
 if [[ "${1:-}" == "--classify" ]]; then
 	result="$(classify_path "${2:?path}")"
-	# m2_gates, wav_sweep and lane_stress come from gate_input, sweep_input and
-	# lane_input, not from the rules above.
+	# m2_gates, wav_sweep, lane_stress and detmath_proofs come from gate_input,
+	# sweep_input, lane_input and proof_input, not from the rules above.
 	if gate_input "$2"; then result="$result m2_gates"; fi
 	if sweep_input "$2"; then result="$result wav_sweep"; fi
 	if lane_input "$2"; then result="$result lane_stress"; fi
+	if proof_input "$2"; then result="$result detmath_proofs"; fi
 	echo "$result"
 	exit 0
 fi
@@ -201,12 +220,14 @@ everything=false
 gates=false
 sweep=false
 lanes=false
+proofs=false
 while IFS= read -r path || [[ -n "$path" ]]; do
 	if [[ -z "$path" ]]; then continue; fi
 	seen_path=true
 	if gate_input "$path"; then gates=true; fi
 	if sweep_input "$path"; then sweep=true; fi
 	if lane_input "$path"; then lanes=true; fi
+	if proof_input "$path"; then proofs=true; fi
 	result="$(classify_path "$path")"
 	if [[ "$result" == all ]]; then
 		everything=true
@@ -222,14 +243,16 @@ if [[ "$seen_path" == false ]]; then
 	exit 0
 fi
 if [[ "$everything" == true ]]; then
-	# "all" turns on every group except m2_gates, wav_sweep and lane_stress,
-	# which gate_input, sweep_input and lane_input decide.
+	# "all" turns on every group except m2_gates, wav_sweep, lane_stress and
+	# detmath_proofs, which gate_input, sweep_input, lane_input and proof_input
+	# decide.
 	selected=()
 	for group in "${groups[@]}"; do
-		if [[ "$group" != m2_gates && "$group" != wav_sweep && "$group" != lane_stress ]]; then selected+=("$group"); fi
+		if [[ "$group" != m2_gates && "$group" != wav_sweep && "$group" != lane_stress && "$group" != detmath_proofs ]]; then selected+=("$group"); fi
 	done
 fi
 if [[ "$gates" == true ]]; then selected+=(m2_gates); fi
 if [[ "$sweep" == true ]]; then selected+=(wav_sweep); fi
 if [[ "$lanes" == true ]]; then selected+=(lane_stress); fi
+if [[ "$proofs" == true ]]; then selected+=(detmath_proofs); fi
 emit "${selected[@]}"

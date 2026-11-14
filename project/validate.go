@@ -8,6 +8,7 @@ import (
 
 	"m31labs.dev/cicada/instrument"
 	"m31labs.dev/cicada/internal/applycount"
+	"m31labs.dev/cicada/internal/paramdefs"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/graph"
 	"m31labs.dev/cicada/kernel/seq"
@@ -186,8 +187,28 @@ func ValidateProject(p *Project) error {
 			}
 		}
 	}
-	if kindCounts["delay"]+kindCounts["tape"] > 1 || kindCounts["reverb"] > 1 {
-		return fmt.Errorf("CICADA-UNSUPPORTED: multiple delay or reverb instances are not implemented (a tape echo is the delay return)")
+	if kindCounts["delay"]+kindCounts["tape"] > 1 {
+		return fmt.Errorf("CICADA-UNSUPPORTED: multiple delay instances are not implemented (a tape echo is the delay return)")
+	}
+	// The first reverb is return slot B; later ones take slots C to H. The
+	// legacy project format addresses returns by kind and keeps one.
+	if kindCounts["reverb"] > 1 && p.Format != FormatID2 {
+		return fmt.Errorf("CICADA-VERSION: a second reverb return needs edition 2")
+	}
+	if kindCounts["reverb"] > engine.MaxReturns-1 {
+		return fmt.Errorf("CICADA-LIMIT: a score has at most %d reverb returns (slot B and slots C to H)", engine.MaxReturns-1)
+	}
+	// A return named like a built-in send path segment must be the return that
+	// path addresses; this sees preset-resolved kinds that notation does not.
+	first := firstReverbName(p)
+	for _, effect := range p.Effects {
+		kind := semanticEffectKind(effect)
+		if (kind != "delay" && kind != "tape" && kind != "reverb") || MasterHasInsert(p, effect.ID) {
+			continue
+		}
+		if message := paramdefs.ReturnNameCollision(effect.ID, kind, effect.ID == first); message != "" {
+			return fmt.Errorf("CICADA-DUPLICATE: %s", message)
+		}
 	}
 	if len(p.Tracks) < 1 || len(p.Tracks) > engine.MaxTracks || len(p.Patterns) == 0 && len(p.Clips) == 0 || len(p.Song) == 0 && p.Arrange == nil {
 		return fmt.Errorf("project needs 1 to %d tracks, patterns, and a song", engine.MaxTracks)
@@ -432,13 +453,16 @@ func ValidateProject(p *Project) error {
 				if !isDelayReturnKind(kind) && kind != "reverb" {
 					return fmt.Errorf("CICADA-UNSUPPORTED: send to %s effect is not implemented", kind)
 				}
-				if kind == "tape" {
-					kind = "delay" // the tape echo is send A, like the delay
+				// One send per return: the delay or tape is return A, and each
+				// reverb is a return of its own.
+				key := "delay"
+				if kind == "reverb" {
+					key = "reverb:" + send.To
 				}
-				if seenSends[kind] {
-					return fmt.Errorf("track %s has multiple sends to %s", track.ID, kind)
+				if seenSends[key] {
+					return fmt.Errorf("track %s has multiple sends to %s", track.ID, send.To)
 				}
-				seenSends[kind] = true
+				seenSends[key] = true
 				if !validValue(send.Level) || send.Level.Number == nil || send.Tap != "" && send.Tap != "pre" && send.Tap != "post" {
 					return fmt.Errorf("track %s has invalid send", track.ID)
 				}

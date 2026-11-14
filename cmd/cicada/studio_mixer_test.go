@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -208,5 +209,39 @@ func TestStudioMixerResolvesPresetEffectKinds(t *testing.T) {
 	}
 	if view.Returns[0].SourceRange == (mixerLineRange{}) {
 		t.Fatal("source range for preset instance lost")
+	}
+}
+
+// A send to a later reverb (return slots C to H) has no live address yet:
+// mix.send_b is the send to the first reverb. Its knob shows the level the
+// source writes and previews nothing, and a track may send to two reverbs.
+func TestStudioMixerLaterReverbSendHasNoLiveAddress(t *testing.T) {
+	source := []byte("cicada 2\nfx hall reverb {}\nfx room reverb {}\ntrack keys acid { send room = -12dB }\ntrack pads acid { send hall = -6dB send room = -18dB pre }\npattern melody { 1 . }\nscene main { keys=melody pads=melody }\nsong { main }\n")
+	filename := filepath.Join(t.TempDir(), "main.cicada")
+	if err := os.WriteFile(filename, source, 0600); err != nil {
+		t.Fatal(err)
+	}
+	view, err := buildStudioMixerView(filename, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sends := map[string]mixerSendView{}
+	for _, track := range view.Tracks {
+		for _, send := range track.Sends {
+			sends[send.Path] = send
+		}
+	}
+	for path, want := range map[string]string{"keys.send.room": "-12dB", "pads.send.room": "-18dB"} {
+		send, ok := sends[path]
+		if !ok {
+			t.Fatalf("no control for %s: %+v", path, sends)
+		}
+		if send.Address != "" || !send.Supported || fmt.Sprint(send.Value) != fmt.Sprint(mixerSendAddressValue(want)) {
+			t.Fatalf("%s: address %q supported %v (%s) value %v, want no address and the source value %v", path, send.Address, send.Supported, send.Reason, send.Value, mixerSendAddressValue(want))
+		}
+	}
+	hall := sends["pads.send.hall"]
+	if hall.Address != "pads.send.reverb" || !hall.Supported {
+		t.Fatalf("the send to the first reverb lost its live address: %+v", hall)
 	}
 }

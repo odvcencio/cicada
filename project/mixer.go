@@ -162,6 +162,45 @@ func isMixerSourceParam(name string) bool {
 // IsMixerSourceParam reports whether a notation parameter belongs to the mixer.
 func IsMixerSourceParam(name string) bool { return isMixerSourceParam(name) }
 
+// slotKinds is effectKinds with every reverb after the first marked
+// "reverb-extra": only a send to the first reverb, return slot B, is the
+// legacy send B. Later reverbs take slots C to H.
+func slotKinds(score *notation.Score, effectKinds map[string]string) map[string]string {
+	kinds := effectKinds
+	first, copied := true, false
+	for _, effect := range score.Effects {
+		if effectKinds[effect.Name] != "reverb" || masterInserts(score, effect.Name) {
+			continue
+		}
+		if first {
+			first = false
+			continue
+		}
+		if !copied {
+			kinds, copied = make(map[string]string, len(effectKinds)), true
+			for name, kind := range effectKinds {
+				kinds[name] = kind
+			}
+		}
+		kinds[effect.Name] = "reverb-extra"
+	}
+	return kinds
+}
+
+// masterInserts reports whether the score's master chain inserts name.
+func masterInserts(score *notation.Score, name string) bool {
+	for _, param := range score.Master {
+		if param.Name == "insert" {
+			for _, field := range strings.Fields(param.Value) {
+				if field == name {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 func resolveNamedMixer(mixer *Mixer, source notation.Track, effectKinds map[string]string) {
 	if mixer == nil {
 		return
@@ -333,4 +372,30 @@ func routedEffects(score *notation.Score) []notation.Effect {
 		}
 	}
 	return effects
+}
+
+// ReverbReturns names the reverbs that get a return slot, in slot order (B,
+// then C to H), exactly as FromScore selects them: presets resolved, library
+// effects kept only when a track or bus sends to them or inserts them, and
+// master-chain effects left out. A library reverb that only a scene addresses
+// gets no slot, so it is not counted.
+func ReverbReturns(score *notation.Score) []string {
+	if score == nil {
+		return nil
+	}
+	resolved, _ := notation.ResolvePresets(score)
+	if resolved == nil {
+		resolved = score
+	}
+	var names []string
+	for _, effect := range routedEffects(resolved) {
+		kind := effect.Kind
+		if kind == "" {
+			kind = effect.Name
+		}
+		if kind == "reverb" && !masterInserts(resolved, effect.Name) {
+			names = append(names, effect.Name)
+		}
+	}
+	return names
 }
