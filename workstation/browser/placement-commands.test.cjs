@@ -57,6 +57,13 @@ test('Studio views, Record entry and Mac placement commands retain drafts and Un
   await page.addInitScript(() => {
     Object.defineProperty(navigator, 'platform', {get:()=>'MacIntel'});
     Object.defineProperty(navigator, 'userAgentData', {get:()=>({platform:'macOS'})});
+    // Exercise the real Web MIDI adapter with an in-memory input, as the
+    // portable MIDI suite does; the Studio and Live service remain real.
+    const access=new EventTarget(), port=new EventTarget();
+    Object.assign(port,{id:'held-note-test',name:'Test MIDI keyboard',state:'connected'});
+    access.inputs=new Map([[port.id,port]]);
+    window.__clipTestMIDI=(...bytes)=>{const event=new Event('midimessage');Object.defineProperty(event,'data',{value:new Uint8Array(bytes)});port.dispatchEvent(event)};
+    Object.defineProperty(navigator,'requestMIDIAccess',{configurable:true,value:()=>Promise.resolve(access)});
   });
   const posts = [], navigations = [], errors = [], liveReleases = [];
   const csrfTokens = new Set();
@@ -494,6 +501,63 @@ test('Studio views, Record entry and Mac placement commands retain drafts and Un
     await key('Meta+d'); await rejected;
     assert.equal((await state()).source,fixture,'stale keyboard edit changed the score');
     assert.equal((await actionValues(posts.at(-1))).revision,'stale-revision');
+    await visit('?placement=one');
+    await page.locator('#transport-form button[value=play]').click();
+    await until(async()=>(await transport()).playing,'owner song playback did not start for held MIDI');
+    // A held Web MIDI note survives the local Session -> Arrange view switch.
+    // Opening a clip would remount Live, so it must refuse until note-off.
+    await shellTab('view','session');
+    await page.locator('[data-live-control=midi]').click();
+    await until(async()=>/MIDI enabled/.test(await page.locator('[data-live-status]').textContent()),'test MIDI input did not enable');
+    await shellTab('view','arrange');
+    await page.waitForFunction(()=>!document.querySelector('[data-live-note="60"]').disabled);
+    const liveNoteResponse=page.waitForResponse(async response=>{
+      if(new URL(response.url()).pathname!=='/__actions/live')return false;
+      const fields=await actionValues(response.request()).catch(()=>({}));
+      if(fields.type!=='input-batch')return false;
+      return JSON.parse(fields.messages).some(message=>message.type==='note'&&message.note==='60'&&message.on==='true');
+    });
+    await page.evaluate(()=>window.__clipTestMIDI(0x90,60,100));
+    assert.equal((await liveNoteResponse).status(),200,'held note-on was not accepted by the real Live service');
+    await until(async()=>await page.locator('[data-live-note="60"]').getAttribute('aria-pressed')==='true','MIDI note was not held');
+    await page.evaluate(()=>{window.__heldClipNavigationCount=0;document.addEventListener('gosx:navigate',()=>window.__heldClipNavigationCount++);});
+    const heldURL=page.url(), heldReleaseCount=liveReleases.length, heldSource=(await state()).source, heldPosts=posts.length;
+    await block('two').locator('.placement-select').click();
+    await block('two').locator('.placement-select').focus();
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(()=>document.documentElement.getAttribute('data-gosx-navigation-state')==='idle');
+    await page.waitForTimeout(150);
+    assert.match(await page.locator('[data-placement-edit-status]').textContent(),/Save or discard unsaved edits/);
+    assert.equal(await page.evaluate(()=>window.__heldClipNavigationCount),0,'clip activation navigated while a MIDI note was held');
+    assert.equal(page.url(),heldURL,'clip activation changed the location while a MIDI note was held');
+    assert.equal(await page.locator('[data-live-note="60"]').getAttribute('aria-pressed'),'true','clip activation released the held MIDI note');
+    assert.equal(liveReleases.length,heldReleaseCount,'clip activation released the Live lease');
+    for(const request of posts.slice(heldPosts)) {
+      assert.equal(new URL(request.url()).pathname,'/__actions/live','clip activation submitted a score action');
+      assert.equal((await actionValues(request)).type,'heartbeat','clip activation sent a note-off or lease release');
+    }
+    assert.equal((await state()).source,heldSource);
+    assert.equal((await transport()).playing,true,'clip activation stopped song playback');
+    // The player releases its own key normally; no forced lease release.
+    const liveNoteOffResponse=page.waitForResponse(async response=>{
+      if(new URL(response.url()).pathname!=='/__actions/live')return false;
+      const fields=await actionValues(response.request()).catch(()=>({}));
+      if(fields.type!=='input-batch')return false;
+      return JSON.parse(fields.messages).some(message=>message.type==='note'&&message.note==='60'&&message.on==='false');
+    });
+    await page.evaluate(()=>window.__clipTestMIDI(0x80,60,0));
+    assert.equal((await liveNoteOffResponse).status(),200,'matching MIDI note-off was not accepted');
+    await until(async()=>await page.locator('[data-live-note="60"]').getAttribute('aria-pressed')==='false','MIDI note-off did not release the note');
+    await block('two').locator('.placement-select').click();
+    await until(async()=>new URL(page.url()).searchParams.get('pattern')==='answer' && await page.locator('#detail-panel-clip .piano-roll[data-pattern-id=answer]').count()===1,'clip did not open after the matching MIDI note-off');
+    await ready();
+    assert.equal(new URL(page.url()).searchParams.get('placement'),'two');
+    assert.equal(new URL(page.url()).searchParams.get('track'),'lead');
+    assert.equal((await state()).source,heldSource,'opening after note-off changed the score');
+    assert.equal((await transport()).playing,true,'opening after note-off stopped song playback');
+    t.diagnostic('held MIDI note: pointer and Enter refuse clip opening without navigation, score write, note-off, lease release or transport stop; opening succeeds after matching note-off');
+    await page.locator('#transport-form button[value=stop]').click();
+    await until(async()=>!(await transport()).playing,'owner song playback did not stop after MIDI note-off');
     // Unload delivery is browser best effort. Exercise the actual pagehide
     // listener while this fixture document lives, then prove the same mount
     // releases its known lease with an advancing sequence on the next event.
