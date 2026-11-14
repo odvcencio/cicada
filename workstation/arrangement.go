@@ -22,8 +22,14 @@ func (s *studioApp) arrangement(ctx *server.Context, v workspace, csrf, selected
 		return s.placementArrangement(ctx, v, csrf, selected)
 	}
 	openPattern := ""
+	selectedBlock := -1
 	if ctx != nil {
-		openPattern = ctx.Request.URL.Query().Get("pattern")
+		query := ctx.Request.URL.Query()
+		openPattern = query.Get("pattern")
+		index, err := strconv.Atoi(query.Get("songBlock"))
+		if err == nil && index >= 0 && index < len(p.Song) && v.Revision != "" && query.Get("songRevision") == v.Revision && query.Get("songKey") == songBlockKey(p.Song, index) {
+			selectedBlock = index
+		}
 	}
 	scenes := map[string]project.Scene{}
 	var sceneNames []string
@@ -45,8 +51,20 @@ func (s *studioApp) arrangement(ctx *server.Context, v workspace, csrf, selected
 		i, block := strconv.Itoa(index), targetField(songBlockKey(p.Song, index))
 		label := fmt.Sprintf("%s · bars %d–%d", entry.Scene, bar, bar+int(entry.Bars)-1)
 		play := s.form(v, csrf, "session", "transport", hidden("entry", i), submit("action", "playFrom", entry.Scene))
+		selection := url.Values{"panel": {"session"}, "songBlock": {i}, "songKey": {songBlockKey(p.Song, index)}, "songRevision": {v.Revision}}
+		selectionPath := "/"
+		if ctx != nil && ctx.Request.URL.Path == "/studio" {
+			selection = ctx.Request.URL.Query()
+			selection.Del("panel")
+			selection.Set("songBlock", i)
+			selection.Set("songKey", songBlockKey(p.Song, index))
+			selection.Set("songRevision", v.Revision)
+			selectionPath = "/studio"
+		}
+		editLabel := "Edit " + label
+		editLink := gosx.El("a", gosx.Attrs(gosx.Attr("href", selectionPath+"?"+selection.Encode()+"#song-block-"+i), gosx.Attr("class", "timeline-edit"), gosx.Attr("data-song-index", i), gosx.Attr("aria-label", editLabel)), gosx.Text("Edit"))
 		ruler = append(ruler, gosx.El("div", gosx.Attrs(gosx.Attr("class", "timeline-heading"), gosx.Attr("title", fmt.Sprintf("Bars %d–%d", bar, bar+int(entry.Bars)-1))),
-			gosx.El("div", gosx.Attrs(gosx.Attr("class", "timeline-section")), gosx.El("small", gosx.Text(fmt.Sprintf("%02d", index+1))), play),
+			gosx.El("div", gosx.Attrs(gosx.Attr("class", "timeline-section")), gosx.El("small", gosx.Text(fmt.Sprintf("%02d", index+1))), play, editLink),
 			barRuler(bar, int(entry.Bars))))
 		controls := []gosx.Node{s.form(v, csrf, "session", "song", hidden("action", "scene"), hidden("index", i), block, field("Scene", selectInput("scene", entry.Scene, sceneNames)), submit("", "", "Replace scene")), s.form(v, csrf, "session", "song", hidden("action", "bars"), hidden("index", i), block, field("Bars", wholeInput("bars", int(entry.Bars), 1, 999)), submit("", "", "Set length"))}
 		controls = append([]gosx.Node{s.listeningForm(v, csrf, selected, hidden("entry", i), submit("action", "loopSection", "Loop block"))}, controls...)
@@ -60,7 +78,16 @@ func (s *studioApp) arrangement(ctx *server.Context, v workspace, csrf, selected
 		if len(p.Song) > 1 {
 			controls = append(controls, s.form(v, csrf, "session", "song", hidden("index", i), block, submit("action", "delete", "Remove block")))
 		}
-		blocks = append(blocks, gosx.El("details", gosx.Attrs(gosx.Attr("class", "arrangement-block"), gosx.Attr("data-song-index", i)), gosx.El("summary", gosx.Text(label)), gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), gosx.Fragment(controls...))))
+		attrs := gosx.Attrs(gosx.Attr("class", "arrangement-block"), gosx.Attr("data-song-index", i), gosx.Attr("id", "song-block-"+i))
+		if index == selectedBlock {
+			attrs = append(attrs, gosx.BoolAttr("open"), gosx.BoolAttr("data-song-selected"))
+		}
+		blockNode := gosx.El("details", attrs, gosx.El("summary", gosx.Text(label)), gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), gosx.Fragment(controls...)))
+		if index == selectedBlock {
+			blocks = append([]gosx.Node{blockNode}, blocks...)
+		} else {
+			blocks = append(blocks, blockNode)
+		}
 		bar += int(entry.Bars)
 	}
 	rail := s.trackRail(ctx, v, csrf)
@@ -108,9 +135,13 @@ func (s *studioApp) arrangement(ctx *server.Context, v workspace, csrf, selected
 	if changes := project.SongTempoChanges(p); len(changes) > 0 {
 		length += fmt.Sprintf(" (the tempo changes %d times; the time is the sum of the steps)", len(changes))
 	}
+	var selectionNotice gosx.Node = gosx.Fragment()
+	if ctx != nil && ctx.Request.URL.Query().Get("songBlock") != "" && selectedBlock < 0 {
+		selectionNotice = gosx.El("p", gosx.Attrs(gosx.Attr("role", "status")), gosx.Text("The song changed. Choose Edit on a block to continue editing it."))
+	}
 	appendBlock := s.form(v, csrf, "session", "song", hidden("action", "append"), field("Scene", selectInput("scene", "", sceneNames)), field("Bars", wholeInput("bars", 4, 1, 999)), submit("", "", "Add to arrangement"))
 	settings := s.form(v, csrf, "session", "project", field("Title", textInput("title", p.Title)), field("Tempo (BPM)", numberInput("tempo", strconv.FormatFloat(float64(p.TempoMilli)/1000, 'f', -1, 64), "20", "300")), field("Key", selectInput("root", phraseKeys[p.Key.Root], phraseKeys)), field("Scale", selectInput("scale", p.Key.Scale, phraseScales)), submit("", "", "Save project settings"))
-	return ui.Panel(ui.PanelProps{ID: "arrangement", Title: "Arrangement", Description: length}, gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll timeline"), gosx.Attr("aria-label", "Song timeline")), gosx.Fragment(rows...)), s.sessionListening(v, csrf, selected, p.MeterMap().BarStart(int64(bar-1))), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Click a scene header to play from that block; click a clip to edit its pattern. ↳ carries the previous pattern.")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "arrangement-blocks")), gosx.Fragment(blocks...)), gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), appendBlock), gosx.El("details", gosx.Attrs(gosx.Attr("class", "pattern-management")), gosx.El("summary", gosx.Text("Project settings")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), settings), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Changing the key retunes scale-degree notes. Explicit letter pitches retain their pitch."))))
+	return ui.Panel(ui.PanelProps{ID: "arrangement", Title: "Arrangement", Description: length}, gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll timeline"), gosx.Attr("aria-label", "Song timeline")), gosx.Fragment(rows...)), s.sessionListening(v, csrf, selected, p.MeterMap().BarStart(int64(bar-1))), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Click a scene name to play from that block, or Edit to change the block. After a song edit, choose Edit again to continue. Click a clip to edit its pattern. ↳ carries the previous pattern.")), selectionNotice, gosx.El("div", gosx.Attrs(gosx.Attr("class", "arrangement-blocks")), gosx.Fragment(blocks...)), gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), appendBlock), gosx.El("details", gosx.Attrs(gosx.Attr("class", "pattern-management")), gosx.El("summary", gosx.Text("Project settings")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), settings), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Changing the key retunes scale-degree notes. Explicit letter pitches retain their pitch."))))
 }
 
 // trackColors is the size of the Arrange track palette; tracks take its colors
