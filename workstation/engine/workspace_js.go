@@ -993,6 +993,19 @@ func (u *workspaceUI) runJob(job workspaceJob) bool {
 	if u.shell && job.method == methodGet {
 		job.target = "/__studio/regions?ids=" + url.QueryEscape(job.regions) + "&location=" + url.QueryEscape(workspaceLocation())
 	}
+	// An unfinished performance can retain the old track name even after
+	// playback stops. Check at dispatch as well as submission, because this
+	// edit may have waited behind another queued action.
+	if u.shell && hasEngineUnsavedWork() {
+		switch job.target {
+		case "/__actions/track-rename":
+			u.settle(job, true)
+			u.status.Set("Finish or discard unsaved performances and recordings before renaming a track.")
+			return true
+		case "/__actions/undo", "/__actions/redo", "/__actions/revert":
+			job.values["protect_track_identities"] = "true"
+		}
+	}
 	u.root.Call("setAttribute", "aria-busy", "true")
 	if !u.shell {
 		u.status.Set("Saving…")

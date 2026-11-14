@@ -1023,6 +1023,30 @@ export loud { loudness = -9LUFS true_peak = -1dBTP normalize = off }
 }
 ```
 
+## Studio history requests
+
+Studio's local HTTP service accepts version-1 intent envelopes at
+`POST /api/intents`; see [Editor integration](editors.md) for the workspace
+revision and source-revision receipts. A committed `rename` intent targeting a
+track is refused with HTTP 409 while the native playback stream exists, audio
+capture is active, or browser playback is reported active. Stop the transport
+before retrying. Dry runs can still preview the edit. Proposal acceptance uses
+the same guard.
+
+`POST /api/undo`, `POST /api/redo`, and `POST /api/history/{id}/revert` take a
+JSON object containing the current `revision`. The optional boolean
+`protect_track_identities` defaults to false. When true, a history transition
+that changes the ordered track IDs is refused with HTTP 409; unrelated history
+edits remain available. Native playback or active capture enforces the same
+identity guard regardless of this flag. The Studio shell sets the flag for
+locally held engine work and for retained note checkpoints owned by the current
+workspace session. A client must set it when it needs this protection for its
+own unsaved work; the service cannot inspect a browser's local drafts. A
+checkpoint created by another tab after the workstation checks its store is not
+serialized with the history request. Browser AudioWorklet playback is reported
+asynchronously in qualification mode, so its start is not covered by the native
+transport's commit lock.
+
 ## The MCP server
 
 `cicada mcp [--root <dir>] [--allow-user-library]` serves the read-only tools

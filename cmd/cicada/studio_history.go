@@ -614,6 +614,22 @@ func (s *studio) commitMutationLocked(edit studioEdit, current []byte, mutation 
 			return fail(http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
 		}
 	}
+	// Undo/Redo/revert may restore a renamed (or removed) track without an
+	// intent envelope. Compare the actual compiled transition, including
+	// auxiliary files, before allowing it while a live stream exists.
+	if (historyKind == studioHistoryWriteUndo || historyKind == studioHistoryWriteRedo || historyKind == studioHistoryWriteRevert) && (s.trackIdentityBusy() || edit.ProtectTrackIdentities) {
+		before, err := studioCompile(s.path, current, nil)
+		if err != nil {
+			return fail(http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
+		}
+		if !sameTrackIdentities(before, p) {
+			message := "Stop playback and finish recording before changing track names through history."
+			if edit.ProtectTrackIdentities {
+				message = "Finish or discard unsaved performances and recordings before changing track names through history."
+			}
+			return fail(http.StatusConflict, map[string]any{"error": message})
+		}
+	}
 	latest, err := os.ReadFile(s.path)
 	if err != nil {
 		return fail(http.StatusInternalServerError, map[string]any{"error": err.Error()})

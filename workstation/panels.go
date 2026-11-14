@@ -382,25 +382,24 @@ func (s *studioApp) mixerToggle(v workspace, csrf, panel, name, kind string, f m
 // track in the Arrange rail. It reads the saved mixer state once. When the
 // mixer is unavailable, or the score is edition 1, every track gets nothing.
 func (s *studioApp) trackRail(ctx *server.Context, v workspace, csrf string) func(string) gosx.Node {
-	none := func(string) gosx.Node { return gosx.Fragment() }
-	if ctx == nil || s.backend == nil {
-		return none
-	}
-	mixer, err := s.loadMixer(ctx, v)
-	if err != nil || mixer.Edition == 1 {
-		return none
-	}
-	v.Revision, v.Edition = mixer.Revision, mixer.Edition
 	strips := map[string]mixerStrip{}
-	for _, strip := range mixer.Tracks {
-		strips[strip.ID] = strip
+	if ctx != nil && s.backend != nil {
+		if mixer, err := s.loadMixer(ctx, v); err == nil && mixer.Edition != 1 {
+			v.Revision, v.Edition = mixer.Revision, mixer.Edition
+			for _, strip := range mixer.Tracks {
+				strips[strip.ID] = strip
+			}
+		}
 	}
 	return func(track string) gosx.Node {
-		strip, ok := strips[track]
-		if !ok {
-			return gosx.Fragment()
+		var toggles gosx.Node = gosx.Fragment()
+		if strip, ok := strips[track]; ok {
+			toggles = gosx.El("div", gosx.Attrs(gosx.Attr("class", "rail-toggles")), s.mixerToggle(v, csrf, "session", track, "mute", strip.Fields["mute"]), s.mixerToggle(v, csrf, "session", track, "solo", strip.Fields["solo"]))
 		}
-		return gosx.El("div", gosx.Attrs(gosx.Attr("class", "rail-toggles")), s.mixerToggle(v, csrf, "session", track, "mute", strip.Fields["mute"]), s.mixerToggle(v, csrf, "session", track, "solo", strip.Fields["solo"]))
+		input := gosx.El("input", gosx.Attrs(gosx.Attr("type", "text"), gosx.Attr("name", "name"), gosx.Attr("value", track), gosx.Attr("aria-label", "New name for "+track), gosx.BoolAttr("required")))
+		form := ui.Form(ui.FormProps{Action: "/__actions/track-rename", CSRF: csrf, Revision: v.Revision, ReturnTo: "/?panel=session", Class: "action-form"}, hidden("source_revision", v.SourceRevision), hidden("track", track), input, gosx.El("p", gosx.Attrs(gosx.Attr("class", "rail-rename-hint")), gosx.Text("Stop playback before renaming.")), submit("", "", "Rename track"))
+		rename := gosx.El("details", gosx.Attrs(gosx.Attr("class", "rail-rename")), gosx.El("summary", gosx.Attrs(gosx.Attr("aria-label", "Rename "+track)), gosx.Text("Rename")), form)
+		return gosx.Fragment(toggles, rename)
 	}
 }
 
