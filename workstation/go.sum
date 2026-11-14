@@ -56,6 +56,8 @@ github.com/mewpkg/term v0.0.0-20241026122259-37a80af23985 h1:h8O1byDZ1uk6RUXMhj1
 github.com/mewpkg/term v0.0.0-20241026122259-37a80af23985/go.mod h1:uiPmbdUbdt1NkGApKl7htQjZ8S7XaGUAVulJUJ9v6q4=
 github.com/odvcencio/corkscrewdb v0.2.0 h1:D4M0z1ieIqWLlhsnQbI5aU0Ed1EiV1P0WZt6JsjTP/8=
 github.com/odvcencio/corkscrewdb v0.2.0/go.mod h1:vFCTXziHnHyS3ewGW6rnw9KwTUtWtNHyIDFLK29hn7Q=
+github.com/odvcencio/gosx v0.0.0-20261114065752-bad9f7d88736 h1:kqXmRY5cS9ypqd0Brs1jTZsz3M9jKrUm/Y8Quzv2Kd8=
+github.com/odvcencio/gosx v0.0.0-20261114065752-bad9f7d88736/go.mod h1:HvK187xNEwIbzK/RJqWO651DnT1R4lxR9BB2e4LrP7M=
 github.com/odvcencio/gosx/editor v0.19.12-0.20261021030221-303188b38bc6 h1:rXORk/bFL9wysfhAw7+kTz1hJWVaWlP6I3yKABf61n0=
 github.com/odvcencio/gosx/editor v0.19.12-0.20261021030221-303188b38bc6/go.mod h1:jKTe3N93vP+YMO8ScMVJgQWUO644aMPhBZkIEZRUkps=
 github.com/odvcencio/gotreesitter v0.56.0 h1:2cyxAbG9yAMs1d8xTAxq3HWrKh8m7mi7pAjRBZd1Pp8=
