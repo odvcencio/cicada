@@ -52,8 +52,16 @@ func bindShellNavigation(host enginewasm.Context, root js.Value) (func(), error)
 		}
 		return nil
 	})
+	// Wait for the managed navigation to finish before changing the visible
+	// dock: it can be refused while the user has unsaved work.
+	pendingScenePatternURL := ""
 	restore := js.FuncOf(func(js.Value, []js.Value) any {
 		restorePendingShellChoice(host, root)
+		if pendingScenePatternURL != "" && root.Get("isConnected").Bool() && shellCurrentURL().Get("href").String() == pendingScenePatternURL {
+			_ = host.SetSignal("$dock", "clip")
+			root.Call("setAttribute", "data-phone-region", "detail")
+		}
+		pendingScenePatternURL = ""
 		return nil
 	})
 	document.Call("addEventListener", "click", remember, true)
@@ -83,6 +91,29 @@ func bindShellNavigation(host enginewasm.Context, root js.Value) (func(), error)
 		}
 		target := event.Get("target")
 		if !workspacePresent(target) || target.Get("closest").Type() != js.TypeFunction {
+			return nil
+		}
+		pendingScenePatternURL = ""
+		// Reveal the editor only after this link's destination has loaded.
+		if link := target.Call("closest", "[data-scene-pattern-open]"); workspacePresent(link) {
+			reason := ""
+			switch {
+			case nativeCapture.Get().State.Active != "":
+				reason = "Finish recording before opening a pattern."
+			case workspacePresent(root.Call("querySelector", "[data-gosx-form-state=pending]")), workspaceAttr(document.Get("documentElement"), "data-gosx-navigation-state") == "pending":
+				reason = "Wait for the current action to finish before opening a pattern."
+			case hasUnsavedWork():
+				reason = "Save or discard unsaved edits before opening a pattern."
+			}
+			if reason != "" {
+				event.Call("preventDefault")
+				if status := root.Call("querySelector", "[data-scene-open-status]"); workspacePresent(status) {
+					status.Set("textContent", reason)
+					status.Set("hidden", false)
+				}
+				return nil
+			}
+			pendingScenePatternURL = link.Get("href").String()
 			return nil
 		}
 		// Managed navigation retains the shell controller, so an explicit URL
