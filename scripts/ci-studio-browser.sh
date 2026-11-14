@@ -71,7 +71,7 @@ segment_runs() {
 	precision) echo placement-precision ;;
 	startup) echo startup ;;
 	scene_blocks) echo scene-blocks ;;
-	sampler_waveform) echo sampler-waveform ;;
+	sampler_waveform) echo sampler-waveform@default sampler-waveform@focus ;;
 	autoscroll) echo placement-autoscroll ;;
 	placement_commands) echo placement-commands ;;
 	arrangement_sources) echo arrangement-sources@edit arrangement-sources@reopen ;;
@@ -555,10 +555,34 @@ seg_scene_blocks() {
 }
 
 seg_sampler_waveform() { # 6 s
-	node workstation/browser/sampler-waveform.test.cjs --write-fixture "$browser_root/sampler-waveform.cicada"
-	start_studio "$browser_root/sampler-waveform.cicada" build/studio-sampler-waveform-server.log
-	run_suite sampler-waveform env CICADA_SAMPLER_PROOF_DIR="$PWD/build/studio-sampler-waveform-proof" node --test workstation/browser/sampler-waveform.test.cjs | tee build/studio-sampler-waveform-report.txt
-	stop_studio
+	# The headless shell keeps each page focused even after another page is
+	# activated. Full Chrome supports the real focus transfer this suite tests.
+	local full_chrome
+	if [[ "${CICADA_STUDIO_DRY_RUN:-}" == 1 ]]; then
+		full_chrome=unused
+	else
+		full_chrome="$RUNNER_TOOL_CACHE/chrome-for-testing/$CHROME_VERSION/linux64/chrome-linux64/chrome"
+		if [[ ! -x "$full_chrome" ]]; then
+			curl --fail --location --retry 3 --output "$browser_root/chrome-full.zip" "https://storage.googleapis.com/chrome-for-testing-public/$CHROME_VERSION/linux64/chrome-linux64.zip"
+			unzip -q "$browser_root/chrome-full.zip" -d "$browser_root"
+			rm -f "$browser_root/chrome-full.zip"
+			full_chrome="$browser_root/chrome-linux64/chrome"
+		fi
+		echo "sampler-waveform browser: $full_chrome ($("$full_chrome" --version))"
+	fi
+	local config
+	for config in default focus; do
+		mkdir -p "$browser_root/sampler-waveform-$config"
+		node workstation/browser/sampler-waveform.test.cjs --write-fixture "$browser_root/sampler-waveform-$config/main.cicada"
+		if [[ "$config" == focus ]]; then
+			start_studio "$browser_root/sampler-waveform-$config/main.cicada" build/studio-sampler-waveform-focus-server.log
+			run_suite sampler-waveform@focus env CICADA_CHROME_PATH="$full_chrome" CICADA_SAMPLER_ANGLE=swiftshader CICADA_SAMPLER_REQUIRE_3D=1 CICADA_SAMPLER_PROOF_DIR="$PWD/build/studio-sampler-waveform-focus-proof" node --test workstation/browser/sampler-waveform.test.cjs | tee build/studio-sampler-waveform-focus-report.txt
+		else
+			start_studio "$browser_root/sampler-waveform-$config/main.cicada" build/studio-sampler-waveform-server.log
+			run_suite sampler-waveform@default env CICADA_CHROME_PATH="$full_chrome" CICADA_SAMPLER_PROOF_DIR="$PWD/build/studio-sampler-waveform-proof" node --test workstation/browser/sampler-waveform.test.cjs | tee build/studio-sampler-waveform-report.txt
+		fi
+		stop_studio
+	done
 }
 
 seg_autoscroll() { # 27 s

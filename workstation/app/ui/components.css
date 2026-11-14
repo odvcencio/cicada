@@ -546,3 +546,11 @@ footer { padding:20px 28px; color:var(--muted); border-top:1px solid var(--borde
 
 .studio-startup { display:flex; flex-wrap:wrap; align-items:center; gap:8px 16px; padding:8px 12px; border-bottom:1px solid var(--border); color:var(--mint); background:var(--raised); font-size:12px; }
 .studio-startup[hidden], .studio-startup button[hidden] { display:none; }
+
+/* The 3D study is supplementary: playable sampler buttons remain below it. */
+.sampler-scene { grid-column:1 / -1; width:100%; max-width:800px; margin:12px auto; background:#141719; border:1px solid #414c57; border-radius:8px; overflow:hidden; }
+.sampler-scene canvas { touch-action:none; }
+[data-sampler-scene-toggle] { grid-column:2; grid-row:5; justify-self:start; }
+#cicada-sampler[data-sampler-3d="true"] { display:block; }
+#cicada-sampler[data-sampler-3d="true"] > * { margin-bottom:14px; }
+.sampler-scene iframe { display:block; width:100%; aspect-ratio:10 / 7; border:0; background:#141719; }

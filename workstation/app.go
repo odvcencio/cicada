@@ -148,6 +148,7 @@ func newConfiguredApp(b *backend, options workspaceOptions) (http.Handler, error
 	if b == nil {
 		return &workspaceHandler{Handler: app.Build(), startupPath: startupPath}, nil
 	}
+	app.Page("GET /__sampler/scene-frame", s.samplerSceneFrame)
 	if s.bootstrapToken != "" {
 		app.Mount("GET /__local/{token}", http.HandlerFunc(s.bootstrapLocalOwner))
 		app.Mount("GET /__local/{token}/studio", http.HandlerFunc(s.bootstrapNativeOwner))

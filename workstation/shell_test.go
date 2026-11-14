@@ -793,3 +793,49 @@ func TestShellResampleReceiptStaysSmallForALargeScore(t *testing.T) {
 		t.Errorf("receipt: %+v err=%v", receipt, err)
 	}
 }
+
+func TestSamplerSceneIsNotMountedOnStartup(t *testing.T) {
+	body := shellBody(t, "?tab=session")
+	if strings.Contains(body, `id="sampler-scene3d"`) || strings.Contains(body, `id="sampler-frame-scene"`) {
+		t.Fatal("startup mounted a scene")
+	}
+	if !strings.Contains(body, `data-sampler-scene-toggle`) {
+		t.Fatal("missing opt-in control")
+	}
+	if got := strings.Count(body, `data-sampler-pad="`); got != 16 {
+		t.Fatalf("pad buttons=%d, want 16", got)
+	}
+}
+
+func TestSamplerSceneFrameRequiresExistingMembership(t *testing.T) {
+	address, client, _ := testApp(t)
+	resp, err := client.Get(address + "/__sampler/scene-frame")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("anonymous frame status=%d, want 403", resp.StatusCode)
+	}
+	_ = getPage(t, client, address+"/studio")
+	resp, err = client.Get(address + "/__sampler/scene-frame")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("member frame status=%d, want 200", resp.StatusCode)
+	}
+	if !strings.Contains(resp.Header.Get("Cache-Control"), "no-store") {
+		t.Fatal("frame response must be private and uncached")
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"sampler-frame-ray", "cicada:sampler-ray", "bootstrapControllerInputPath"} {
+		if !strings.Contains(string(body), want) {
+			t.Errorf("frame missing ray controller contract %q", want)
+		}
+	}
+}
