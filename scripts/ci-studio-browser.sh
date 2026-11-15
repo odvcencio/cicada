@@ -572,6 +572,9 @@ seg_track_rename() {
 	node workstation/browser/track-rename.test.cjs --write-fixture "$browser_root/track-rename"
 	start_studio "$browser_root/track-rename/main.cicada" build/studio-track-rename-server.log
 	run_suite track-rename env CICADA_TRACK_RENAME_DIR="$browser_root/track-rename" node --test workstation/browser/track-rename.test.cjs | tee build/studio-track-rename-report.txt
+	stop_studio
+}
+
 seg_split_placement() {
 	node workstation/browser/split-placement.test.cjs --write-fixture "$browser_root/split-placement"
 	start_studio "$browser_root/split-placement/main.cicada" build/studio-split-placement-server.log
