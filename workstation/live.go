@@ -410,7 +410,7 @@ func (s *studioApp) live(ctx *server.Context, v workspace, csrf string) gosx.Nod
 	surface := meterEngine(ctx, engine.Config{Name: "CicadaLive", Kind: engine.KindSurface, MountID: "cicada-live", Runtime: engine.RuntimeGoWASM, Props: props, Capabilities: []engine.Capability{engine.CapFetch, engine.CapKeyboard, engine.CapPointer, engine.CapStorage}, RequiredCapabilities: []engine.Capability{engine.CapWASM, engine.CapFetch}}, content)
 	return ui.Panel(ui.PanelProps{ID: "live", Title: "Live performance", Description: "Keyboard and MIDI play the piano, modeled keyboards, authored instruments, acid, and drums. Retain a take, then keep played timing or snap starts to a step pattern."}, s.liveLaunch(v, csrf), surface,
 		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted"), gosx.BoolAttr("data-live-destination-hint")), gosx.Text("Choose a pattern on this track or an unused compatible pattern from the library. Keeping a take replaces that pattern; unused patterns stay in the library until you arrange or assign them.")),
-		s.patternCreationForTracks(ctx, v, csrf, "", recordingTracks, true), preview, s.noteRecovery(v, csrf, workspaceOwner(ctx.Request), previewKey, ctx.Request.URL.Query().Get("noteHistory") == "on"))
+		s.patternCreationForTracks(ctx, v, csrf, "", recordingTracks, true, ""), preview, s.noteRecovery(v, csrf, workspaceOwner(ctx.Request), previewKey, ctx.Request.URL.Query().Get("noteHistory") == "on"))
 }
 
 // Validate through the same native edit service that will commit the take.
