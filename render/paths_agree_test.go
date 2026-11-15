@@ -234,6 +234,20 @@ pattern ca { step = 1/4 c3 - - - }
 pattern cb { step = 1/2 e3 - }
 scene main {}
 song { main*4 }`},
+	{name: "slide from a chain across a scene switch", source: `track slider acid { chain = sa sb }
+pattern sa { step = 1/1 3 }
+pattern sb { step = 1/1 1~ }
+pattern sy { step = 1/1 5 }
+scene x {}
+scene y { slider = sy }
+song { x*2 y*2 }`},
+	{name: "slide from a chain into a swung pattern", source: `track slider acid { chain = sa sb }
+pattern sa { step = 1/1 3 }
+pattern sb { step = 1/1 1~ }
+pattern sy { step = 1/1 swing = 60% 5 }
+scene x {}
+scene y { slider = sy }
+song { x*2 y*2 }`},
 	{name: "full gate into a new pattern", source: `pattern full { step = 1/4 gate = 100% . . . g3 }
 pattern start { step = 1/4 e4 . . . }
 scene x { lead = full }

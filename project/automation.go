@@ -6,7 +6,6 @@ import (
 	"math"
 	"sort"
 	"strconv"
-	"strings"
 
 	"m31labs.dev/cicada/internal/paramdefs"
 	"m31labs.dev/cicada/kernel/cmd"
@@ -51,7 +50,7 @@ func lowerAutomation(p *Project, score *notation.Score) []notation.Diagnostic {
 		// would fight over it.
 		key := control{resolved.Track, uint16(resolved.ID)}
 		if first, ok := controls[key]; ok && first != source.Path {
-			return append(ranges, automationDiagnostic("CICADA-DUPLICATE", fmt.Errorf("automation paths %s and %s set the same control%s", first, source.Path, sendPathNote(p, first, source.Path)), source.Position)...)
+			return append(ranges, automationDiagnostic("CICADA-DUPLICATE", fmt.Errorf("automation paths %s and %s set the same control", first, source.Path), source.Position)...)
 		}
 		controls[key] = source.Path
 		send := paramdefs.IsTrackSend(resolved.Descriptor)
@@ -161,7 +160,7 @@ func validateAutomation(p *Project) error {
 		// a.send.reverb, would fight over it.
 		key := slot{resolved.Track, uint16(resolved.ID)}
 		if other, ok := slots[key]; ok {
-			return fmt.Errorf("CICADA-DUPLICATE: automation paths %s and %s set the same control%s", other, lane.Path, sendPathNote(p, other, lane.Path))
+			return fmt.Errorf("CICADA-DUPLICATE: automation paths %s and %s set the same control", other, lane.Path)
 		}
 		slots[key] = lane.Path
 		if !resolved.Descriptor.Automatable || !resolved.Descriptor.Live || resolved.Descriptor.Unit == "enum" || resolved.Descriptor.Curve == "toggle" {
@@ -462,19 +461,6 @@ func CompileAutomation(p *Project) ([]cmd.Command, error) {
 	}
 	sort.SliceStable(controls, func(i, j int) bool { return controls[i].Tick < controls[j].Tick })
 	return controls, nil
-}
-
-// sendPathNote explains, for a diagnostic about paths a and b, a send path
-// whose declared effect name is the other return's keyword.
-func sendPathNote(p *Project, a, b string) string {
-	for _, path := range []string{a, b} {
-		if _, setting, ok := strings.Cut(path, "."); ok {
-			if note := paramdefs.SendTargetNote(setting, projectEffectKind(p)); note != "" {
-				return "; " + note
-			}
-		}
-	}
-	return ""
 }
 
 // sameAutomationValue reports whether two points hold the same value, so the

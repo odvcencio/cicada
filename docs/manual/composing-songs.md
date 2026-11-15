@@ -142,8 +142,8 @@ lane ramps linearly in gain, as it always has. A lane that mixes dB and linear
 points is refused with `CICADA-UNIT`, naming both points. The path may name
 the send by the return's effect, as the track block does: with
 `fx hall reverb {}` and `send hall = -12dB`, `bass.send.hall` and
-`bass.send.reverb` are the same control, and a declared effect name wins over
-the words `delay` and `reverb`.
+`bass.send.reverb` are the same control. The built-in paths `send.delay` and
+`send.reverb` always address the delay and first reverb returns.
 
 ```cicada
 cicada 2

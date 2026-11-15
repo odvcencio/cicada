@@ -64,7 +64,7 @@ func validateSceneSettings(score *Score, add func(string, string, string, Positi
 			// a.send.reverb, would set it twice.
 			control := owner + "\x00" + descriptor.ID
 			if first, ok := controls[control]; ok && first != setting.Path {
-				add("CICADA-DUPLICATE", "scene "+scene.Name+" sets one control twice: "+first+" and "+setting.Path+" are the same "+descriptor.Path+" of "+owner+sendNote(score, first, setting.Path), "error", setting.Position)
+				add("CICADA-DUPLICATE", "scene "+scene.Name+" sets one control twice: "+first+" and "+setting.Path+" are the same "+descriptor.Path+" of "+owner, "error", setting.Position)
 				continue
 			}
 			controls[control] = setting.Path
@@ -151,8 +151,12 @@ func resolveNotationPath(score *Score, path string) (paramdefs.Descriptor, strin
 	if trackOK {
 		setting := strings.Join(parts[1:], ".")
 		kind := notationParameterVoiceKind(score, track.Kind)
-		// send.<name> of a declared delay, tape or reverb is its return's
-		// send; the declared name wins over the return keywords.
+		if name, ok := strings.CutPrefix(setting, "send."); ok && name != "delay" && name != "reverb" {
+			if first := firstReverbReturn(score); first != "" && name != first && isReverbReturn(score, name) {
+				return paramdefs.Descriptor{}, "track", owner, "CICADA-UNSUPPORTED", paramdefs.LaterReverbSendMessage(path, name, first)
+			}
+		}
+		// Resolve an effect-name alias to its return send.
 		if target, ok, refusal := paramdefs.SendTarget(setting, scoreEffectKind(score)); refusal != "" {
 			return paramdefs.Descriptor{}, "track", owner, "CICADA-PARAM", "unknown setting in parameter path " + path + ": " + refusal
 		} else if ok {
@@ -405,17 +409,64 @@ func ParameterVoiceKind(score *Score, kind string) string {
 	return notationParameterVoiceKind(score, kind)
 }
 
-// sendNote explains, for a diagnostic about paths a and b, a send path whose
-// declared effect name is the other return's keyword.
-func sendNote(score *Score, a, b string) string {
-	for _, path := range []string{a, b} {
-		if _, setting, ok := strings.Cut(path, "."); ok {
-			if note := paramdefs.SendTargetNote(setting, scoreEffectKind(score)); note != "" {
-				return "; " + note
-			}
+// firstReverbReturn names the reverb in return slot B, the first reverb the
+// score declares outside the master chain that gets an instance ("" without
+// one), as the compiler takes it (project.ReverbReturns).
+func firstReverbReturn(score *Score) string {
+	for _, effect := range score.Effects {
+		if effect.Kind == "reverb" && !effectOnMaster(score, effect.Name) && effectGetsInstance(score, effect.Name) {
+			return effect.Name
 		}
 	}
 	return ""
+}
+
+// isReverbReturn reports whether name is a reverb return of the score.
+func isReverbReturn(score *Score, name string) bool {
+	for _, effect := range score.Effects {
+		if effect.Name == name {
+			return effect.Kind == "reverb" && !effectOnMaster(score, name) && effectGetsInstance(score, name)
+		}
+	}
+	return false
+}
+
+// effectGetsInstance mirrors the compiler's choice of runtime effects
+// (project's routedEffects): in edition 2 an effect from a library gets an
+// instance only when a track or bus sends to it or inserts it; a scene that
+// only addresses it does not.
+func effectGetsInstance(score *Score, name string) bool {
+	if score.Version == 1 || score.Origins[name].Library == "" {
+		return true
+	}
+	routed := func(params []Param) bool {
+		for _, param := range params {
+			switch param.Name {
+			case "insert":
+				for _, field := range strings.Fields(param.Value) {
+					if field == name {
+						return true
+					}
+				}
+			case "send":
+				if param.Target == name {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	for _, track := range score.Tracks {
+		if routed(track.Params) {
+			return true
+		}
+	}
+	for _, bus := range score.Buses {
+		if routed(bus.Params) {
+			return true
+		}
+	}
+	return false
 }
 
 // scoreEffectKind reports the kind of a declared effect of the score.
@@ -429,4 +480,3 @@ func scoreEffectKind(score *Score) func(string) (string, bool) {
 		return "", false
 	}
 }
-

@@ -192,9 +192,7 @@ func hasDiagnosticCode(ds []notation.Diagnostic, code string) bool {
 
 // TestSendNameIsOneControlEverywhere covers the review of the name alias: two
 // spellings of one send are one control for duplicate checks, reported at the
-// second spelling; explain's address lookup knows the alias; and a declared
-// effect name wins over the return keywords, as in the track block, so with
-// fx reverb delay {} the path a.send.reverb is the delay's send.
+// second spelling, and explain's address lookup knows the alias.
 func TestSendNameIsOneControlEverywhere(t *testing.T) {
 	_, ds := sendProject(t, sendScore("automate a.send.hall { @1.1.1 0.5 }\nautomate a.send.reverb { @1.1.1 0.25 }\n"))
 	if !hasDiagnosticCode(ds, "CICADA-DUPLICATE") || ds[0].Position.Line != 11 || !strings.Contains(ds[0].Message, "automation paths a.send.hall and a.send.reverb set the same control") {
@@ -207,20 +205,5 @@ func TestSendNameIsOneControlEverywhere(t *testing.T) {
 	address, err := ParamAddressByName(p, "a.send.hall")
 	if err != nil || address.Address != "a.send.hall" || address.Param != "mix.send_b" || address.Track != "a" {
 		t.Fatalf("address of a.send.hall: %+v %v", address, err)
-	}
-	crossed := "cicada 2\ntempo 120\nfx reverb delay { time = 1/8 }\nfx hall reverb {}\ntrack a acid { send reverb = 0.4 send hall = 0.2 }\npattern p { c3 . . . }\nscene main { a = p }\nsong { main*2 }\n"
-	p, ds = sendProject(t, crossed)
-	if hasErrors(ds) {
-		t.Fatal(ds)
-	}
-	for path, want := range map[string]string{"a.send.reverb": "send.delay", "a.send.hall": "send.reverb"} {
-		resolved, err := ResolveParameterPath(p, path)
-		if err != nil || resolved.Descriptor.Path != want {
-			t.Fatalf("%s resolves to %+v, %v; want %s, as the track block send line", path, resolved.Descriptor, err, want)
-		}
-	}
-	_, ds = sendProject(t, crossed+"automate a.send.reverb { @1.1.1 0.5 }\nautomate a.send.delay { @1.1.1 0.25 }\n")
-	if !hasDiagnosticCode(ds, "CICADA-DUPLICATE") || !strings.Contains(ds[0].Message, "send.reverb is the send to effect reverb, a delay: a declared effect name wins over the return keyword reverb") {
-		t.Fatalf("crossed duplicate: %v", ds)
 	}
 }

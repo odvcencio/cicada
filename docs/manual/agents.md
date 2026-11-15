@@ -1030,6 +1030,34 @@ export loud { loudness = -9LUFS true_peak = -1dBTP normalize = off }
 }
 ```
 
+## Studio history requests
+
+Studio's local HTTP service accepts version-1 intent envelopes at
+`POST /api/intents`; see [Editor integration](editors.md) for the workspace
+revision and source-revision receipts. A committed `rename` intent targeting a
+track is refused with HTTP 422 while the native playback stream exists, audio
+capture is active, or browser playback is reported active. Stop the transport
+before retrying. Dry runs can still preview the edit. Proposal acceptance uses
+the same guard. These service refusals include `"code":"track_identity_busy"`.
+The Studio shell's rename action uses its action response's `data.code` for
+`retained_take_pending` and `saved_notes_unreadable` refusals.
+
+`POST /api/undo`, `POST /api/redo`, and `POST /api/history/{id}/revert` take a
+JSON object containing the current `revision`. The optional boolean
+`protect_track_identities` defaults to false. When true, a history transition
+that removes a track ID is refused with HTTP 422 and
+`"code":"retained_take_track_required"`; commit or discard unsaved performances first.
+When native playback or capture is active, a transition that both removes and
+adds track IDs is refused with HTTP 422 and `"code":"track_identity_busy"`.
+Other history edits remain available. The Studio shell sets the flag for
+locally held engine work and for retained note checkpoints owned by the current
+workspace session. A client must set it when it needs this protection for its
+own unsaved work; the service cannot inspect a browser's local drafts. A
+checkpoint created by another tab after the workstation checks its store is not
+serialized with the history request. Browser AudioWorklet playback is reported
+asynchronously in qualification mode, so its start is not covered by the native
+transport's commit lock.
+
 ## The MCP server
 
 `cicada mcp [--root <dir>] [--allow-user-library]` serves the read-only tools

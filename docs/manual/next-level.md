@@ -150,7 +150,7 @@ scene verse { bass = phrase lead = phrase }
 song { verse*16 }
 ```
 
-In Studio's Live panel, select **Enable MIDI**, choose a score port and a
+In Studio's Live panel, select **Enable MIDI**, then use **MIDI setup** to choose a score port and a
 connected device, then select **Bind device**. The binding is saved on this
 machine in `cicada.local`. Bind the same logical port to a different device in
 another copy of the project. This file is excluded from projects created by
@@ -180,7 +180,7 @@ Other takeover modes and launch modes besides trigger are not yet supported.
 
 Studio's **Live** panel has a launch matrix for scenes and track slots, an
 onscreen keyboard, and drum pads. Select **Enable MIDI** to play from a
-connected MIDI device. Choose a **Pitched track** and a **Drum track**, then
+connected MIDI device. Choose tracks under **Keys play** and **Pads play**, then
 choose the pattern each one records into.
 
 Press **Play**, then select **Record notes**. Play notes, select **Finish note

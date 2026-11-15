@@ -90,6 +90,12 @@ func ResolveParameterPath(p *Project, path string) (ResolvedParam, error) {
 			}
 			effectOK = true
 			effectKind = semanticEffectKind(effect)
+			// A reverb's controls address the reverb return by kind, which is
+			// slot B, the first reverb. A later reverb (slots C to H) would move
+			// slot B instead of itself, so its controls stay fixed for now.
+			if effectKind == "reverb" && !firstReverb(p, effect.ID) {
+				return fail("CICADA-UNSUPPORTED", "the controls of reverb "+effect.ID+" cannot change while it plays: scenes, automation, routes and macros reach only the first reverb, "+firstReverbName(p))
+			}
 			break
 		}
 	}
@@ -105,8 +111,15 @@ func ResolveParameterPath(p *Project, path string) (ResolvedParam, error) {
 	if trackOK {
 		setting := strings.Join(parts[1:], ".")
 		kind := parameterVoiceKind(p, p.Tracks[trackIndex].Kind)
-		// send.<name> of a declared delay, tape or reverb is its return's
-		// send; the declared name wins over the return keywords.
+		if name, ok := strings.CutPrefix(setting, "send."); ok && name != "delay" && name != "reverb" {
+			first := firstReverbName(p)
+			for _, effect := range p.Effects {
+				if effect.ID == name && semanticEffectKind(effect) == "reverb" && first != "" && name != first && !MasterHasInsert(p, name) {
+					return fail("CICADA-UNSUPPORTED", paramdefs.LaterReverbSendMessage(path, name, first))
+				}
+			}
+		}
+		// Resolve an effect-name alias to its return send.
 		if target, ok, refusal := paramdefs.SendTarget(setting, projectEffectKind(p)); refusal != "" {
 			return fail("CICADA-PARAM", "unknown setting in parameter path "+path+": "+refusal)
 		} else if ok {
@@ -332,4 +345,24 @@ func validateParameterValue(descriptor paramdefs.Descriptor, value Value) error 
 		return fmt.Errorf("toggle value must be on or off")
 	}
 	return nil
+}
+
+// firstReverb reports whether name is the first reverb return the project
+// declares, the one in return slot B.
+func firstReverb(p *Project, name string) bool {
+	return firstReverbName(p) == name
+}
+
+// FirstReverbName names the reverb in return slot B: the first reverb the
+// project declares outside the master chain, as the engine compiler takes it.
+// Every later reverb takes a slot from C to H. It is "" without a reverb.
+func FirstReverbName(p *Project) string { return firstReverbName(p) }
+
+func firstReverbName(p *Project) string {
+	for _, effect := range p.Effects {
+		if semanticEffectKind(effect) == "reverb" && !MasterHasInsert(p, effect.ID) {
+			return effect.ID
+		}
+	}
+	return ""
 }

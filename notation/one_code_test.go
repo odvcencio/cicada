@@ -40,7 +40,7 @@ func TestEveryCodePrintsOnce(t *testing.T) {
 }
 
 // TestSecondReturnReportsAtItsDeclaration is banyan's finding: a second
-// reverb reported at line 1, column 1. Each extra reverb, delay or tape now
+// delay or tape reported at line 1, column 1. Each extra delay or tape now
 // reports at its own declaration and names the effect that holds the return.
 func TestSecondReturnReportsAtItsDeclaration(t *testing.T) {
 	source := "cicada 2\ntempo 120\nfx hall reverb { decay = 4s }\nfx echo tape {}\nfx room reverb { decay = 1s }\nfx slap delay {}\ntrack a acid { send hall = -6dB }\npattern p { c3 . . . }\nscene main { a = p }\nsong { main*2 }\n"
@@ -49,7 +49,6 @@ func TestSecondReturnReportsAtItsDeclaration(t *testing.T) {
 		t.Fatal(ds)
 	}
 	want := map[int]string{
-		5: "multiple reverb instances are not implemented; fx hall is the score's reverb return already",
 		6: "multiple delay or tape instances are not implemented: a tape echo is the delay return; fx echo is the score's delay return already",
 	}
 	for _, d := range Validate(score) {

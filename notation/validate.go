@@ -665,10 +665,8 @@ func Validate(s *Score) (ds []Diagnostic) {
 			}
 		}
 	}
-	// A score has one delay return (delay or tape) and one reverb return. The
-	// diagnostic goes on each declaration after the first and names the one
-	// that holds the return.
-	var firstEcho, firstReverb *Effect
+	// Each extra delay or tape reports at its declaration and names the first.
+	var firstEcho *Effect
 	for i := range s.Effects {
 		effect := &s.Effects[i]
 		switch effect.Kind {
@@ -682,12 +680,32 @@ func Validate(s *Score) (ds []Diagnostic) {
 				message = "multiple delay or tape instances are not implemented: a tape echo is the delay return"
 			}
 			add("CICADA-UNSUPPORTED", fmt.Sprintf("%s; fx %s is the score's delay return already", message, firstEcho.Name), "error", effect.Position)
-		case "reverb":
-			if firstReverb == nil {
-				firstReverb = effect
-				continue
-			}
-			add("CICADA-UNSUPPORTED", fmt.Sprintf("multiple reverb instances are not implemented; fx %s is the score's reverb return already", firstReverb.Name), "error", effect.Position)
+		}
+	}
+	// The first reverb is return slot B; each later one takes a slot from C to
+	// H. Edition 1 addresses returns by kind (send_b), so it keeps one reverb.
+	reverbs := 0
+	for _, effect := range s.Effects {
+		if effect.Kind != "reverb" || effectOnMaster(s, effect.Name) {
+			continue
+		}
+		reverbs++
+		switch {
+		case reverbs > 1 && s.Version != 2:
+			add("CICADA-VERSION", "a second reverb return needs edition 2: edition 1 addresses returns by kind", "error", effect.Position)
+		case reverbs == maxReverbReturns+1:
+			add("CICADA-LIMIT", fmt.Sprintf("a score has at most %d reverb returns (slot B and slots C to H); %s is reverb number %d", maxReverbReturns, effect.Name, reverbs), "error", effect.Position)
+		}
+	}
+	// A return may not take the name of a built-in send path segment unless it
+	// is the return that path addresses (send.delay, send.reverb).
+	firstReverb := firstReverbReturn(s)
+	for _, effect := range s.Effects {
+		if (effect.Kind != "delay" && effect.Kind != "tape" && effect.Kind != "reverb") || effectOnMaster(s, effect.Name) {
+			continue
+		}
+		if message := paramdefs.ReturnNameCollision(effect.Name, effect.Kind, effect.Name == firstReverb); message != "" {
+			add("CICADA-DUPLICATE", message, "error", effect.Position)
 		}
 	}
 	for _, bus := range s.Buses {
@@ -1174,4 +1192,22 @@ func ValidateLive(live *Live, tracks []Track) []Diagnostic {
 		}
 	}
 	return ds
+}
+
+// maxReverbReturns is the number of reverb returns a score may route: slot B
+// and the six slots C to H.
+const maxReverbReturns = 7
+
+// effectOnMaster reports whether the master chain inserts the named effect.
+func effectOnMaster(s *Score, name string) bool {
+	for _, param := range s.Master {
+		if param.Name == "insert" {
+			for _, field := range strings.Fields(param.Value) {
+				if field == name {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }

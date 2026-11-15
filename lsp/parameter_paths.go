@@ -237,7 +237,7 @@ func parameterPathCompletion(source []byte, at position) []map[string]any {
 
 // sendNameCompletions offers send.<name> for each declared delay, tape or
 // reverb effect: a path names a send by the effect, as a track's send line
-// does, and the declared name wins over the return keywords.
+// does, for returns that have a parameter path.
 func sendNameCompletions(source []byte, settingPrefix string, hasNested bool, existing []map[string]any) []map[string]any {
 	seen := map[string]bool{}
 	for _, item := range existing {

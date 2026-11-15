@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 
 	edits "m31labs.dev/cicada/edit"
@@ -19,10 +20,14 @@ import (
 	"m31labs.dev/cicada/render"
 )
 
+var _ edits.SplitRenderCheck = check{}
+var _ edits.SplitRenderCheck = (*cached)(nil)
+
 type check struct {
-	path      string
-	target    string
-	overrides map[string][]byte
+	path       string
+	target     string
+	allAudible bool
+	overrides  map[string][]byte
 }
 
 // New returns a render check for the entry score at path. Hash substitutes the
@@ -43,7 +48,24 @@ func (c check) ForSource(path string, files map[string][]byte) (edits.RenderChec
 	if absolute, err := filepath.Abs(path); err == nil {
 		path = absolute
 	}
-	return check{path: c.path, target: path, overrides: layer(c.overrides, files)}, nil
+	return check{path: c.path, target: path, overrides: layer(c.overrides, files), allAudible: c.allAudible}, nil
+}
+
+func (c check) ForSplit() edits.RenderCheck {
+	c.allAudible = true
+	return c
+}
+
+func (c *cached) ForSplit() edits.RenderCheck {
+	scoped, ok := c.inner.(edits.SplitRenderCheck)
+	if !ok {
+		return nil
+	}
+	inner := scoped.ForSplit()
+	if inner == nil {
+		return nil
+	}
+	return &cached{inner: inner, key: c.key, cacheState: c.cacheState, allAudible: true}
 }
 
 func (c *cached) ForSource(path string, files map[string][]byte) (edits.RenderCheck, error) {
@@ -137,6 +159,28 @@ func (c check) renderPinned(overrides map[string][]byte, pin *project.Resolution
 	if score == nil {
 		return "", fmt.Errorf("score did not load")
 	}
+	if c.allAudible {
+		clear := func(params []notation.Param, track bool) []notation.Param {
+			out := params[:0]
+			for _, param := range params {
+				if (param.Name == "level" || (track && strings.HasSuffix(param.Name, "_level"))) && param.Value == "off" {
+					continue
+				}
+				if param.Name == "mute" || param.Name == "solo" {
+					param.Value = "off"
+				}
+				out = append(out, param)
+			}
+			return out
+		}
+		for i := range score.Tracks {
+			score.Tracks[i].Params = clear(score.Tracks[i].Params, true)
+		}
+		for i := range score.Buses {
+			score.Buses[i].Params = clear(score.Buses[i].Params, false)
+		}
+		score.Master = clear(score.Master, false)
+	}
 	// Audio assets and sampler packs resolve from the project folder, as they do
 	// for every command, whichever source file the render check was given.
 	dir := sources.Root
@@ -156,12 +200,17 @@ type cachedResult struct {
 	err  error
 }
 
+type cacheState struct {
+	mu    sync.Mutex
+	pairs map[string]bool
+	by    map[string]cachedResult
+}
+
 type cached struct {
 	inner edits.RenderCheck
-	pairs map[string]bool
 	key   func(source []byte, files map[string][]byte) (string, bool)
-	mu    sync.Mutex
-	by    map[string]cachedResult
+	*cacheState
+	allAudible bool
 }
 
 // Cached remembers results by the full render input identity of the score at
@@ -180,7 +229,7 @@ func Cached(path string, inner edits.RenderCheck) edits.SnapshotRenderCheck {
 // CachedBy is Cached with a caller-supplied key. A key function that returns
 // false disables caching for that call.
 func CachedBy(key func(source []byte, files map[string][]byte) (string, bool), inner edits.RenderCheck) edits.SnapshotRenderCheck {
-	return &cached{inner: inner, key: key}
+	return &cached{inner: inner, key: key, cacheState: &cacheState{}}
 }
 
 func (c *cached) Hash(source []byte) (string, error) { return c.HashWith(source, nil) }
@@ -202,6 +251,7 @@ func (c *cached) HashWith(source []byte, files map[string][]byte) (string, error
 	if !ok {
 		return "", edits.ErrProjectChanged
 	}
+	key = fmt.Sprintf("%t|%s", c.allAudible, key)
 	c.mu.Lock()
 	if result, hit := c.by[key]; hit {
 		c.mu.Unlock()
@@ -209,7 +259,7 @@ func (c *cached) HashWith(source []byte, files map[string][]byte) (string, error
 	}
 	c.mu.Unlock()
 	hash, err := render()
-	if after, ok := c.key(source, files); !ok || after != key {
+	if after, ok := c.key(source, files); !ok || fmt.Sprintf("%t|%s", c.allAudible, after) != key {
 		return "", edits.ErrProjectChanged
 	}
 	c.mu.Lock()
@@ -231,7 +281,7 @@ func (c *cached) PairIdentity(before, after []byte, files map[string][]byte) (st
 		return "", false
 	}
 	b, ok := c.key(after, files)
-	return a + "|" + b, ok
+	return fmt.Sprintf("%t|%s|%s", c.allAudible, a, b), ok
 }
 
 // Compare answers from the cache when the project's current pair identity was
@@ -255,12 +305,12 @@ func (c *cached) Compare(before, after []byte, files map[string][]byte) (bool, s
 		}
 		return a == b, identity, nil
 	}
-	current, ok := snap.PairIdentity(before, after, files)
+	current, ok := c.PairIdentity(before, after, files)
 	if !ok {
 		return false, "", edits.ErrProjectChanged
 	}
 	c.mu.Lock()
-	if same, hit := c.pairs[current]; hit {
+	if same, hit := c.pairs[fmt.Sprintf("%t|%s", c.allAudible, current)]; hit {
 		c.mu.Unlock()
 		return same, current, nil
 	}
@@ -274,7 +324,7 @@ func (c *cached) Compare(before, after []byte, files map[string][]byte) (bool, s
 	if c.pairs == nil || len(c.pairs) >= cachedLimit {
 		c.pairs = make(map[string]bool)
 	}
-	c.pairs[identity] = same
+	c.pairs[fmt.Sprintf("%t|%s", c.allAudible, identity)] = same
 	return same, identity, nil
 }
 
@@ -472,8 +522,8 @@ func hashOf(data []byte) string {
 }
 
 // pairIdentity names the project and both candidate sources.
-func pairIdentity(snap *snapshot, target string, after []byte) string {
-	return snap.identity + "|" + hashOf([]byte(target)) + "|" + hashOf(after)
+func pairIdentity(snap *snapshot, target string, after []byte, allAudible bool) string {
+	return fmt.Sprintf("%t|", allAudible) + snap.identity + "|" + hashOf([]byte(target)) + "|" + hashOf(after)
 }
 
 // PairIdentity names the inputs of a comparison of before and after as the
@@ -484,7 +534,7 @@ func (c check) PairIdentity(before, after []byte, files map[string][]byte) (stri
 	if !ok {
 		return "", false
 	}
-	return pairIdentity(snap, c.sourcePath(), after), true
+	return pairIdentity(snap, c.sourcePath(), after, c.allAudible), true
 }
 
 // Compare renders both candidates from one snapshot of the project, so a file
@@ -516,5 +566,5 @@ func (c check) Compare(before, after []byte, files map[string][]byte) (bool, str
 	if now, ok := snap.assets(); !ok || now != snap.assetID {
 		return false, "", edits.ErrProjectChanged
 	}
-	return a == b, pairIdentity(snap, c.sourcePath(), after), nil
+	return a == b, pairIdentity(snap, c.sourcePath(), after, c.allAudible), nil
 }
