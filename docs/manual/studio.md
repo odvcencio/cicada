@@ -209,12 +209,14 @@ playback. **Play full song** restores all parts and starts at the beginning;
 
 ![Tidal Glass placement editing and listening controls, captured from the release build at 1440 px.](screenshots/studio-session-listening-1440.png)
 
-**Project settings** changes the title, tempo, key, and scale. Tempo keeps up
+For a scene song, the Arrange tool strip provides playback, exact looping, **Add section**, and **Project**. Choose a section’s **Edit** link to open its controls below the lanes. For every project with scenes, the scene launch grid is in Session.
+
+**Project** opens project settings for the title, tempo, key, and scale. Tempo keeps up
 to three decimal places. Changing the key retunes scale-degree notes; explicit
 letter pitches keep their pitch. Every edit validates and checks the current
 disk revision before saving, and has an Undo entry.
 
-To rename a track, open **Rename** in its Arrange rail, enter the new name,
+To rename a track, open the rename button (✎) in its Arrange rail, enter the new name,
 and choose **Rename track**. Stop playback and finish recording first; a paused
 transport must also be stopped. Commit or discard unfinished or retained note
 performances before renaming. The rename updates references throughout the

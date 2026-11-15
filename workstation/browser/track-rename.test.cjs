@@ -44,6 +44,11 @@ test('track rename updates project references, guards conflicts, and is one Undo
   await summary.click();
   if (process.env.CICADA_TRACK_RENAME_PROOF_DIR) { fs.mkdirSync(process.env.CICADA_TRACK_RENAME_PROOF_DIR,{recursive:true}); await summary.locator('..').screenshot({path:path.join(process.env.CICADA_TRACK_RENAME_PROOF_DIR,'track-rename.png')}); }
   const form=summary.locator('..').locator('form');
+  await form.getByLabel('New name for bass').fill('draft');
+  await form.getByLabel('New name for bass').press('Escape');
+  await until(async()=>await summary.locator('..').getAttribute('open')===null && await form.getByLabel('New name for bass').inputValue()==='bass','Escape did not close and discard rename');
+  await summary.click();
+  assert.equal(await form.getByLabel('New name for bass').inputValue(),'bass');
   await form.getByLabel('New name for bass').fill('low');
   // Managed navigation may rewrite the form action as an absolute URL.
   await form.evaluate(node=>node.setAttribute('action',new URL(node.getAttribute('action'),location.href).href));

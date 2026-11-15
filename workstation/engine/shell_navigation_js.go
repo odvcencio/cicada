@@ -9,6 +9,102 @@ import (
 	enginewasm "m31labs.dev/gosx/engine/wasm"
 )
 
+const arrangeSectionStorage = "cicada:arrange:section"
+
+var rememberedArrangeSection string
+
+// Storage can be unavailable in private browsing or under browser policies.
+func arrangeSectionStorageValue(action, value string) (result string) {
+	switch action {
+	case "get":
+		if rememberedArrangeSection != "" {
+			return rememberedArrangeSection
+		}
+	case "set":
+		rememberedArrangeSection = value
+	case "clear":
+		rememberedArrangeSection = ""
+	}
+	defer func() { _ = recover() }()
+	storage := js.Global().Get("sessionStorage")
+	switch action {
+	case "get":
+		if saved := storage.Call("getItem", arrangeSectionStorage); saved.Type() == js.TypeString {
+			rememberedArrangeSection = saved.String()
+			return rememberedArrangeSection
+		}
+	case "set":
+		storage.Call("setItem", arrangeSectionStorage, value)
+	case "clear":
+		storage.Call("removeItem", arrangeSectionStorage)
+	}
+	return ""
+}
+
+func arrangeSectionKey(block js.Value) string {
+	return workspaceAttr(block, "data-song-index") + "|" + workspaceAttr(block, "data-song-key") + "|" + workspaceAttr(block, "data-song-generation")
+}
+
+func discardArrangeSection(root, blocks js.Value) {
+	for i := 0; i < blocks.Length(); i++ {
+		block := blocks.Index(i)
+		block.Set("open", false)
+		discardDetailsDraft(block)
+		block.Call("removeAttribute", "data-song-selected")
+	}
+	if status := root.Call("querySelector", "#arrangement [data-scene-open-status]"); workspacePresent(status) {
+		status.Set("textContent", "The song changed. Choose Edit on a block to continue editing it.")
+	}
+	arrangeSectionStorageValue("clear", "")
+}
+
+func restoreArrangeSection(root js.Value) {
+	if !workspacePresent(root.Call("querySelector", "#arrangement")) {
+		return
+	}
+	blocks := root.Call("querySelectorAll", "#arrangement details.arrangement-block[data-song-key]")
+	for i := 0; i < blocks.Length(); i++ {
+		if block := blocks.Index(i); block.Get("open").Bool() {
+			arrangeSectionStorageValue("set", arrangeSectionKey(block))
+			return
+		}
+	}
+	if saved := arrangeSectionStorageValue("get", ""); saved != "" {
+		for i := 0; i < blocks.Length(); i++ {
+			block := blocks.Index(i)
+			if arrangeSectionKey(block) == saved {
+				block.Call("setAttribute", "data-song-selected", "")
+				block.Set("open", true)
+				return
+			}
+		}
+		discardArrangeSection(root, blocks)
+		return
+	}
+}
+
+func checkArrangeSection(root js.Value) {
+	if saved := arrangeSectionStorageValue("get", ""); saved != "" {
+		if !workspacePresent(root.Call("querySelector", "#arrangement")) {
+			return
+		}
+		blocks := root.Call("querySelectorAll", "#arrangement details.arrangement-block[data-song-key]")
+		found := false
+		for i := 0; i < blocks.Length(); i++ {
+			block := blocks.Index(i)
+			if arrangeSectionKey(block) == saved {
+				found = true
+			} else if block.Get("open").Bool() {
+				found = false
+				break
+			}
+		}
+		if !found {
+			discardArrangeSection(root, blocks)
+		}
+	}
+}
+
 // Tab recipes own visibility and keyboard focus. Their shared selections also
 // belong in the URL so saved forms, refreshes and modified clicks keep context.
 func bindShellNavigation(host enginewasm.Context, root js.Value) (func(), error) {
@@ -96,6 +192,12 @@ func bindShellNavigation(host enginewasm.Context, root js.Value) (func(), error)
 	document.Call("addEventListener", "submit", historyPending, true)
 	restorePendingShellChoice(host, root)
 	revealShellBrowserDestination(host, root)
+	restoreArrangeSection(root)
+	removeArrangeUpdated := workspaceUpdated.add(func() {
+		if root.Get("isConnected").Bool() {
+			checkArrangeSection(root)
+		}
+	})
 	localClick := js.FuncOf(func(_ js.Value, args []js.Value) any {
 		if len(args) == 0 || !root.Get("isConnected").Bool() {
 			return nil
@@ -109,6 +211,14 @@ func bindShellNavigation(host enginewasm.Context, root js.Value) (func(), error)
 			return nil
 		}
 		pendingScenePatternURL = ""
+		if summary := target.Call("closest", "#arrangement details.arrangement-block > summary"); workspacePresent(summary) {
+			block := summary.Get("parentElement")
+			if block.Get("open").Bool() {
+				arrangeSectionStorageValue("clear", "")
+				discardDetailsDraft(block)
+				block.Call("removeAttribute", "data-song-selected")
+			}
+		}
 		// Reveal the editor only after this link's destination has loaded.
 		if link := target.Call("closest", "[data-scene-pattern-open]"); workspacePresent(link) {
 			reason := ""
@@ -139,13 +249,20 @@ func bindShellNavigation(host enginewasm.Context, root js.Value) (func(), error)
 			var selected js.Value
 			for i := 0; i < blocks.Length(); i++ {
 				block := blocks.Index(i)
-				block.Call("removeAttribute", "data-song-selected")
 				if workspaceAttr(block, "data-song-index") == index {
 					selected = block
+					continue
 				}
+				block.Call("removeAttribute", "data-song-selected")
+				block.Set("open", false)
+				discardDetailsDraft(block)
 			}
 			if workspacePresent(selected) {
 				event.Call("preventDefault")
+				arrangeSectionStorageValue("set", arrangeSectionKey(selected))
+				if status := root.Call("querySelector", "#arrangement [data-scene-open-status]"); workspacePresent(status) {
+					status.Set("textContent", "")
+				}
 				selected.Call("setAttribute", "data-song-selected", "")
 				selected.Set("open", true)
 				summary := selected.Call("querySelector", "summary")
@@ -253,6 +370,7 @@ func bindShellNavigation(host enginewasm.Context, root js.Value) (func(), error)
 		document.Call("removeEventListener", "gosx:navigate", restore)
 		document.Call("removeEventListener", "focusin", focusChanged, true)
 		document.Call("removeEventListener", "submit", historyPending, true)
+		removeArrangeUpdated()
 		historyPending.Release()
 		remember.Release()
 		restore.Release()
