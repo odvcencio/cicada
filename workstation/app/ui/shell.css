@@ -61,6 +61,14 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
 .gsx-collapsible > summary { padding:var(--gsx-space-xs) var(--gsx-space-sm); cursor:pointer; }
 .shell .shell-collapsible > summary { height:36px; padding:8px 12px; background:var(--raised); border-bottom:1px solid var(--border); font-weight:600; }
 .shell #studio-browser { background:var(--panel); }
+/* The expanded sampler uses the existing Library mount and leaves the user's
+   stored splitter width alone. Closing it restores that width. */
+@media (min-width:800px) {
+	.shell #sampler-expand-control { display:inline-flex; align-items:center; gap:8px; margin:0 0 12px; cursor:pointer; }
+	.shell #sampler-expand-control input { margin:0; }
+	.shell:has(#studio-browser .shell-collapsible[open] #library-panel-samples:not([hidden]) #browser-sampler #sampler-expand:checked) .gsx-dock { --studio-browser-column:min(640px,calc(100vw - 480px)); }
+	.shell:has(#studio-browser .shell-collapsible[open] #library-panel-samples:not([hidden]) #browser-sampler #sampler-expand:checked) #studio-browser > .gsx-split__handle { display:none; }
+}
 
 /* Top bar: project identity, transport, position and tempo, then the
    workspace actions. One 52px row at desktop widths. */
@@ -319,12 +327,18 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
 
 /* Detail dock: tabs and the selection they edit share one 38px bar. */
 .shell #studio-detail { background:var(--panel); }
-.shell #detail-tabs { display:grid; grid-template-columns:minmax(0,1fr) auto; grid-template-rows:auto minmax(0,1fr); }
-.shell #detail-tabs > .gsx-tabs__list { grid-column:1; grid-row:1; min-height:38px; background:var(--panel); border-bottom:1px solid var(--border); }
-.shell #detail-tabs .shell-dock-selection { grid-column:2; grid-row:1; display:flex; align-items:baseline; gap:8px; margin:0; padding:0 12px; align-self:stretch; align-items:center; border-bottom:1px solid var(--border); white-space:nowrap; overflow:hidden; }
+/* The tabs keep their width and stay on one row; the selection label takes what is left and truncates. */
+.shell #detail-tabs { display:grid; grid-template-columns:auto minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); min-width:0; }
+/* When the dock is narrower than its tabs, the tab row scrolls sideways inside itself. */
+.shell #detail-tabs > .gsx-tabs__list > * { flex:none; }
+.shell #detail-tabs > .gsx-tabs__list { grid-column:1; grid-row:1; flex-wrap:nowrap; min-width:0; overflow-x:auto; min-height:38px; background:var(--panel); border-bottom:1px solid var(--border); }
+.shell #detail-tabs .shell-dock-selection { grid-column:2; grid-row:1; display:flex; justify-content:flex-end; gap:8px; min-width:0; margin:0; padding:0 12px; align-self:stretch; align-items:center; border-bottom:1px solid var(--border); white-space:nowrap; overflow:hidden; }
+.shell #detail-tabs .shell-dock-selection > * { flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.shell #detail-tabs .shell-dock-selection > strong { flex-shrink:0; max-width:100%; }
 .shell #detail-tabs .shell-dock-selection strong { color:var(--amber); font-size:14px; font-weight:650; }
 .shell #detail-tabs .shell-dock-selection span { color:var(--muted); font:11px var(--mono); }
-.shell #detail-tabs .shell-dock-selection:has(> strong:empty) { visibility:hidden; }
+/* An empty label keeps its box, so the header's bottom border still runs to the edge. */
+.shell #detail-tabs .shell-dock-selection:has(> strong:empty) > * { visibility:hidden; }
 .shell #detail-tabs:has(#detail-tab-clip[aria-current="page"]) [data-dock-selection=track],
 .shell #detail-tabs:not(:has(#detail-tab-clip[aria-current="page"])) [data-dock-selection=clip] { display:none; }
 .shell #detail-tabs > .shell-scroll { grid-column:1/-1; grid-row:2; }

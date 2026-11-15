@@ -387,9 +387,14 @@ func typeDocFromComment(name, text string) (typeDoc, error) {
 	if !ok {
 		return doc, nil // the completeness test names the missing meaning
 	}
-	sentence, notes := rest, ""
+	// The meaning is the first sentence; a full stop inside a code span,
+	// such as `automate <path> { ... }`, does not end it.
+	sentence, notes, code := rest, "", false
 	for i := 0; i < len(rest); i++ {
-		if rest[i] == '.' && (i+1 == len(rest) || rest[i+1] == ' ') {
+		if rest[i] == '`' {
+			code = !code
+		}
+		if !code && rest[i] == '.' && (i+1 == len(rest) || rest[i+1] == ' ') {
 			sentence, notes = rest[:i], strings.TrimSpace(rest[i+1:])
 			break
 		}

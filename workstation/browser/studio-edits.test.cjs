@@ -1155,6 +1155,7 @@ test('Remove block after another client inserted a block earlier is not sent', a
   // Two blocks to choose from: main, then alternate.
   await page.keyboard.press('Alt+Shift+Digit1');
   await page.locator('#view-tab-arrange[aria-selected="true"]').waitFor();
+  await page.locator('#update-center-arrange').getByText('Add section', {exact: true}).click();
   const add = page.locator('#update-center-arrange form:has(input[name=action][value=append])');
   await add.locator('select[name=scene]').selectOption('alternate');
   await add.locator('input[name=bars]').fill('4');
@@ -1167,6 +1168,7 @@ test('Remove block after another client inserted a block earlier is not sent', a
   await page.locator('#view-tab-mixer[aria-selected="true"]').waitFor();
   const allow = new Set();
   await readOnly(allow);
+  let staleSection;
   try {
     const start = posts.length;
     await page.locator(cell(42)).click();
@@ -1174,7 +1176,7 @@ test('Remove block after another client inserted a block earlier is not sent', a
     await until(async () => await region('center-arrange').getAttribute('data-region-stale') !== null, 'the hidden Arrange view was not stale');
     // Another client copies the first block, which moves alternate to 3.
     const other = await otherClient();
-    await other.locator('#update-center-arrange details[data-song-index="0"] > summary').click();
+    await other.locator('#update-center-arrange .timeline-edit[data-song-index="0"]').click();
     await other.locator('#update-center-arrange details[data-song-index="0"]').getByRole('button', {name: 'Duplicate block'}).click();
     await until(async () => blocks((await state('/api/state')).source).length === 3, 'the other client did not copy the block');
     const theirs = await state('/api/state');
@@ -1186,7 +1188,11 @@ test('Remove block after another client inserted a block earlier is not sent', a
     await refusedRead(opened, 'center-arrange', 'the Arrange view was not read when it opened');
     assert.equal(await page.locator('#update-center-arrange details[data-song-index]').count(), 2, 'the stale view already showed the copy');
     const second = page.locator('#update-center-arrange details[data-song-index="1"]');
-    await second.locator('summary').click();
+    await page.locator('#update-center-arrange .timeline-edit[data-song-index="1"]').click();
+    await second.locator('summary').waitFor({state: 'visible'});
+    staleSection = await page.evaluate(() => sessionStorage.getItem('cicada:arrange:section'));
+    assert.ok(staleSection);
+    assert.equal(await page.locator('#update-center-arrange details.arrangement-block[open]').count(), 1);
     allow.add('center-arrange');
     const songs = sent('/__actions/song');
     await second.getByRole('button', {name: 'Remove block'}).click();
@@ -1194,11 +1200,20 @@ test('Remove block after another client inserted a block earlier is not sent', a
     await page.waitForTimeout(300);
     assert.equal(sent('/__actions/song'), songs, 'Remove block was sent after another client changed the song');
     assert.equal(await page.locator('#update-center-arrange details[data-song-index]').count(), 3, 'the page does not show the copied block');
+    assert.equal(await page.locator('#update-center-arrange details.arrangement-block[open]').count(), 0, 'the inspector closes when its block changes');
+    assert.equal(await page.locator('#update-center-arrange [data-scene-open-status]').textContent(), 'The song changed. Choose Edit on a block to continue editing it.');
     assert.equal((await state('/api/state')).source, theirs.source, 'the song changed');
   } finally {
     await page.unroute('**/__studio/regions**');
   }
   await caughtUp();
+  // Seed the stale value and reload in one step: a region patch in between would
+  // notice it first, show the message and clear it.
+  await page.evaluate(value => { sessionStorage.setItem('cicada:arrange:section', value); location.reload(); }, staleSection).catch(() => {});
+  await page.waitForLoadState('domcontentloaded');
+  await page.locator('#studio-shell[data-shell-edits=ready]').waitFor();
+  await until(async () => (await page.locator('#update-center-arrange [data-scene-open-status]').textContent()) === 'The song changed. Choose Edit on a block to continue editing it.', 'reload did not report the changed song');
+  assert.equal(await page.locator('#update-center-arrange details.arrangement-block[open]').count(), 0);
 });
 
 test('a piano-roll click on a cell another client just filled is not sent', async () => {

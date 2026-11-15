@@ -290,7 +290,7 @@ type DockSelectionProps struct {
 // DockSelection names what the detail dock edits: the Clip tab's pattern, and
 // the Device and Automation tabs' track. CSS shows the one for the open tab.
 func DockSelection(props DockSelectionProps, children ...gosx.Node) gosx.Node {
-	return gosx.Fragment(gosx.El("p", gosx.Attrs(gosx.Attr("class", "shell-dock-selection"), gosx.Attr("data-dock-selection", "clip")), gosx.El("strong", gosx.Expr(props.Selection)), gosx.El("span", gosx.Expr(props.SelectionDetail))), gosx.El("p", gosx.Attrs(gosx.Attr("class", "shell-dock-selection"), gosx.Attr("data-dock-selection", "track")), gosx.El("span", gosx.Expr(props.TrackDetail))))
+	return gosx.Fragment(gosx.El("p", gosx.Attrs(gosx.Attr("class", "shell-dock-selection"), gosx.Attr("data-dock-selection", "clip"), gosx.Attr("title", props.Selection+" "+props.SelectionDetail)), gosx.El("strong", gosx.Expr(props.Selection)), gosx.El("span", gosx.Expr(props.SelectionDetail))), gosx.El("p", gosx.Attrs(gosx.Attr("class", "shell-dock-selection"), gosx.Attr("data-dock-selection", "track"), gosx.Attr("title", props.TrackDetail)), gosx.El("span", gosx.Expr(props.TrackDetail))))
 }
 func ShellScroll(children ...gosx.Node) gosx.Node {
 	return gosx.El("div", gosx.Attrs(gosx.Attr("class", "shell-scroll")), gosx.Expr(children))

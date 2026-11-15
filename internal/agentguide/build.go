@@ -192,13 +192,15 @@ func BuildReference(in ReferenceInputs) string {
 	page.WriteString("# Cicada core reference for agents\n\n")
 	page.WriteString("The quick start, the JSON conventions in brief, then one line for every\n")
 	page.WriteString("command, edit intent, diagnostic code and effect route of this binary, which\n")
-	page.WriteString("builds this page from its own catalogs. `docs/manual/agents.md` describes every\n")
+	page.WriteString("builds this page from its own catalogs. `cicada help --json <command>` gives a\n")
+	page.WriteString("command's usage and flags, and each format's `schema` names it; the manual page\n")
+	page.WriteString("Agents and JSON output (`docs/manual/agents.md` in the source) describes every\n")
 	page.WriteString("format in full.\n\n")
 	page.WriteString("## Quick start\n\n" + withoutTitle(exampleMarkers.ReplaceAllString(QuickStart, "")) + "\n")
 	page.WriteString("## JSON conventions\n\n" + referenceConventions + "\n")
 	fmt.Fprintf(&page, "Error codes of `apply --json`: %s.\n\n", codeList(in.ApplyCodes))
 	fmt.Fprintf(&page, "Error codes of `render --json`: %s.\n\n", codeList(in.RenderCodes))
-	page.WriteString("## Commands\n\n")
+	page.WriteString("## Commands\n\n`cicada help --json <command>` gives a command's usage and flags.\n\n")
 	for _, command := range in.Commands {
 		fmt.Fprintf(&page, "- `cicada %s`: %s\n", command.Name, command.Summary)
 	}

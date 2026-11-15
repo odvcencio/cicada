@@ -22,8 +22,8 @@ func keyboardOwner() string {
 		return keysAny
 	}
 	document := js.Global().Get("document")
-	if section := document.Call("getElementById", "browser-sampler"); !section.IsNull() && section.Get("open").Bool() {
-		if active := document.Get("activeElement"); active.Type() == js.TypeObject && section.Call("contains", active).Bool() {
+	if section := document.Call("getElementById", "browser-sampler"); !section.IsNull() && !document.Call("getElementById", "library-panel-samples").Get("hidden").Bool() {
+		if active := document.Get("activeElement"); active.Type() == js.TypeObject && (section.Call("contains", active).Bool() || workspaceAttr(active, "id") == "library-tab-samples") {
 			return keysSampler
 		}
 	}

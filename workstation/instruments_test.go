@@ -73,6 +73,55 @@ func TestInstrumentLibraryUsesGoSXFormsAndShowsOverrides(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	rows, blocks := map[string]int{}, map[string]int{}
+	visible := 0
+	search := false
+	disclosures := map[string]bool{"Project instruments": false, "Save a track as a preset": false, "Record an instrument": false}
+	var inspect func(*html.Node)
+	inspect = func(n *html.Node) {
+		if n.Type == html.ElementNode {
+			attrs := map[string]string{}
+			for _, a := range n.Attr {
+				attrs[a.Key] = a.Val
+			}
+			if id := attrs["data-instrument-patch"]; id != "" {
+				rows[id]++
+			}
+			if id := attrs["data-sound-detail"]; id != "" {
+				blocks[id]++
+				if _, hidden := attrs["hidden"]; !hidden {
+					visible++
+				}
+			}
+			if _, ok := attrs["data-sound-search"]; ok {
+				_, search = attrs["data-studio-view-control"]
+			}
+			if n.Data == "details" && n.FirstChild != nil && n.FirstChild.Data == "summary" && n.FirstChild.FirstChild != nil {
+				name := n.FirstChild.FirstChild.Data
+				if _, ok := disclosures[name]; ok {
+					_, open := attrs["open"]
+					disclosures[name] = !open
+				}
+			}
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			inspect(c)
+		}
+	}
+	inspect(document)
+	for _, patch := range instrument.Patches() {
+		if rows[patch.ID] != 1 || blocks[patch.ID] != 1 {
+			t.Errorf("%s: rows=%d details=%d", patch.ID, rows[patch.ID], blocks[patch.ID])
+		}
+	}
+	if visible != 1 || !search {
+		t.Errorf("visible details=%d, view-control search=%v", visible, search)
+	}
+	for name, closed := range disclosures {
+		if !closed {
+			t.Errorf("missing or open disclosure %q", name)
+		}
+	}
 	var forms int
 	var checkForms func(*html.Node)
 	checkForms = func(node *html.Node) {

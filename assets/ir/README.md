@@ -27,7 +27,8 @@ and gazebo impact, but do not document a calibration procedure for the other
 selected captures. Preparing the plate at 48 kHz applies a bandlimited
 sinc resampler and compensates its coefficient gain for the sample-rate ratio.
 
-Use `host/irasset.ReadManifest`, `Fetch` and `Decode` before rendering. The
+Use `host/irasset.ReadManifest`, `host/irasset/irfetch.Fetch` and
+`host/irasset.Decode` before rendering. The
 browser module `host/irasset/loader.mjs` fetches one selected response lazily,
 verifies SHA256 and WAV dimensions, then returns owned PCM for transfer to an
 audio worker. No fetch or decoding belongs in an AudioWorklet callback.
