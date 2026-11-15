@@ -32,6 +32,10 @@ func TestSilentSceneCreationKeepsItsTrackAndScene(t *testing.T) {
 		}
 	}
 	page = getPage(t, client, address+"/studio?dock=clip&createScene=1&track=lead&scene=quiet")
+	createStart := strings.Index(page, `<details class="pattern-management" data-gosx-key="create-pattern-lead"`)
+	if createStart < 0 || !strings.Contains(strings.SplitN(page[createStart:], ">", 2)[0], " open") {
+		t.Fatal("silent scene create panel must start open")
+	}
 	for _, want := range []string{`<strong>New pattern</strong>`, `lead · quiet`, `data-gosx-key="create-pattern-lead"`, `name="track" value="lead"`, `name="scene" value="quiet"`, `name="source_revision" value="all-sources"`, `value="empty" selected`, `aria-describedby="scene-create-scope"`, `data-scene-create-scope`, `data-scene-create-cancel`, "including Stop", "every occurrence", "following carried sections", "live scene launches"} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("scene creation missing %q", want)

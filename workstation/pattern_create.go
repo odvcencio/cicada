@@ -54,17 +54,17 @@ func availablePatternName(p *project.Project, track string) string {
 
 // The same native/enhanced action creates a pattern from either the library or
 // its instrument card. Creating a first pattern must not require another one.
-func (s *studioApp) patternCreation(ctx *server.Context, v workspace, csrf, trackID string) gosx.Node {
+func (s *studioApp) patternCreation(ctx *server.Context, v workspace, csrf, trackID string, toolbar ...bool) gosx.Node {
 	var tracks []project.Track
 	for _, track := range v.Project.Tracks {
 		if kind := patternKindForTrack(v.Project, track); kind != "" {
 			tracks = append(tracks, track)
 		}
 	}
-	return s.patternCreationForTracks(ctx, v, csrf, trackID, tracks, false, "")
+	return s.patternCreationForTracks(ctx, v, csrf, trackID, tracks, false, "", toolbar...)
 }
 
-func (s *studioApp) patternCreationForTracks(ctx *server.Context, v workspace, csrf, trackID string, tracks []project.Track, recording bool, sceneContext string) gosx.Node {
+func (s *studioApp) patternCreationForTracks(ctx *server.Context, v workspace, csrf, trackID string, tracks []project.Track, recording bool, sceneContext string, toolbar ...bool) gosx.Node {
 	if len(tracks) == 0 {
 		return gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Add an instrument or drum track to create a pattern."))
 	}
@@ -118,7 +118,14 @@ func (s *studioApp) patternCreationForTracks(ctx *server.Context, v workspace, c
 	if trackID != "" {
 		label += " for " + trackID
 	}
-	return gosx.El("details", gosx.Attrs(gosx.Attr("class", "pattern-management"), gosx.Attr("data-gosx-key", "create-pattern-"+creationKey), gosx.Attr("aria-label", label), gosx.Attr("open", failed || sceneContext != "")), gosx.El("summary", gosx.Text("Create pattern")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), form), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Start empty or with an editable idea in your song’s key and the sound’s register. Creating and assigning together has one Undo step.")))
+	isToolbar := len(toolbar) > 0 && toolbar[0]
+	attrs := gosx.Attrs(gosx.Attr("class", "pattern-management"), gosx.Attr("data-gosx-key", "create-pattern-"+creationKey), gosx.Attr("aria-label", label), gosx.Attr("open", failed || sceneContext != ""))
+	summary := "Create pattern"
+	if isToolbar {
+		attrs = append(attrs, gosx.Attr("name", "clip-toolbar"))
+		summary = "New"
+	}
+	return gosx.El("details", attrs, gosx.El("summary", gosx.Text(summary)), gosx.El("div", gosx.Attrs(gosx.Attr("class", "clip-menu-content")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), form), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Start empty or with an editable idea in your song’s key and the sound’s register. Creating and assigning together has one Undo step."))))
 }
 
 func patternStarterAvailable(p *project.Project, trackID, starter string) bool {

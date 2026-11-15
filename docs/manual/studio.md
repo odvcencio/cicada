@@ -11,8 +11,10 @@ In the desktop app, **Arrange** opens on the song timeline, with vocal recording
 below it. Edition-2 scores have **Song timeline** and **Record & comp vocals**
 links to jump between them.
 **Session** contains the launch matrix and live playing;
-**Mixer** contains mix controls. Instruments, Generate, Takes, and Sampler are
-in the left Browser. The detail dock's **Clip** tab edits patterns, **Device**
+**Mixer** contains mix controls. The left Library has Sounds, Samples, and
+Takes tabs. Search and select a sound to audition it or add it to the song;
+project instruments, preset saving, recording, and Generate are below the sounds.
+Samples opens the sampler. The detail dock's **Clip** tab edits patterns, **Device**
 edits the selected track's sound and processing, and **Automation** contains
 curve and scene-point editors. The **Code** lens shows the score. Older
 screenshots show these tools as standalone panels.
@@ -22,8 +24,7 @@ If loading takes longer or fails, **Reload Studio** offers a fresh attempt.
 Save or copy unsaved edits and finish recording before reloading. Code typed
 during startup remains protected when arranging controls become ready.
 
-Browser sections keep their open/closed state through saves, navigation, and
-reopening Studio.
+The Library and its Generate section keep their open/closed state through saves, navigation, and reopening Studio.
 
 Switching Arrange, Session, or Mixer, changing detail tabs, or choosing a
 workspace region on a phone keeps your unsaved **Code** text in place.
@@ -308,7 +309,13 @@ The editor also supports [touch editing on phone screens](screenshots/studio-pro
 
 ## Patterns
 
-Use **Create pattern** in the pattern editor to start a new grid. Choose its
+In the Clip tab, use the pattern picker to switch patterns. The toolbar shows
+the pattern's timing and preview controls; **New** creates a pattern,
+**Generate pattern** opens Pattern Machine, and **More** holds variation and
+song placement or scene assignment controls. The grid fills the dock below.
+Select a step to edit its fields below the grid.
+
+Use **New** in the Clip tab (or **Create pattern** in the pattern editor) to start a new grid. Choose its
 track, name, and length (1–64 steps). The track supplies the appropriate notes,
 acid, or drum pattern type, including a custom kit's lanes. Choose a scene to
 create and assign together in one Undo step, or **Library only** to leave the
