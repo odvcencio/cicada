@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -20,6 +21,10 @@ import (
 )
 
 func detailDockApp(t *testing.T) (string, *http.Client, *[]map[string]any) {
+	return detailDockAppWithMaster(t, mixerStrip{})
+}
+
+func detailDockAppWithMaster(t *testing.T, master mixerStrip) (string, *http.Client, *[]map[string]any) {
 	t.Helper()
 	patch, _ := instrument.FindPatch("warm-pad")
 	declaration, _ := patch.Source("warm-pad")
@@ -47,7 +52,7 @@ func detailDockApp(t *testing.T) (string, *http.Client, *[]map[string]any) {
 			_ = json.NewEncoder(w).Encode(workspace{Source: source, Filename: "test.cicada", Revision: revision, Edition: 2, Valid: true, Project: p})
 		case "/api/mixer":
 			if r.Method == http.MethodGet {
-				state := mixerState{Edition: 2, Revision: revision, Effects: []mixerReturn{{Name: "tone", Fields: []mixerField{{Path: "tone.hp", Value: 120.0, Supported: true, Descriptor: paramdefs.Descriptor{Unit: "Hz", Min: 20, Max: 20000}}}}}}
+				state := mixerState{Edition: 2, Revision: revision, Master: master, Effects: []mixerReturn{{Name: "tone", Fields: []mixerField{{Path: "tone.hp", Value: 120.0, Supported: true, Descriptor: paramdefs.Descriptor{Unit: "Hz", Min: 20, Max: 20000}}}}}}
 				for _, track := range p.Tracks {
 					state.Tracks = append(state.Tracks, mixerStrip{ID: track.ID, Name: track.ID, Inserts: []string{"tone"}, Fields: map[string]mixerField{"insert": {Path: track.ID + ".insert", Value: "tone", Supported: true}, "pan": {Path: track.ID + ".pan", Value: 0.0, Supported: true, Descriptor: paramdefs.Descriptor{Min: -1, Max: 1}}}})
 				}
@@ -86,6 +91,46 @@ func detailDockApp(t *testing.T) (string, *http.Client, *[]map[string]any) {
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	return app.URL, client, &edits
+}
+
+func TestMasterInsertNoteOnPanelAndDevice(t *testing.T) {
+	for _, count := range []int{1, 16} {
+		t.Run(strconv.Itoa(count), func(t *testing.T) {
+			master := mixerStrip{ID: "master", Name: "master", Inserts: make([]string, count), Fields: map[string]mixerField{
+				"insert": {Reason: "CICADA-UNSUPPORTED: master inserts are not implemented"},
+			}}
+			address, client, _ := detailDockAppWithMaster(t, master)
+			panel := getPage(t, client, address+"/?panel=mixer")
+			if !strings.Contains(panel, "Master inserts are not implemented.") {
+				t.Fatal("legacy mixer lost the master insert explanation")
+			}
+			device := getPage(t, client, address+"/studio?dock=device&deviceTrack=master")
+			// The master's channel reference is "master:master"; its address is "master".
+			start := strings.Index(device, `data-device-channel="master:master"`)
+			if start < 0 {
+				t.Fatal("master Device was not selected")
+			}
+			device = device[start:]
+			if end := strings.Index(device, `aria-label="Insert effects"`); end >= 0 {
+				device = device[end:]
+				if end = strings.Index(device, "</section>"); end >= 0 {
+					device = device[:end]
+				}
+			} else {
+				t.Fatal("Device lacks the insert effects group")
+			}
+			if strings.Contains(device, "Master inserts are not implemented.") {
+				t.Fatal("Device shows the master insert explanation")
+			}
+			want := "Add insert"
+			if count == 16 {
+				want = "This chain is full."
+			}
+			if !strings.Contains(device, want) {
+				t.Fatalf("Device missing %q", want)
+			}
+		})
+	}
 }
 
 func TestShellDeviceFollowsPlacementAndSharesWorkingParameterControls(t *testing.T) {

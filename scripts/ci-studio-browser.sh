@@ -36,7 +36,7 @@ shard_segments() {
 	1) echo "print_sources placements performance_pitch performance_sources placement_commands track_rename split_placement code_recovery pattern_machine portable_midi macro_controls preset_save" ;;
 	2) echo "pattern_song precision first_song silent_scene_create gestures portable_song sound_context continuity modulation_source collaboration columns midi_pickup shared_capture vocals vocal_levels dock_fit" ;;
 	3) echo "owner_session chrome_gpu_raster page_stall scene_launch_keys pattern_grid tempo_editor recording_sources autoscroll arrangement_sources solo_clock mixer_strips navigation sampler_waveform export_sources library_recording midi_binding studio_edits recording_setup recording_levels meter_performance performance amp_automation" ;;
-	4) echo "shutdown_proof live_write grid_sources shell direct_variation placement_variation editor performance_time startup scene_blocks tempo_clock export_stems chorus observation_clock note_editor engine_requests" ;;
+	4) echo "shutdown_proof live_write grid_sources shell direct_variation placement_variation editor performance_time startup scene_blocks tempo_clock export_stems chorus add_insert observation_clock note_editor engine_requests" ;;
 	*) echo "unknown shard: $1" >&2; return 1 ;;
 	esac
 }
@@ -52,6 +52,7 @@ segment_runs() {
 	continuity) echo continuity ;;
 	modulation_source) echo modulation-source ;;
 	chorus) echo chorus ;;
+	add_insert) echo add-insert ;;
 	pattern_machine) echo pattern-machine ;;
 	shell) echo shell ;;
 	mixer_strips) echo mixer-strips ;;
@@ -367,6 +368,15 @@ seg_modulation_source() { # 5 s
 	node workstation/browser/modulation-source.test.cjs --write-fixture "$CICADA_MODULATION_SCORE"
 	start_studio "$CICADA_MODULATION_SCORE" build/studio-modulation-server.log /
 	run_suite modulation-source make test-studio-modulation-source | tee build/studio-modulation-report.txt
+	stop_studio
+}
+
+seg_add_insert() {
+	mkdir -p "$browser_root/add-insert"
+	export CICADA_ADD_INSERT_SCORE="$browser_root/add-insert/main.cicada"
+	node workstation/browser/add-insert.test.cjs --write-fixture "$CICADA_ADD_INSERT_SCORE"
+	start_studio "$CICADA_ADD_INSERT_SCORE" build/studio-add-insert-server.log /
+	run_suite add-insert make test-studio-add-insert | tee build/studio-add-insert-report.txt
 	stop_studio
 }
 

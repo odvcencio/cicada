@@ -103,7 +103,7 @@ func mixerChannels(mixer mixerState, p *project.Project) (strips, effects []mixe
 	}
 	for _, effect := range mergeMixerReturns(mixer.Returns, mixer.Effects) {
 		// The service meters the delay return and the first reverb return.
-		if returns[effect.Name] || effect.Meter != "" {
+		if returns[effect.Name] || effect.Kind == "tape" || effect.Meter != "" {
 			meter := ""
 			if effect.Meter != "" {
 				meter = "return:" + effect.Meter
@@ -280,7 +280,7 @@ func (s *studioApp) mixer(ctx *server.Context, v workspace, csrf string) gosx.No
 		view("mixer-meter", "Meter", option("both", "Peak and RMS"), option("peak", "Peak"), option("rms", "RMS")),
 		gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-mixer-reset-peaks", ""), gosx.Attr("title", "Clear the held peaks and clip marks on every meter")), gosx.Text("Reset peaks")),
 		gosx.El("details", gosx.Attrs(gosx.Attr("class", "mixer-add-effect")), gosx.El("summary", gosx.Text("Add effect")),
-			gosx.El("div", gosx.Attrs(gosx.Attr("class", "mixer-add-effect__body")), addChorus, unplaced)))
+			gosx.El("div", gosx.Attrs(gosx.Attr("class", "mixer-add-effect__body")), addChorus, s.addReturn(v, csrf, mixer), unplaced)))
 	// The strips' forms return to "/?panel=mixer", which the shell turns into
 	// this view with the Device selection kept (shellDestination).
 	return ui.Panel(ui.PanelProps{ID: "mixer", Title: "Mixer", Description: description}, tools, gosx.El("div", gosx.Attrs(gosx.Attr("class", "strips")), gosx.Fragment(strips...)))
@@ -481,4 +481,31 @@ func mixerUnavailable(label, reason string) gosx.Node {
 // upgradeConfirm is the checkbox an edition 1 score needs with each mixer change.
 func upgradeConfirm() gosx.Node {
 	return gosx.El("label", gosx.Attrs(gosx.Attr("class", "upgrade-confirm")), gosx.El("input", gosx.Attrs(gosx.Attr("type", "checkbox"), gosx.Attr("name", "confirmUpgrade"), gosx.BoolAttr("required"))), gosx.Text("Upgrade score to edition 2 for this change"))
+}
+
+// addSend offers returns that do not yet have a send from this track.
+func (s *studioApp) addSend(v workspace, csrf string, c mixerChannel, mixer mixerState) gosx.Node {
+	if v.Edition == 1 {
+		return gosx.Fragment()
+	}
+	sent := map[string]bool{}
+	for _, send := range c.Strip.Sends {
+		sent[send.To] = true
+	}
+	var options []gosx.Node
+	masterInserts := map[string]bool{}
+	for _, name := range mixer.Master.Inserts {
+		masterInserts[name] = true
+	}
+	for _, ret := range mergeMixerReturns(mixer.Returns, mixer.Effects) {
+		if !masterInserts[ret.Name] && (ret.Kind == "delay" || ret.Kind == "tape" || ret.Kind == "reverb") && !sent[ret.Name] {
+			options = append(options, gosx.El("option", gosx.Attrs(gosx.Attr("value", c.ID+".send."+ret.Name)), gosx.Text(ret.Name)))
+		}
+	}
+	if len(options) == 0 {
+		return gosx.Fragment()
+	}
+	fields := []gosx.Node{hidden("source_revision", v.SourceRevision), field("Send to", gosx.El("select", gosx.Attrs(gosx.Attr("name", "path")), gosx.Fragment(options...))), field("Level (-60dB to 0dB, or gain 0 to 1)", textInput("value", "-12dB"))}
+	fields = append(fields, submit("", "", "Add send"))
+	return s.form(v, csrf, "mixer", "mixer", fields...)
 }

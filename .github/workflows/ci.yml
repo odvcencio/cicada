@@ -1168,6 +1168,8 @@ jobs:
             build/studio-continuity-report.txt
             build/studio-modulation-report.txt
             build/modulation-source-proof/
+            build/studio-add-insert-report.txt
+            build/studio-add-insert-server.log
             build/studio-chorus-report.txt
             build/studio-pattern-machine-report.txt
             build/studio-pattern-machine-server.log
