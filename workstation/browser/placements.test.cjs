@@ -35,7 +35,10 @@ async function until(predicate, message) {
     if (await predicate()) return;
     await new Promise(resolve=>setTimeout(resolve,30));
   }
-  assert.fail(typeof message === 'function' ? await message() : message);
+  // Building a detailed message must never replace the failure it describes.
+  let text = message;
+  if (typeof message === 'function') { try { text = await message(); } catch (error) { text = `timed out (the failure detail could not be read: ${error.message.split('\n')[0]})`; } }
+  assert.fail(text);
 }
 
 // The Studio engine is one Go/WebAssembly program. When goroutines made Go-to-JavaScript calls that ran Go code inside
@@ -98,9 +101,8 @@ test('placements edit visually and Session follows saved Score without reloading
   const ready = async target => { await target.locator('#cicada-workspace[data-workspace-reactive=ready]').waitFor(); };
   const block = (target,id='far-in') => target.locator(`[data-placement-block="${id}"]`);
   const transportFailure = (target, message) => async () => {
-    const statuses = await target.locator('[role=status], [data-workspace-status]').all();
-    const visible = [];
-    for (const status of statuses) if (await status.isVisible()) { const text=(await status.innerText()).trim(); if (text) visible.push(text); }
+    // One snapshot in the page: no waiting on a status node that goes away.
+    const visible = await target.locator('[role=status], [data-workspace-status]').evaluateAll(nodes => nodes.filter(node => node.getClientRects().length > 0).map(node => node.innerText.trim()).filter(Boolean));
     return `${message}; visible status: ${JSON.stringify(visible)}; transport: ${JSON.stringify(await transport())}`;
   };
   const at = async (ticks,target=page) => { await until(async()=>Number(await block(target).getAttribute('data-placement-at'))===ticks,`far-in did not move to ${ticks}`); await idle(); };
