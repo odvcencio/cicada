@@ -1036,7 +1036,9 @@ jobs:
       - name: Framework generation, race checks, and production bundle
         run: |
           set -euo pipefail
-          go test -race ./internal/buildaudit ./internal/studiohttp -count=1
+          # internal/diagnostics scans every Go file, including workstation/, for
+          # diagnostic codes; a Studio-only change must run it too.
+          go test -race ./internal/buildaudit ./internal/studiohttp ./internal/diagnostics -count=1
           make test-workstation
           (cd workstation && go vet ./...)
           make build-workstation-release
