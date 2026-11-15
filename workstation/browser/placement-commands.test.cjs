@@ -238,7 +238,8 @@ test('Studio views, Record entry and Mac placement commands retain drafts and Un
     await page.keyboard.press('Enter');
     await until(async()=>new URL(page.url()).searchParams.get('pattern')==='pulse' && await page.locator('#detail-panel-clip .piano-roll[data-pattern-id=pulse]').count()===1,'Enter did not open the focused pattern');
     await ready();
-    assert.equal(await page.evaluate(()=>document.activeElement?.id),'patterns','keyboard opening must focus the Clip editor');
+    // Focus moves to the Clip editor when the navigation finishes, shortly after the shell reports ready.
+    await until(async()=>await page.evaluate(()=>document.activeElement?.id)==='patterns','keyboard opening must focus the Clip editor');
     await page.setViewportSize({width:390,height:844});
     await page.getByRole('link',{name:'View',exact:true}).click();
     await block('two').locator('.placement-select').focus();
