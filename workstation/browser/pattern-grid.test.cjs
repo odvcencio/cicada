@@ -22,6 +22,8 @@ if (process.argv[2] === '--write-fixture') {
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),true);
       await page.locator('#studio-detail').screenshot({path:path.join(proof,'grid-phone.png')});
       const form = page.locator('[data-pattern-management='+id+'] form:has(input[name=action][value=append])');
+      const management = page.locator('[data-pattern-management='+id+']');
+      if (!(await management.evaluate(node => node.open))) await management.locator('summary').click();
       await form.evaluate(node => node.scrollIntoView({block:'center'}));
       await form.screenshot({path:path.join(proof,'grid-placement-phone.png')});
       await page.setViewportSize({width:1440,height:1100});

@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"math"
+	"os"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -89,11 +90,26 @@ func TestFilterCoefficientDigest(t *testing.T) {
 	}
 }
 
+// skipUnlessExhaustive skips the exhaustive fast-path proofs unless
+// CICADA_DETMATH_EXHAUSTIVE=1. Together they check hundreds of millions of
+// inputs, and only this package, the toolchain and the target can change their
+// answer, so CI runs them in the detmath-proofs jobs (scripts/detmath-proofs.sh:
+// amd64 at GOAMD64 v1 and v3 and arm64, with go.mod's Go and Go 1.27.3) when
+// one of those inputs changes and on every push and night, instead of in every
+// Go test job. The required check judges those jobs.
+func skipUnlessExhaustive(t *testing.T) {
+	t.Helper()
+	if os.Getenv("CICADA_DETMATH_EXHAUSTIVE") != "1" {
+		t.Skip("set CICADA_DETMATH_EXHAUSTIVE=1 to check every fast-path input")
+	}
+}
+
 // exhaustive32 calls check on every float32 with bits in [lo, hi], with each
 // sign when both is set, across GOMAXPROCS goroutines, and fails on the first
 // three that differ and on the count.
 func exhaustive32(t *testing.T, name string, lo, hi float32, both bool, f func(float32) float32, want func(float32) float32) {
 	t.Helper()
+	skipUnlessExhaustive(t)
 	first, last := math.Float32bits(lo), math.Float32bits(hi)
 	workers := runtime.GOMAXPROCS(0)
 	var bad atomic.Int64
@@ -125,7 +141,7 @@ func exhaustive32(t *testing.T, name string, lo, hi float32, both bool, f func(f
 
 // TestTanPi32FastPathExhaustive checks every float32 that takes TanPi32's fast
 // path (2^-30 <= |u| <= 0.46, both signs: 483,854,912 inputs); all others go
-// to Tan itself. It runs on every target CI tests (seconds on four cores).
+// to Tan itself. It runs when CICADA_DETMATH_EXHAUSTIVE=1 (skipUnlessExhaustive).
 func TestTanPi32FastPathExhaustive(t *testing.T) {
 	exhaustive32(t, "TanPi32", 0x1p-30, 0.46, true, TanPi32, func(u float32) float32 { return float32(Tan(math.Pi * float64(u))) })
 }

@@ -39,10 +39,8 @@ type mixInput struct {
 	sections   []sectionSpan // aligned with Report.Sections
 	peaks      int
 	noBands    bool
-	// stemDir holds the render's stem files; partial is true when only the
-	// chosen tracks' stems were written, with the returns and the buses.
+	// stemDir holds the render's stem files.
 	stemDir string
-	partial bool
 }
 
 func (a *Analysis) measureMix(in mixInput) error {
@@ -178,8 +176,8 @@ func (a *Analysis) measureMix(in mixInput) error {
 	for i, c := range cands {
 		frames[i] = c.sample
 	}
-	// The returns, and with a track choice the two buses, are read only at the
-	// peak frames: they are not held in memory.
+	// The returns and buses are read only at the peak frames: they are not
+	// held in memory. The buses include extra returns without individual stems.
 	read := func(name string) ([][2]float64, error) {
 		if len(frames) == 0 {
 			return nil, nil
@@ -194,33 +192,28 @@ func (a *Analysis) measureMix(in mixInput) error {
 	if err != nil {
 		return err
 	}
-	var music, sfx [][2]float64
-	if in.partial {
-		if music, err = read("music.wav"); err != nil {
-			return err
-		}
-		if sfx, err = read("sfx.wav"); err != nil {
-			return err
-		}
+	music, err := read("music.wav")
+	if err != nil {
+		return err
+	}
+	sfx, err := read("sfx.wav")
+	if err != nil {
+		return err
 	}
 	for i, c := range cands {
 		ch := peakChannel(in.mix, c.sample)
 		var values []stemSample
-		var total float64
 		for ti, s := range in.stems {
 			if !in.selected[ti] {
 				continue
 			}
 			v := sampleAt(s, c.sample, ch)
 			values = append(values, stemSample{id: in.ids[ti], kind: "track", v: v})
-			total += v
 		}
 		values = append(values, stemSample{id: "return-a", kind: "return", v: returnA[i][ch]}, stemSample{id: "return-b", kind: "return", v: returnB[i][ch]})
-		total += returnA[i][ch] + returnB[i][ch]
-		if in.partial {
-			// The buses sum every track and return, chosen or not.
-			total = music[i][ch] + sfx[i][ch]
-		}
+		// The buses sum every track and return, including unselected tracks
+		// and extra returns that do not yet have individual stem files.
+		total := music[i][ch] + sfx[i][ch]
 		parts, rest := attributePeak(total, values)
 		r.Peaks = append(r.Peaks, PeakReport{Rank: i + 1, At: positionAt(in.clock, in.meter, in.base, c.sample, rate),
 			TruePeakDBTP: dbFloor(db(c.truePeak)), SamplePeakDBFS: dbFloor(db(c.sample1)), Channel: channelName(ch),

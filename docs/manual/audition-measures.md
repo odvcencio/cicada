@@ -96,8 +96,8 @@ A drop to short hits lists the gaps between them.
 **Peaks.** The highest true-peak moments of the mix, highest first, at least
 50 ms apart, with their `bar.beat.sixteenth` and time, and what set each one.
 At the mix's largest sample in the peak, on that channel, the report sums every
-track stem and both effect returns: the signal entering the master chain. Each
-part is the stem's own sample there as a signed percentage of that sum, so the
+track and effect return: the signal entering the master chain. Extra returns
+without individual stems are included in the rest. Each part is the stem's own sample there as a signed percentage of that sum, so the
 parts add up to 100%: `kick +72%, bass +31%, return-a -3%` means the bass
 added to the kick's peak and the reverb return took a little away. A held bass
 under a hit gets its real part of the peak, not more because it carries more

@@ -52,6 +52,9 @@ func TestArrangeIntentsWorkWithCompanionDefinitionsInPeerFile(t *testing.T) {
 
 type sameRender struct{}
 
+// A split is compared with every track audible; this fake renders the same either way.
+func (sameRender) ForSplit() edits.RenderCheck { return sameRender{} }
+
 func (sameRender) Hash([]byte) (string, error) { return "same", nil }
 
 func TestConvertSongWithCompanionDefinitionsInPeerFile(t *testing.T) {

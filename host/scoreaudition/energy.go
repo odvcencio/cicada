@@ -66,7 +66,7 @@ type PeakReport struct {
 	// Channel is the channel of the mix's largest sample in the peak.
 	Channel string `json:"channel"`
 	// PreMasterSample is the signed sum, at that sample and channel, of every
-	// track stem and both effect returns: the signal entering the master
+	// track and effect return: the signal entering the master
 	// chain (full scale is 1). The master chain (bus compressor, sidechain,
 	// EQ, limiter) can reshape it before it becomes the mix's peak.
 	PreMasterSample float64 `json:"pre_master_sample"`

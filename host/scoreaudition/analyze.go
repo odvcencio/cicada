@@ -342,7 +342,7 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	}
 	defer os.RemoveAll(tmp)
 	stemDir := filepath.Join(tmp, "stems")
-	ropts := render.Options{SampleRate: rate, Bits: 32, From: opts.From, Bars: bars, AssetRoot: opts.AssetDir, AssetDir: opts.AssetDir, MaxResidentPCM: opts.MaxResidentPCM, NoteTap: notes.tap, Jobs: opts.Jobs, StemTracks: opts.Tracks, StemBuses: len(opts.Tracks) > 0}
+	ropts := render.Options{SampleRate: rate, Bits: 32, From: opts.From, Bars: bars, AssetRoot: opts.AssetDir, AssetDir: opts.AssetDir, MaxResidentPCM: opts.MaxResidentPCM, NoteTap: notes.tap, Jobs: opts.Jobs, StemTracks: opts.Tracks, StemBuses: len(opts.Tracks) > 0, TrackStemsOnly: true}
 	if _, err := render.Stems(score, ropts, stemDir); err != nil {
 		return nil, err
 	}
@@ -789,7 +789,7 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	err = a.measureMix(mixInput{
 		mix: mix, stems: stems, ids: ids, selected: selected, rate: rate, clock: clock, meter: meterMap, base: baseSample,
 		fromTick: fromTick, bars: bars, barSample: barSample, notes: &notes, acts: acts, played: played,
-		bandFrames: bandFrames, layout: layout, sections: kept, peaks: opts.Peaks, noBands: opts.NoBands, stemDir: stemDir, partial: len(opts.Tracks) > 0,
+		bandFrames: bandFrames, layout: layout, sections: kept, peaks: opts.Peaks, noBands: opts.NoBands, stemDir: stemDir,
 	})
 	if err != nil {
 		return nil, err

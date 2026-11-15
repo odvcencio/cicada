@@ -58,7 +58,8 @@ func validMasterGainDB(db float64) bool {
 // files Stems writes, so they never change a render's audio).
 // TestSameAudioComparesEveryOption fails when a field is added to Options
 // without a decision here. Jobs never changes the WAV bytes, but it sets
-// Report.Jobs and Report.Lanes, so it is compared.
+// Report.Jobs and Report.Lanes, so it is compared. TrackStemsOnly also leaves
+// WAV bytes unchanged, but decides whether Stems refuses a score, so it is compared.
 func sameNonGainOptions(a, b Options) bool {
 	sameDither := a.Dither == nil && b.Dither == nil || a.Dither != nil && b.Dither != nil && *a.Dither == *b.Dither
 	return a.AssetRoot == b.AssetRoot && a.AssetDir == b.AssetDir && a.SamplerBaseline == b.SamplerBaseline &&
@@ -66,5 +67,6 @@ func sameNonGainOptions(a, b Options) bool {
 		math.Float64bits(a.TailSec) == math.Float64bits(b.TailSec) && sameDither && a.Normalize == b.Normalize &&
 		a.Block == b.Block && math.Float32bits(a.MasterBiasL) == math.Float32bits(b.MasterBiasL) &&
 		math.Float32bits(a.MasterBiasR) == math.Float32bits(b.MasterBiasR) && a.MaxResidentPCM == b.MaxResidentPCM &&
-		a.Jobs == b.Jobs
+		a.Jobs == b.Jobs &&
+		a.TrackStemsOnly == b.TrackStemsOnly
 }
