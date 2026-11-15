@@ -207,12 +207,14 @@ playback. **Play full song** restores all parts and starts at the beginning;
 
 ![Tidal Glass placement editing and listening controls, captured from the release build at 1440 px.](screenshots/studio-session-listening-1440.png)
 
-**Project settings** changes the title, tempo, key, and scale. Tempo keeps up
+For a scene song, the Arrange tool strip provides playback, exact looping, **Add section**, and **Project**. Choose a section’s **Edit** link to open its controls below the lanes. For every project with scenes, the scene launch grid is in Session.
+
+**Project** opens project settings for the title, tempo, key, and scale. Tempo keeps up
 to three decimal places. Changing the key retunes scale-degree notes; explicit
 letter pitches keep their pitch. Every edit validates and checks the current
 disk revision before saving, and has an Undo entry.
 
-To rename a track, open **Rename** in its Arrange rail, enter the new name,
+To rename a track, open the rename button (✎) in its Arrange rail, enter the new name,
 and choose **Rename track**. Stop playback and finish recording first; a paused
 transport must also be stopped. Commit or discard unfinished or retained note
 performances before renaming. The rename updates references throughout the
@@ -305,7 +307,13 @@ The editor also supports [touch editing on phone screens](screenshots/studio-pro
 
 ## Patterns
 
-Use **Create pattern** in the pattern editor to start a new grid. Choose its
+In the Clip tab, use the pattern picker to switch patterns. The toolbar shows
+the pattern's timing and preview controls; **New** creates a pattern,
+**Generate pattern** opens Pattern Machine, and **More** holds variation and
+song placement or scene assignment controls. The grid fills the dock below.
+Select a step to edit its fields below the grid.
+
+Use **New** in the Clip tab (or **Create pattern** in the pattern editor) to start a new grid. Choose its
 track, name, and length (1–64 steps). The track supplies the appropriate notes,
 acid, or drum pattern type, including a custom kit's lanes. Choose a scene to
 create and assign together in one Undo step, or **Library only** to leave the
@@ -704,8 +712,19 @@ fader shows the level and does not move; set it in Device.
 Above the strips, **Show** limits the view to tracks or to buses and returns,
 **Meter** shows peak, RMS or both, and **Reset peaks** clears the held peaks
 and clip marks at once. These change only what this tab shows, never the
-score. **Add effect** opens **Create chorus**, which adds a chorus declaration,
-and lists each effect that is on no insert chain.
+score. **Add effect** holds **Create chorus**, which adds a chorus declaration,
+and **Send return**, and lists each effect that is on no insert chain.
+
+To add an insert, open a channel in Device, choose a kind under Insert
+effects, then select Add insert. The effect appears at the end of the chain;
+open it there to adjust its parameters. Convolution also needs the name of a
+declared impulse asset. To add a send return, open Add effect in the Mixer
+tool strip, choose a return kind under Send return, and select Add return. The
+new return has its own Mixer strip. It receives no signal until a track sends
+to it: open the track in Device and use Send to and Add send to set its level.
+A name is optional in both forms: when the field is empty, Studio names the effect after its kind (`comp`, then `comp2`).
+Both changes support Undo; edition 1 asks for confirmation to upgrade the
+score.
 
 Select a strip's name to open that channel in **Device**; its strip takes an
 amber edge. Selecting a placement in Arrange opens its track, and **Channel**

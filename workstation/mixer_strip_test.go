@@ -442,9 +442,23 @@ func TestMixerToolStripFiltersInTheTabAndKeepsTheChorusForm(t *testing.T) {
 			t.Errorf("tool strip should not hold %s", banned)
 		}
 	}
-	// The view controls are outside every form, so they post nothing.
-	if form := regexp.MustCompile(`(?s)<form.*?</form>`).FindAllString(tools, -1); len(form) != 1 || strings.Contains(form[0], "data-mixer-show") {
-		t.Errorf("the tool strip holds one form, the chorus form: %d", len(form))
+	// The view controls are outside both forms, so they post nothing.
+	forms := regexp.MustCompile(`(?s)<form.*?</form>`).FindAllString(tools, -1)
+	if len(forms) != 2 {
+		t.Fatalf("the tool strip holds chorus and return forms: got %d", len(forms))
+	}
+	for i, wants := range [][]string{
+		{`action="/__actions/mixer"`, `name="action" value="add-chorus"`, `<span>Chorus name</span><input name="name" value="chorus"`, `>Create chorus</button>`},
+		{`action="/__actions/add-effect"`, `<select name="effectkind"`, `value="reverb"`, `<span>Name (optional)</span><input name="name" value=""`, `>Add return</button>`},
+	} {
+		for _, want := range wants {
+			if !strings.Contains(forms[i], want) {
+				t.Errorf("form %d missing %s: %s", i, want, forms[i])
+			}
+		}
+		if strings.Contains(forms[i], "data-mixer-show") || strings.Contains(forms[i], "data-mixer-meter") {
+			t.Errorf("view control inside form %d", i)
+		}
 	}
 }
 

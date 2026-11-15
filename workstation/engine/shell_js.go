@@ -47,7 +47,9 @@ func mountShell(host enginewasm.Context) (enginewasm.Handle, error) {
 		cancel()
 		return nil, err
 	}
+	releaseDetailsDiscard := bindDetailsDiscard(root)
 	releasePlacementEditor := bindShellPlacementEditor(host, root)
+	releaseClipToolbar := bindClipToolbar(root)
 	releaseStripCommit := bindStripCommit()
 	releasePlacementCommands := watchPlacementCommands(host, root)
 	releaseExportBusy := watchExportBusy(root)
@@ -144,6 +146,8 @@ func mountShell(host enginewasm.Context) (enginewasm.Handle, error) {
 		releaseNavigation()
 		releaseLayoutFit()
 		releasePlacementCommands()
+		releaseDetailsDiscard()
+		releaseClipToolbar()
 		releasePlacementEditor()
 		releaseStripCommit()
 		releaseExportBusy()

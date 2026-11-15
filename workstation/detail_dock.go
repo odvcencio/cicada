@@ -111,10 +111,17 @@ func (s *studioApp) deviceDock(ctx *server.Context, v workspace, csrf string) go
 		groups = append(groups, gosx.El("div", gosx.Attrs(gosx.Attr("id", "device-effect-"+channel.ID)), group(title, controls)))
 	default:
 		controls := s.stripMixControls(v, csrf, channel.Strip, false)
+		if channel.Kind == "track" {
+			controls = append(controls, s.addSend(v, csrf, channel, mixer))
+		}
 		if len(controls) == 0 {
 			controls = append(controls, note("No mixer controls are available for this channel."))
 		}
-		inserts := s.stripInsertChain(v, csrf, channel)
+		var inserts []gosx.Node
+		if channel.Kind != "master" || channel.Strip.Fields["insert"].Supported {
+			inserts = s.stripInsertChain(v, csrf, channel)
+		}
+		inserts = append(inserts, s.addInsert(v, csrf, channel))
 		if channel.Kind == "track" {
 			inserts = append(inserts, ampAutomationLinks(ctx, v.Project, channel.ID))
 		}
@@ -126,9 +133,7 @@ func (s *studioApp) deviceDock(ctx *server.Context, v workspace, csrf string) go
 				}
 			}
 		}
-		if _, has := channel.Strip.Fields["insert"]; !has && len(channel.Strip.Inserts) == 0 && !channel.Audio {
-			inserts = append(inserts, note("This channel has no insert chain. Add EQ, compression or drive effects in the score to make them available here."))
-		}
+
 		groups = append(groups, group("Mix and routing", controls), group("Insert effects", inserts))
 	}
 	content := ui.Panel(ui.PanelProps{ID: "device-editor", Title: channel.Title(), Description: "Channel controls, instrument settings and effects. Changes save to the score and support Undo."},

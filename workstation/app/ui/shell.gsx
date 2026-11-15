@@ -434,8 +434,8 @@ type DockSelectionProps struct {
 // the Device and Automation tabs' track. CSS shows the one for the open tab.
 component DockSelection(props: DockSelectionProps) {
 	return <>
-		<p class="shell-dock-selection" data-dock-selection="clip"><strong>{props.Selection}</strong> <span>{props.SelectionDetail}</span></p>
-		<p class="shell-dock-selection" data-dock-selection="track"><span>{props.TrackDetail}</span></p>
+		<p class="shell-dock-selection" data-dock-selection="clip" title={props.Selection + " " + props.SelectionDetail}><strong>{props.Selection}</strong> <span>{props.SelectionDetail}</span></p>
+		<p class="shell-dock-selection" data-dock-selection="track" title={props.TrackDetail}><span>{props.TrackDetail}</span></p>
 	</>
 }
 

@@ -647,7 +647,7 @@ func (s *studioApp) shellPanel(ctx *server.Context, v workspace, csrf, name stri
 	case "session":
 		// Automation lives in its detail tab in the shell. The standalone
 		// Session panel still renders its editors through panel().
-		timeline := s.session(ctx, v, csrf, ctx.Request.URL.Query().Get("placement"))
+		timeline := s.sessionView(ctx, v, csrf, ctx.Request.URL.Query().Get("placement"), true)
 		if v.Project.Edition != 2 {
 			return timeline
 		}
