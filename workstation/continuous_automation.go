@@ -34,9 +34,9 @@ func continuousAutomation(p *project.Project) gosx.Node {
 		if err != nil || len(lane.Points) == 0 {
 			continue
 		}
-		low, high := project.AutomationPointValue(lane.Points[0]), project.AutomationPointValue(lane.Points[0])
+		low, high := project.AutomationPointValue(resolved.Descriptor, lane.Points[0]), project.AutomationPointValue(resolved.Descriptor, lane.Points[0])
 		for _, point := range lane.Points {
-			low, high = math.Min(low, project.AutomationPointValue(point)), math.Max(high, project.AutomationPointValue(point))
+			low, high = math.Min(low, project.AutomationPointValue(resolved.Descriptor, point)), math.Max(high, project.AutomationPointValue(resolved.Descriptor, point))
 		}
 		control := func(value float64) float64 {
 			if resolved.Descriptor.Curve == "log" {
@@ -54,11 +54,11 @@ func continuousAutomation(p *project.Project) gosx.Node {
 		}
 		var curve strings.Builder
 		first := lane.Points[0]
-		fmt.Fprintf(&curve, "M %.3f %.3f", x(first.Tick), y(project.AutomationPointValue(first)))
+		fmt.Fprintf(&curve, "M %.3f %.3f", x(first.Tick), y(project.AutomationPointValue(resolved.Descriptor, first)))
 		for i := 1; i < len(lane.Points); i++ {
 			from, to := lane.Points[i-1], lane.Points[i]
 			if to.Shape == "step" {
-				fmt.Fprintf(&curve, " L %.3f %.3f L %.3f %.3f", x(to.Tick), y(project.AutomationPointValue(from)), x(to.Tick), y(project.AutomationPointValue(to)))
+				fmt.Fprintf(&curve, " L %.3f %.3f L %.3f %.3f", x(to.Tick), y(project.AutomationPointValue(resolved.Descriptor, from)), x(to.Tick), y(project.AutomationPointValue(resolved.Descriptor, to)))
 				continue
 			}
 			for sample := int64(1); sample <= 64; sample++ {
@@ -69,18 +69,18 @@ func continuousAutomation(p *project.Project) gosx.Node {
 		}
 		last := lane.Points[len(lane.Points)-1]
 		if last.Tick < end {
-			fmt.Fprintf(&curve, " L %.3f %.3f", x(end), y(project.AutomationPointValue(last)))
+			fmt.Fprintf(&curve, " L %.3f %.3f", x(end), y(project.AutomationPointValue(resolved.Descriptor, last)))
 		}
 		unit := automationUnit(resolved.Descriptor.Unit)
 		var labels []string
 		var points []gosx.Node
 		for _, point := range lane.Points {
-			label := fmt.Sprintf("%s: %g%s, %s", notation.TickPosition(p.MeterMap(), point.Tick), project.AutomationPointValue(point), unit, point.Shape)
+			label := fmt.Sprintf("%s: %g%s, %s", notation.TickPosition(p.MeterMap(), point.Tick), project.AutomationPointValue(resolved.Descriptor, point), unit, point.Shape)
 			if point.Value.Unit == "db" || point.Value.Unit == "enum" {
 				label = fmt.Sprintf("%s: %s, %s", notation.TickPosition(p.MeterMap(), point.Tick), project.AutomationPointText(point), point.Shape)
 			}
 			labels = append(labels, label)
-			points = append(points, gosx.El("path", gosx.Attrs(gosx.Attr("class", "continuous-point"), gosx.Attr("d", fmt.Sprintf("M %.3f %.3fh0.001", x(point.Tick), y(project.AutomationPointValue(point))))), gosx.El("title", gosx.Text(label))))
+			points = append(points, gosx.El("path", gosx.Attrs(gosx.Attr("class", "continuous-point"), gosx.Attr("d", fmt.Sprintf("M %.3f %.3fh0.001", x(point.Tick), y(project.AutomationPointValue(resolved.Descriptor, point))))), gosx.El("title", gosx.Text(label))))
 		}
 		figures = append(figures, gosx.El("figure", gosx.Attrs(gosx.Attr("class", "continuous-lane"), gosx.Attr("data-continuous-path", lane.Path)),
 			gosx.El("figcaption", gosx.El("strong", gosx.Text(lane.Path)), gosx.El("span", gosx.Text(fmt.Sprintf("%d points", len(lane.Points))))),

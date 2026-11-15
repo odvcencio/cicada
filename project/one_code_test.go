@@ -97,6 +97,7 @@ func TestVelocityRowLengthPointsAtTheRow(t *testing.T) {
 		column int
 		counts string
 	}{
+		{"  velocity:\n", 3, "velocity row has 0 values, the note row expands to 5 cells"},
 		{"  velocity: 90 80 70 60\n", 22, "velocity row has 4 values, the note row expands to 5 cells"},
 		{"  velocity: 90 80 70 60 50 40\n", 28, "velocity row has 6 values, the note row expands to 5 cells"},
 	} {

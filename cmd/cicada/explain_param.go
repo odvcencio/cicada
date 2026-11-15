@@ -102,7 +102,7 @@ func explainMovingLayers(compiled *project.Project, lookup string, loc explainLo
 		return err
 	}
 	for _, lane := range compiled.Automation {
-		if lane.Path == lookup {
+		if project.SameParameterPath(compiled, lane.Path, lookup) {
 			if target, ok := project.AutomationValue(compiled, lane, tick); ok {
 				computedText = explainValue(float32(target), descriptor)
 				fmt.Fprintf(output, "automation at %s: %s\n", notation.TickPosition(compiled.MeterMap(), tick), computedText)
@@ -111,7 +111,7 @@ func explainMovingLayers(compiled *project.Project, lookup string, loc explainLo
 	}
 	var routes []project.ModRoute
 	for _, route := range compiled.Routes {
-		if route.Target == lookup {
+		if project.SameParameterPath(compiled, route.Target, lookup) {
 			routes = append(routes, route)
 		}
 	}
@@ -198,7 +198,7 @@ func sceneValueAtBar(p *project.Project, path string, targetBar int) (sceneExpla
 			foundTarget = true
 		}
 		for _, setting := range scene.Settings {
-			if setting.Path == path {
+			if project.SameParameterPath(p, setting.Path, path) {
 				active = sceneExplainValue{set: true, value: setting.Value, scene: scene.ID, bar: bar}
 			}
 		}

@@ -2,7 +2,6 @@ package project
 
 import (
 	"math"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -71,8 +70,24 @@ func TestSendAutomationTakesDB(t *testing.T) {
 	if gain, _ := AutomationValue(p, lane, 4*3840); gain != paramdefs.SendGainFromDB(-6) {
 		t.Fatalf("-6dB point: gain %g, want %g", gain, paramdefs.SendGainFromDB(-6))
 	}
-	if _, err := CompileAutomation(p); err != nil {
+	controls, err := CompileAutomation(p)
+	if err != nil {
 		t.Fatal(err)
+	}
+	for tick, want := range map[int64]float32{0: float32(paramdefs.SendGainFromDB(-60)), 3840: 1, 5760: .5, 7680: 0} {
+		found := false
+		for _, c := range controls {
+			if c.Tick == tick {
+				found = true
+				if got := math.Float32frombits(c.Arg0); got != want {
+					t.Fatalf("control at %d: %g want %g", tick, got, want)
+				}
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("missing control at %d", tick)
+		}
 	}
 	// The track block's send line uses the same conversion.
 	if got := p.Tracks[0].Mixer.Sends[0].Level; got.Unit != "db" || *got.Number != -6 {
@@ -86,10 +101,29 @@ func TestSendAutomationTakesDB(t *testing.T) {
 	if gain, _ := AutomationValue(linear, linear.Automation[0], 1920); gain != .5 {
 		t.Fatalf("linear lane halfway: %g", gain)
 	}
+	linearControls, err := CompileAutomation(linear)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range linearControls {
+		if c.Tick <= 3840 && math.Float32frombits(c.Arg0) != float32(float64(c.Tick)/3840) {
+			t.Fatalf("linear control at %d: %g", c.Tick, math.Float32frombits(c.Arg0))
+		}
+	}
 	// One lane, one unit.
 	_, ds = sendProject(t, sendScore("automate a.send.reverb { @1.1.1 -6dB @2.1.1 0.5 }\n"))
 	if !hasDiagnosticCode(ds, "CICADA-UNIT") || !strings.Contains(ds[0].Message, "@1.1.1 -6dB is in dB and @2.1.1 0.5 is a linear gain") || ds[0].Position.Line != 10 || ds[0].Position.Column != 38 {
 		t.Fatalf("mixed units: %v", ds)
+	}
+	_, ds = sendProject(t, sendScore("automate a.send.reverb { @1.1.1 1.5 @2.1.1 0.5 }\n"))
+	for _, d := range ds {
+		if strings.Contains(d.Message, "mixes units") {
+			t.Fatalf("spurious mixed units: %v", ds)
+		}
+	}
+	_, ds = sendProject(t, sendScore("automate a.level { @1.1.1 off }\n"))
+	if len(ds) != 1 || !strings.Contains(ds[0].Message, "only a send lane takes off") || ds[0].Position.Line != 10 {
+		t.Fatalf("off on level: %v", ds)
 	}
 	// A scene setting takes dB as a track block does.
 	scene, ds := sendProject(t, strings.Replace(sendScore(""), "scene main { a = p }", "scene main { a = p a.send.reverb = -6dB }", 1))
@@ -100,9 +134,6 @@ func TestSendAutomationTakesDB(t *testing.T) {
 		t.Fatalf("scene send %+v", got)
 	}
 }
-
-// formatGain writes a gain with the fewest digits that parse back to it.
-func formatGain(gain float64) string { return strconv.FormatFloat(gain, 'g', -1, 64) }
 
 // TestSendPathTakesTheEffectName checks that a.send.hall, the declared name
 // of the reverb, and a.send.echo, the declared name of the tape echo, address

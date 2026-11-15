@@ -317,6 +317,17 @@ func validateSceneValue(descriptor paramdefs.Descriptor, path, source string) er
 	return nil
 }
 
+// validateRangeValue keeps macro and MIDI ranges in the control's linear unit.
+func validateRangeValue(d paramdefs.Descriptor, path, source string) error {
+	if paramdefs.IsTrackSend(d) {
+		_, unit, err := notationBaseValue(source)
+		if err == nil && unit == "db" {
+			return fmt.Errorf("a send range takes linear gain from 0 to 1; got %s", source)
+		}
+	}
+	return validateSceneValue(d, path, source)
+}
+
 // sceneValueMismatch reports a value of the wrong kind, such as 5 for a
 // frequency or a word for a number.
 func sceneValueMismatch(descriptor paramdefs.Descriptor, source string) error {

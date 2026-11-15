@@ -74,10 +74,10 @@ func TestRenderTailAboveTenSecondsRenders(t *testing.T) {
 	}
 }
 
-// TestApplyWritesASendAutomationPointInDB lets an agent write the values a
+// TestAutomationRecordWritesASendAutomationPointInDB lets an agent write the values a
 // score now takes: send automation points in dB and off for silence, on the
 // path that names the reverb by its declared name.
-func TestApplyWritesASendAutomationPointInDB(t *testing.T) {
+func TestAutomationRecordWritesASendAutomationPointInDB(t *testing.T) {
 	isolateState(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "main.cicada")
@@ -88,7 +88,7 @@ func TestApplyWritesASendAutomationPointInDB(t *testing.T) {
 	intents := filepath.Join(dir, "intents.json")
 	envelope := `{"version":1,"intents":[
 		{"kind":"setautomationpoint","entity":"param:a.send.hall","at":"@1.1.1","value":"-6dB"},
-		{"kind":"setautomationpoint","entity":"param:a.send.hall","at":"@2.1.1","value":"0dB","shape":"smooth"},
+		{"kind":"setautomationpoint","entity":"param:a.send.reverb","at":"@2.1.1","value":"-0.12345dB","shape":"smooth"},
 		{"kind":"setautomationpoint","entity":"param:a.send.hall","at":"@3.1.1","value":"off"}]}`
 	if err := os.WriteFile(intents, []byte(envelope), 0o600); err != nil {
 		t.Fatal(err)
@@ -100,7 +100,7 @@ func TestApplyWritesASendAutomationPointInDB(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"automate a.send.hall {", "@1.1.1 -6dB linear", "@2.1.1 0dB smooth", "@3.1.1 off linear"} {
+	for _, want := range []string{"automate a.send.hall {", "@1.1.1 -6dB linear", "@2.1.1 -0.12345dB smooth", "@3.1.1 off linear"} {
 		if !strings.Contains(string(after), want) {
 			t.Fatalf("score lacks %q:\n%s", want, after)
 		}

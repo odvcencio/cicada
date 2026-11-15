@@ -142,6 +142,11 @@ pattern idle { c3 . . . }
 // pathsCases are targeted scores. Each uses only what the direct mixer can
 // render, so both paths run.
 var pathsCases = []pathsCase{
+	{name: "dB send automation", source: `fx hall reverb { decay = 2s }
+pattern e { c2 - - - g2 - - . }
+scene x { bass = e }
+song { x*4 }
+automate bass.send.reverb { @1.1.1 -30dB @2.1.1 -6dB @3.1.1 off }`},
 	{name: "slide across a scene switch", source: `pattern ax { . . . . . . . . . . . . . . . 1~ }
 pattern ay { 5 . . . . . . . . . . . . . . . }
 scene x { bass = ax }

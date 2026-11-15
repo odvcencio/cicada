@@ -303,6 +303,21 @@ func assetOutsideProject(dir, rel string, err error) error {
 			return err
 		}
 		if info.Mode()&os.ModeSymlink != 0 {
+			resolved, resolveErr := filepath.EvalSymlinks(filepath.Join(dir, filepath.FromSlash(link)))
+			if resolveErr != nil {
+				return err
+			}
+			root, rootErr := filepath.EvalSymlinks(dir)
+			if rootErr != nil {
+				return err
+			}
+			relative, relErr := filepath.Rel(root, resolved)
+			if relErr != nil {
+				return err
+			}
+			if relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+				continue
+			}
 			return fmt.Errorf("%s goes through the symlink %s, which leads outside the project folder; assets are read only inside the project, so copy the file into the project or hard-link it (cp -al <folder> <copy> makes hard links on the same file system); see docs/sampler/packs.md", rel, link)
 		}
 	}

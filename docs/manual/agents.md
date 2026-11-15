@@ -685,8 +685,8 @@ The same batch with the pattern's settings instead applies and writes:
 
 `cicada render ... --json` describes what it rendered: each file in `outputs`
 as its WAV header gives it (`sample_rate`, `bit_depth`, `encoding` `pcm` or
-`float`, `channels`, `frames` and `duration_seconds`), and the bar range
-(`from_bar`, `bars`). A render without a loudness target adds `levels`: the
+`float`, `channels`, `frames`, `duration_seconds` and `tail_end_peak_dbfs`), and the bar range
+(`from_bar`, `bars`). `tail_end_peak_dbfs` is the sample peak of the last 100 ms in dBFS, or null for digital silence; it helps identify a tail cut off while still sounding. A render without a loudness target adds `levels`: the
 pre-limiter peak and overs, the output peak, and the counts of samples at the
 ceiling and clipped (`ceiling_count`, `clipped_count`, as `verify-wav
 --report` names them), with peaks as linear full-scale values. `cicada stems ...
@@ -720,6 +720,8 @@ The audio and every other number are the same as when each pass synthesizes
 the song. With the environment variable `CICADA_RENDER_NO_REUSE=1` every pass
 does: `syntheses` equals `passes` and nothing is replayed or repeated. Use it
 to check whether reuse caused a difference you see.
+
+For a silent file ending, an output includes `"tail_end_peak_dbfs": null`; otherwise it contains the measured dBFS peak.
 
 <!-- agent-example: render song.cicada -o song.wav --bars 2 --loudness -14 --json -->
 

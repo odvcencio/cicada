@@ -19,9 +19,10 @@ type AutomationLane struct {
 	Recalls []int64           `cicada:"Musical positions that reapply the curve without changing its shape" unit:"tick" json:"recalls,omitempty" introduced:"cicada.project/2"`
 }
 
+// AutomationPoint retains dB and off values for send lanes.
 type AutomationPoint struct {
 	Tick  int64      `cicada:"Musical position at 960 PPQ" unit:"tick" range:"0.." json:"tick" introduced:"cicada.project/2"`
-	Value SceneValue `cicada:"Parameter value in base units" json:"value" introduced:"cicada.project/2"`
+	Value SceneValue `cicada:"Parameter value; send lanes may retain dB or off" json:"value" introduced:"cicada.project/2"`
 	Shape string     `cicada:"Incoming segment shape" json:"shape" introduced:"cicada.project/2"`
 	Curve float64    `cicada:"Curve tension" range:"-8..8" json:"curve,omitempty" introduced:"cicada.project/2"`
 }
@@ -55,10 +56,16 @@ func lowerAutomation(p *Project, score *notation.Score) []notation.Diagnostic {
 		controls[key] = source.Path
 		send := paramdefs.IsTrackSend(resolved.Descriptor)
 		firstUnit := ""
-		for i, point := range source.Points {
+		var firstPoint notation.AutomationPoint
+		for _, point := range source.Points {
 			tick, err := notation.PositionTick(p.MeterMap(), point.At)
 			if err != nil {
 				return append(ranges, automationDiagnostic("CICADA-POSITION", err, point.Position)...)
+			}
+			if send && firstUnit == "" {
+				if parsed, parseErr := projectValue(point.Value); parseErr == nil && (parsed.Number != nil && (parsed.Unit == "unit" || parsed.Unit == "db") || parsed.Unit == "enum" && parsed.Text == "off") {
+					firstUnit, firstPoint = sendLaneUnit(parsed), point
+				}
 			}
 			if message := paramdefs.RangeMessage(resolved.Descriptor, source.Path+" "+point.At, point.Value); message != "" {
 				ranges = append(ranges, notation.Diagnostic{Code: "CICADA-UNIT", Message: message, Severity: "error", Position: point.Position})
@@ -71,13 +78,17 @@ func lowerAutomation(p *Project, score *notation.Score) []notation.Diagnostic {
 				value, err = sendPointValue(point.Value)
 				if err == nil {
 					unit := sendLaneUnit(value)
-					if i == 0 {
+					if firstUnit == "" {
 						firstUnit = unit
+						firstPoint = point
 					} else if unit != firstUnit {
-						err = fmt.Errorf("automation %s mixes units: %s %s is %s and %s %s is %s; write every point of a send lane in dB (off for silence) or every point as a linear gain from 0 to 1", source.Path, source.Points[0].At, source.Points[0].Value, firstUnit, point.At, point.Value, unit)
+						err = fmt.Errorf("automation %s mixes units: %s %s is %s and %s %s is %s; write every point of a send lane in dB (off for silence) or every point as a linear gain from 0 to 1", source.Path, firstPoint.At, firstPoint.Value, firstUnit, point.At, point.Value, unit)
 					}
 				}
 			} else {
+				if point.Value == "off" {
+					return append(ranges, automationDiagnostic("CICADA-UNIT", fmt.Errorf("only a send lane takes off"), point.Position)...)
+				}
 				value, err = parseParameterValue(resolved.Descriptor, point.Value)
 			}
 			if err != nil {
@@ -474,8 +485,8 @@ func sameAutomationValue(a, b SceneValue) bool {
 
 // AutomationPointValue is a point's value in its parameter's base unit: a dB
 // send point's linear gain, 0 for off, and any other point's number.
-func AutomationPointValue(point AutomationPoint) float64 {
-	if point.Value.Unit == "db" || point.Value.Unit == "enum" {
+func AutomationPointValue(descriptor paramdefs.Descriptor, point AutomationPoint) float64 {
+	if paramdefs.IsTrackSend(descriptor) && (point.Value.Unit == "db" || point.Value.Unit == "enum") {
 		return sendPointGain(point.Value)
 	}
 	if point.Value.Number == nil {

@@ -116,8 +116,13 @@ func automationPointSource(ctx *Context, path string, point automationPoint, rem
 		return nil, fmt.Errorf("score must validate before editing automation")
 	}
 
+	plan, err := ctx.CurrentPlan()
+	if err != nil || plan == nil || plan.ResolveParam == nil {
+		return nil, fmt.Errorf("score parameters must validate before editing automation")
+	}
+	samePath := func(a, b string) bool { return a == b || plan.SameParameterPath != nil && plan.SameParameterPath(a, b) }
 	for _, lane := range score.Automation {
-		if lane.Path == path {
+		if samePath(lane.Path, path) {
 			file = lane.Position.File
 			if file == "" {
 				file = ctx.Options.Path
@@ -138,10 +143,6 @@ func automationPointSource(ctx *Context, path string, point automationPoint, rem
 		return stageProjectSource(ctx, file, source, after), nil
 	}
 
-	plan, err := ctx.CurrentPlan()
-	if err != nil || plan == nil || plan.ResolveParam == nil {
-		return nil, fmt.Errorf("score parameters must validate before editing automation")
-	}
 	resolved, err := plan.ResolveParam(path)
 	if err != nil {
 		return nil, err
@@ -181,6 +182,10 @@ func automationPointSource(ctx *Context, path string, point automationPoint, rem
 		} else if paramdefs.IsTrackSend(d) && strings.HasSuffix(strings.ToLower(point.value), "db") {
 			// A send point takes dB as a track's send line does.
 			literal, err = canonicalSendLiteral(raw)
+			if err == nil {
+				number, _ := strconv.ParseFloat(point.value[:len(point.value)-2], 64)
+				literal = strconv.FormatFloat(number, 'f', -1, 64) + "dB"
+			}
 		} else {
 			literal, err = CanonicalMixerLiteral(d, raw)
 		}
@@ -199,7 +204,7 @@ func automationPointSource(ctx *Context, path string, point automationPoint, rem
 	var lane *gts.Node
 	for i := 0; i < root.NamedChildCount(); i++ {
 		n := root.NamedChild(i)
-		if w.Type(n) == "automate_decl" && w.Text(w.Field(n, "path")) == path {
+		if w.Type(n) == "automate_decl" && samePath(w.Text(w.Field(n, "path")), path) {
 			lane = n
 			break
 		}

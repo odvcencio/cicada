@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"m31labs.dev/cicada/internal/paramdefs"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -55,5 +56,13 @@ func TestRouteToAnInstrumentParamBindsItsSlot(t *testing.T) {
 	live := cfg.LiveParams
 	if len(live) != 1 || live[0].Track != 0 || live[0].Slot != 1 || cfg.Track[0].Graph.Nodes[live[0].Node].Value != 500 {
 		t.Fatalf("bindings %+v, want only lead's slot 1 (cutoff) on the node holding 500 Hz; pad, which nothing moves, gets none", live)
+	}
+}
+
+func TestDottedSendTarget(t *testing.T) {
+	kind := func(name string) (string, bool) { return "reverb", name == "fx.reverb" }
+	target, ok, refusal := paramdefs.SendTarget("send.fx.reverb", kind)
+	if !ok || target != "send.reverb" || refusal != "" {
+		t.Fatalf("dotted send: %q %v %q", target, ok, refusal)
 	}
 }

@@ -161,6 +161,7 @@ func EditPlan(p *Project, source []byte, files ...notation.SourceFile) *edit.Pla
 			values[address.Address] = value
 		}
 	}
+	plan.SameParameterPath = func(a, b string) bool { return SameParameterPath(p, a, b) }
 	plan.ResolveParam = func(path string) (edit.Param, error) {
 		resolved, err := ResolveParameterPath(p, path)
 		if err != nil {

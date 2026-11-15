@@ -10,7 +10,7 @@ import (
 // paths always address their respective returns.
 func SendTarget(setting string, kind func(effect string) (string, bool)) (path string, ok bool, refusal string) {
 	name, isSend := strings.CutPrefix(setting, "send.")
-	if !isSend || strings.Contains(name, ".") || name == "delay" || name == "reverb" {
+	if !isSend || name == "delay" || name == "reverb" {
 		return "", false, ""
 	}
 	effectKind, declared := kind(name)

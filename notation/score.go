@@ -164,16 +164,17 @@ type Param struct {
 }
 
 type Pattern struct {
-	Performance *seq.Performance
-	Name        string
-	Kind        string
-	Attrs       []Param
-	Velocity    []StepToken
-	Parts       []PatternPart // source order before expansion
-	Steps       []StepToken
-	Lanes       []Lane
-	Expression  []ExpressionRow
-	Position    Position
+	Performance      *seq.Performance
+	Name             string
+	Kind             string
+	Attrs            []Param
+	Velocity         []StepToken
+	VelocityPosition Position
+	Parts            []PatternPart // source order before expansion
+	Steps            []StepToken
+	Lanes            []Lane
+	Expression       []ExpressionRow
+	Position         Position
 }
 
 // ExpressionRow keeps source spelling and positions for per-step expression.

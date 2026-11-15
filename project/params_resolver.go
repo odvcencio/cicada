@@ -22,6 +22,19 @@ type ResolvedParam struct {
 	Descriptor paramdefs.Descriptor
 }
 
+// SameParameterPath reports whether both paths resolve to the same control.
+func SameParameterPath(p *Project, a, b string) bool {
+	if a == b {
+		return true
+	}
+	x, err := ResolveParameterPath(p, a)
+	if err != nil {
+		return false
+	}
+	y, err := ResolveParameterPath(p, b)
+	return err == nil && x.Track == y.Track && x.ID == y.ID
+}
+
 type PathError struct {
 	Code string
 	Text string

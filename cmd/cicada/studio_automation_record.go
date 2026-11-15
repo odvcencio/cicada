@@ -274,7 +274,7 @@ func (s *studio) automationRecordingCommand(w http.ResponseWriter, r *http.Reque
 		end := studioArrangementEnd(p)
 		tick := automationTick(state, end)
 		for _, lane := range p.Automation {
-			if lane.Path == request.Path {
+			if project.SameParameterPath(p, lane.Path, request.Path) {
 				if !value.Replace {
 					fail(409, fmt.Errorf("this parameter has a curve; enable Replace saved curve to record a replacement"))
 					return
@@ -438,7 +438,7 @@ func (s *studio) automationRecordingCommand(w http.ResponseWriter, r *http.Reque
 		}
 		var intents []edits.Intent
 		for _, lane := range recording.Project.Automation {
-			if lane.Path == recording.Path {
+			if project.SameParameterPath(recording.Project, lane.Path, recording.Path) {
 				for _, point := range lane.Points {
 					intents = append(intents, &edits.RemoveAutomationPoint{Entity: edits.EntityID("param:" + recording.Path), At: listeningPosition(recording.Project.MeterMap(), point.Tick)})
 				}

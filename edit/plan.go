@@ -18,23 +18,24 @@ func Revision(source []byte) string {
 // Plan is the pure view of a compiled score that handlers resolve entities
 // against. Slices follow source order, which is also engine index order.
 type Plan struct {
-	Revision     string
-	Edition      int
-	HasArrange   bool // the score has an arrange block (placements, even if none are listed)
-	Title        string
-	TempoMilli   int
-	TempoChanges []musictime.TempoChange
-	KeyRoot      uint8
-	Scale        string
-	Tracks       []Track
-	Patterns     []Pattern
-	Scenes       []Scene
-	Song         []SongEntry
-	Placements   []Placement
-	Markers      []Marker
-	Clips        []Clip
-	Names        map[string]bool // occupied authored identifiers and import aliases, including templates omitted by compilation
-	ResolveParam func(path string) (Param, error)
+	Revision          string
+	Edition           int
+	HasArrange        bool // the score has an arrange block (placements, even if none are listed)
+	Title             string
+	TempoMilli        int
+	TempoChanges      []musictime.TempoChange
+	KeyRoot           uint8
+	Scale             string
+	Tracks            []Track
+	Patterns          []Pattern
+	Scenes            []Scene
+	Song              []SongEntry
+	Placements        []Placement
+	Markers           []Marker
+	Clips             []Clip
+	Names             map[string]bool // occupied authored identifiers and import aliases, including templates omitted by compilation
+	ResolveParam      func(path string) (Param, error)
+	SameParameterPath func(a, b string) bool
 }
 
 type Track struct {

@@ -3691,7 +3691,7 @@
       "unit": null,
       "range": null,
       "default": null,
-      "meaning": "Parameter value in base units",
+      "meaning": "Parameter value; send lanes may retain dB or off",
       "order": 2,
       "introduced": "cicada.project/2",
       "profile": "M0",

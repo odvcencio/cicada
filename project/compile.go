@@ -238,7 +238,10 @@ func CompilePattern(score *notation.Score, source notation.Pattern, track notati
 			if len(source.Velocity) != count {
 				// Point at the velocity row, where the counts part: its first
 				// value past the note row's length, or its last value.
-				at := source.Velocity[len(source.Velocity)-1].Position
+				at := source.VelocityPosition
+				if len(source.Velocity) > 0 {
+					at = source.Velocity[len(source.Velocity)-1].Position
+				}
 				if len(source.Velocity) > count {
 					at = source.Velocity[count].Position
 				}
