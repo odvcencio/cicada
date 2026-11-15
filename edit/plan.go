@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 
+	"m31labs.dev/cicada/internal/applycount"
 	"m31labs.dev/cicada/internal/paramdefs"
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/musictime"
@@ -11,6 +12,9 @@ import (
 
 // Revision is the SHA-256 of the exact source bytes; Studio's studioRevision delegates to it.
 func Revision(source []byte) string {
+	if applycount.Enabled {
+		applycount.RevisionHash(len(source))
+	}
 	sum := sha256.Sum256(source)
 	return hex.EncodeToString(sum[:])
 }

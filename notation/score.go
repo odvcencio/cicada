@@ -23,6 +23,11 @@ type Diagnostic struct {
 	Severity string // error or warning
 	Position Position
 	Related  Position // first declaration for duplicate diagnostics
+	// Expected and Found, when set, are the value the checker wanted and the
+	// value it found, as short text such as "MIDI 24 to 82" and "MIDI 119".
+	// The message says the same in a sentence.
+	Expected string `json:",omitempty"`
+	Found    string `json:",omitempty"`
 }
 
 // Score is the typed source model. Runtime project compilation is a separate
