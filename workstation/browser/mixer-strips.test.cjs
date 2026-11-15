@@ -561,7 +561,8 @@ test('a strip name opens the bus, the master and a track in Device, where exact 
     // The master: an exact level in dB.
     await page.getByRole('link', {name: 'Open Master in Device', exact: true}).click();
     await device('master:master').waitFor();
-    assert.deepEqual(await marks(), {strips: ['master:master'], links: ['master:master']});
+    // The strip keeps its full reference; its link uses the master's short address.
+    assert.deepEqual(await marks(), {strips: ['master:master'], links: ['master']});
     assert.equal(await control('master.level').locator('[name=value]').getAttribute('type'), 'number');
     assert.equal(await control('master.level').locator('.field span').innerText(), 'level (dB)');
     assert.match(await page.locator('#device-editor .mixer-unavailable').filter({hasText: /^\s*out/}).innerText(), /Not available/);
