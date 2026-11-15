@@ -43,6 +43,7 @@ test('add a compressor and undo its parameter and creation', {timeout:120000}, a
   await sendForm.locator('select[name=path]').selectOption('bass.send.hall');
   await sendForm.getByRole('button',{name:'Add send'}).click();
   const withSend=await waitSource(s=>/send\s+hall\s*=/.test(s)); await waitRevision(withSend);
+  assert.match(withSend, /track\s+bass\s+acid\s*\{[^}]*\bsend\s+hall\s*=\s*-12dB\b/s);
   await page.locator('#undo-form button').click(); await waitSource(s=>s===withReturn); await waitRevision(withReturn);
   await page.locator('#undo-form button').click(); await waitSource(s=>s===original); await waitRevision(original);
 });

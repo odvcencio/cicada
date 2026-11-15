@@ -186,14 +186,24 @@ func TestInsertKindsMatchRoutes(t *testing.T) {
 func TestAddSendForm(t *testing.T) {
 	s := &studioApp{}
 	channel := mixerChannel{Kind: "track", ID: "bass"}
-	mixer := mixerState{Returns: []mixerReturn{{Name: "hall", Kind: "reverb"}}}
-	html := gosx.RenderHTML(s.addSend(workspace{}, "token", channel, mixer))
-	if !strings.Contains(html, "bass.send.hall") || !strings.Contains(html, "Add send") || !strings.Contains(html, "-12dB") {
-		t.Fatal(html)
-	}
-	channel.Strip.Sends = []mixerSend{{To: "hall"}}
-	if html = gosx.RenderHTML(s.addSend(workspace{}, "token", channel, mixer)); strings.Contains(html, "Add send") {
-		t.Fatal(html)
+	for _, kind := range []string{"reverb", "tape"} {
+		t.Run(kind, func(t *testing.T) {
+			mixer := mixerState{Returns: []mixerReturn{{Name: "hall", Kind: kind}}}
+			html := gosx.RenderHTML(s.addSend(workspace{Edition: 2}, "token", channel, mixer))
+			for _, want := range []string{"bass.send.hall", "Add send", "-12dB", "Level (-60dB to 0dB, or gain 0 to 1)"} {
+				if !strings.Contains(html, want) {
+					t.Fatalf("missing %q: %s", want, html)
+				}
+			}
+			fed := channel
+			fed.Strip.Sends = []mixerSend{{To: "hall"}}
+			if html = gosx.RenderHTML(s.addSend(workspace{Edition: 2}, "token", fed, mixer)); strings.Contains(html, "Add send") {
+				t.Fatal(html)
+			}
+			if html = gosx.RenderHTML(s.addSend(workspace{Edition: 1}, "token", channel, mixer)); strings.Contains(html, "Add send") {
+				t.Fatal(html)
+			}
+		})
 	}
 }
 

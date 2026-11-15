@@ -70,6 +70,30 @@ song {
 
 var studioMixerEdition1Score = ""
 
+func TestStudioMixerTapeSend(t *testing.T) {
+	source := strings.Replace(studioMixerScore, "fx room delay {", "fx room tape {", 1)
+	source = strings.Replace(source, "send room = 0.25", "send room = -3dB", 1)
+	handler, _ := studioMixerTestHandler(t, source)
+	response := studioCall(t, handler, "/api/mixer", nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("mixer view: %d %s", response.Code, response.Body.String())
+	}
+	var view studioMixerView
+	if err := json.Unmarshal(response.Body.Bytes(), &view); err != nil {
+		t.Fatal(err)
+	}
+	if len(view.Tracks) != 1 || len(view.Tracks[0].Sends) != 1 {
+		t.Fatalf("missing tape send: %+v", view.Tracks)
+	}
+	send := view.Tracks[0].Sends[0]
+	if send.To != "room" || send.Kind != "tape" || send.Level != "-3dB" || send.Address != "bass.send.delay" || !send.Supported {
+		t.Fatalf("tape send: %+v", send)
+	}
+	if len(view.Returns) != 2 || view.Returns[0].Kind != "tape" || view.Returns[0].Meter != "a" {
+		t.Fatalf("tape return: %+v", view.Returns)
+	}
+}
+
 func TestStudioMixerViewAndRoutes(t *testing.T) {
 	handler, path := studioMixerTestHandler(t, studioMixerScore)
 	response := studioCall(t, handler, "/api/mixer", nil)

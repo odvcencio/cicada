@@ -437,8 +437,6 @@ func (s *studioApp) stripInsertChain(v workspace, csrf string, c mixerChannel) [
 	switch {
 	case !ok:
 		return nil
-	case !insert.Supported && c.Kind == "master" && len(c.Strip.Inserts) < 16:
-		return nil
 	case !insert.Supported:
 		return []gosx.Node{mixerUnavailable("insert chain", insert.Reason)}
 	}
@@ -487,6 +485,9 @@ func upgradeConfirm() gosx.Node {
 
 // addSend offers returns that do not yet have a send from this track.
 func (s *studioApp) addSend(v workspace, csrf string, c mixerChannel, mixer mixerState) gosx.Node {
+	if v.Edition == 1 {
+		return gosx.Fragment()
+	}
 	sent := map[string]bool{}
 	for _, send := range c.Strip.Sends {
 		sent[send.To] = true
@@ -504,10 +505,7 @@ func (s *studioApp) addSend(v workspace, csrf string, c mixerChannel, mixer mixe
 	if len(options) == 0 {
 		return gosx.Fragment()
 	}
-	fields := []gosx.Node{hidden("source_revision", v.SourceRevision), field("Send to", gosx.El("select", gosx.Attrs(gosx.Attr("name", "path")), gosx.Fragment(options...))), field("Level (dB)", textInput("value", "-12dB"))}
-	if v.Edition == 1 {
-		fields = append(fields, upgradeConfirm())
-	}
+	fields := []gosx.Node{hidden("source_revision", v.SourceRevision), field("Send to", gosx.El("select", gosx.Attrs(gosx.Attr("name", "path")), gosx.Fragment(options...))), field("Level (-60dB to 0dB, or gain 0 to 1)", textInput("value", "-12dB"))}
 	fields = append(fields, submit("", "", "Add send"))
 	return s.form(v, csrf, "mixer", "mixer", fields...)
 }

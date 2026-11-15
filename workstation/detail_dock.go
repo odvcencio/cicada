@@ -117,7 +117,10 @@ func (s *studioApp) deviceDock(ctx *server.Context, v workspace, csrf string) go
 		if len(controls) == 0 {
 			controls = append(controls, note("No mixer controls are available for this channel."))
 		}
-		inserts := s.stripInsertChain(v, csrf, channel)
+		var inserts []gosx.Node
+		if channel.Kind != "master" || channel.Strip.Fields["insert"].Supported {
+			inserts = s.stripInsertChain(v, csrf, channel)
+		}
 		inserts = append(inserts, s.addInsert(v, csrf, channel))
 		if channel.Kind == "track" {
 			inserts = append(inserts, ampAutomationLinks(ctx, v.Project, channel.ID))
