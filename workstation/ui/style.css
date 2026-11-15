@@ -1049,7 +1049,9 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
 .shell #detail-panel-clip .clip-toolbar { display:flex; flex-wrap:nowrap; align-items:center; gap:4px 8px; position:relative; z-index:5; min-width:0; padding-bottom:4px; }
 .shell #detail-panel-clip .clip-toolbar > p { margin:0; font-size:11px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .shell #detail-panel-clip .clip-toolbar > small { font-size:10px; flex-shrink:0; white-space:nowrap; }
-.shell #detail-panel-clip .clip-library-notice { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted); font-size:11px; }
+/* A library pattern cannot be edited, so its notice keeps its full width and the shared-pattern note gives way. */
+.shell #detail-panel-clip .clip-library-notice { flex:none; white-space:nowrap; color:var(--muted); font-size:11px; }
+.shell #detail-panel-clip .clip-toolbar:has(.clip-library-notice) > small { flex-shrink:1; min-width:0; overflow:hidden; text-overflow:ellipsis; }
 .shell #detail-panel-clip .clip-toolbar-spacer { flex:1; }
 .shell #detail-panel-clip .clip-toolbar > details { flex-shrink:0; position:static; margin:0; padding:0; border:0; }
 .shell #detail-panel-clip .clip-toolbar summary { cursor:pointer; padding:4px 7px; border:1px solid var(--border); border-radius:4px; background:var(--raised); }
