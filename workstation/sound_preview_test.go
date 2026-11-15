@@ -50,7 +50,7 @@ func TestSoundBrowserUsesPrivateActionsWithoutEditingOrNavigating(t *testing.T) 
 		t.Fatal("hardware setup precedes the built-in sounds")
 	}
 	for _, patch := range instrument.Patches() {
-		if !strings.Contains(page, `aria-label="Listen to `+patch.Name+`"`) {
+		if !strings.Contains(page, `aria-label="Audition `+patch.Name+`"`) {
 			t.Fatalf("sound %s cannot be auditioned", patch.Name)
 		}
 	}

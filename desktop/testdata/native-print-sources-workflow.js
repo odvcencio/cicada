@@ -47,7 +47,7 @@
      await saved(source => source === state.vocalSource);
      state.phase = 'sampler'; persist(state); break;
     case 'sampler': {
-     const section = document.querySelector('#browser-sampler'); if (!section.open) section.querySelector('summary').click();
+     const tab = document.querySelector('#library-tab-samples'); if (tab.getAttribute('aria-selected') !== 'true') tab.click();
      await wait(() => document.querySelector('#cicada-sampler[data-sampler-ready=true]'), 'stored sampler performance');
      const form = document.querySelector('[data-sampler-resample] form');
      const perf = JSON.parse(form.querySelector('[name=performance]').value); if (perf.hits.length !== 1) throw new Error('Stored performance missing');

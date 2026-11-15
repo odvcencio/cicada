@@ -68,7 +68,7 @@ test('sidebars fit the song, collapse into rails and preserve edits',{timeout:12
  for(const id of ['studio-browser','studio-center','studio-detail'])assert.equal(await page.locator('#'+id).isVisible(),false);
  await page.screenshot({path:path.join(proof,'compact-code.png')});
  await page.locator('.shell-phone-nav a').filter({hasText:'Library'}).click();await page.locator('#studio-browser').waitFor({state:'visible'});
- await page.locator('[data-sound-preview="soft-bell"]').focus();
+ await page.locator('[data-instrument-patch="soft-bell"]').click();await page.locator('[data-sound-preview="soft-bell"]').focus();
  await page.locator('.shell-phone-nav a').filter({hasText:'View'}).click();await page.locator('#view-tab-session').click();
  await page.locator('.shell-phone-nav a').filter({hasText:'Edit'}).click();await page.locator('#detail-tab-device').click();
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);

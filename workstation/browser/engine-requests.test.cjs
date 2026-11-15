@@ -185,6 +185,7 @@ test('engine requests time out, fail, refuse, stop at their limit, stream and ab
       return route.continue();
     });
     await openLive(page);
+    await page.locator('[data-live-midi-setup] summary').click();
     const reload = async next => {
       mode = next;
       const mark = (await statuses(page)).length;

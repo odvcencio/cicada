@@ -20,6 +20,7 @@
 .shell #detail-panel-device .device-controls .field { flex:1 1 auto; }
 .shell #detail-panel-device .device-controls .field span { font:10px var(--mono); }
 .shell #detail-panel-device .device-controls :is(input,select,button) { min-height:26px; padding:2px 7px; font-size:12px; }
+.shell #detail-panel-device .device-controls .action-form > button { flex:none; white-space:nowrap; }
 .shell #detail-panel-device .device-controls .muted,
 .shell #detail-panel-device .device-controls small { font-size:10px; }
 

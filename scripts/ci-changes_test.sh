@@ -304,7 +304,7 @@ if [[ "${1:-}" == "--graph" ]]; then
 	check_imports bench "edit cost per Apply (internal/benchscore/applybench)" < <(go_deps linux cicada_counters ./internal/benchscore/applybench)
 	check_imports macos_desktop "macOS desktop build of cmd/cicada" < <(go_deps darwin "" ./cmd/cicada)
 	check_imports macos_contracts "macOS platform contracts" < <(go_deps darwin "" ./host/capture ./host/midi ./internal/audiobackend ./cmd/cicada)
-	check_imports workstation "workstation job (root-module tests)" < <(go_deps linux "" ./internal/buildaudit ./internal/studiohttp)
+	check_imports workstation "workstation job (root-module tests)" < <(go_deps linux "" ./internal/buildaudit ./internal/studiohttp ./internal/diagnostics)
 	# The workstation rules assume no root package imports the other modules.
 	if (cd "$repo" && GOWORK=off go list -deps -test -f '{{.ImportPath}}' ./... | grep -E '^m31labs.dev/cicada/(workstation|desktop)(/|$)'); then
 		fail "a root-module package imports workstation or desktop; the workstation rules would skip it"

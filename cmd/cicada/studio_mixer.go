@@ -235,7 +235,7 @@ func buildStudioMixerView(path string, source []byte) (studioMixerView, error) {
 			address, descriptorID := "", ""
 			if fx != nil {
 				kind = fx.Kind
-				if kind == "delay" {
+				if kind == "delay" || kind == "tape" {
 					descriptorID = "mix.send_a"
 				} else if kind == "reverb" {
 					descriptorID = "mix.send_b"
@@ -331,7 +331,7 @@ func buildStudioMixerView(path string, source []byte) (studioMixerView, error) {
 	reverbMetered := false
 	for _, effect := range score.Effects {
 		meter := ""
-		if effect.Kind == "delay" {
+		if effect.Kind == "delay" || effect.Kind == "tape" {
 			meter = "a"
 		} else if effect.Kind == "reverb" && !reverbMetered {
 			// The engine meters return slot B, the first reverb. Later reverbs
@@ -364,7 +364,7 @@ func buildStudioMixerView(path string, source []byte) (studioMixerView, error) {
 			})
 		}
 		view.Effects = append(view.Effects, strip)
-		if effect.Kind == "delay" || effect.Kind == "reverb" {
+		if effect.Kind == "delay" || effect.Kind == "tape" || effect.Kind == "reverb" {
 			view.Returns = append(view.Returns, strip)
 		}
 	}
@@ -580,18 +580,18 @@ func mixerInsertCapability(kind, owner string, names []string, score *notation.S
 }
 
 func mixerSendCapability(track notation.Track, target, kind string, score *notation.Score) (bool, string) {
-	if kind != "delay" && kind != "reverb" {
-		return false, "CICADA-UNSUPPORTED: send target must be a delay or reverb return"
+	if kind != "delay" && kind != "tape" && kind != "reverb" {
+		return false, "CICADA-UNSUPPORTED: send target must be a delay, tape or reverb return"
 	}
 	for _, param := range track.Params {
 		if param.Name != "send" || param.Target == target {
 			continue
 		}
-		// One send per return slot. A score has one delay return (slot A), and
+		// One send per return slot. A score has one delay or tape return (slot A), and
 		// each reverb is a return of its own (slot B, then C to H), so sends to
 		// two different reverbs do not collide.
 		other := findNotationEffect(score, param.Target)
-		if other != nil && other.Kind == kind && kind != "reverb" {
+		if other != nil && kind != "reverb" && (other.Kind == "delay" || other.Kind == "tape") {
 			return false, "CICADA-UNSUPPORTED: one send per effect kind is implemented"
 		}
 	}
