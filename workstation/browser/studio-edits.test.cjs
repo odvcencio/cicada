@@ -840,7 +840,10 @@ test('a checkpoint refused because this window saved is not sent again or report
   await page.waitForFunction(step => new URL(location.href).searchParams.get('step') === step, String(next));
   await page.locator('#studio-shell[data-shell-edits="ready"]').waitFor();
   await until(async () => await page.locator('#undo-form input[name=revision]').inputValue() === (await state('/api/state')).revision, 'the page did not catch up with the score');
-  // The steps after this one count only their own navigations.
+  // The steps after this one count only their own navigations. The step link's
+  // navigation event arrives after the address changes, so wait for it before
+  // clearing the counter; otherwise it would land in the next test's count.
+  await until(() => page.evaluate(() => window.__studioEdits.navigations > 0), 'no navigation', 5_000).catch(() => {});
   await page.evaluate(() => { window.__studioEdits.navigations = 0; });
 });
 
