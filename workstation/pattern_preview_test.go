@@ -51,3 +51,43 @@ func TestPatternPreviewUsesCompatibleTracksAndRetainsTheChosenSound(t *testing.T
 		}
 	}
 }
+
+func TestClipToolbarAndLegacyPatternLayout(t *testing.T) {
+	source := "cicada 2\ntrack keys piano {}\npattern first notes { c4 . . . }\npattern second notes { e4 . . . }\nscene main { keys=first }\nsong { main }\n"
+	score, ds := notation.Parse([]byte(source))
+	p, more := project.FromScore(score)
+	if len(ds) != 0 || len(more) != 0 {
+		t.Fatal(ds, more)
+	}
+	address, client, _ := testAppWorkspace(t, &workspace{Revision: "current", Valid: true, Source: source, Project: p})
+	for _, played := range []bool{false, true} {
+		if played {
+			p.Patterns[0].Performance = &project.Performance{LengthTicks: 960, Notes: []project.PerformedNote{{Note: 60, Tick: 0, EndTick: 240, Velocity: 90}}}
+		}
+		page := getPage(t, client, address+"/studio?dock=clip&pattern=first&region=detail")
+		start := strings.Index(page, `class="clip-toolbar"`)
+		if start < 0 {
+			t.Fatal("missing clip toolbar")
+		}
+		bar := page[start:]
+		last := -1
+		for _, want := range []string{`class="clip-picker"`, `first · notes`, `pattern-choice`, `id="pattern-shared-note"`, `id="cicada-pattern-preview"`, `data-gosx-key="create-pattern-"`, `data-machine-open`, `data-pattern-management="first"`} {
+			i := strings.Index(bar, want)
+			if i <= last {
+				t.Fatalf("toolbar control %q missing or out of order", want)
+			}
+			last = i
+		}
+		picker := bar[:strings.Index(bar, `</nav>`)]
+		if strings.Count(picker, `class="pattern-choice"`) != 2 || !strings.Contains(picker, `aria-current="true"`) || !strings.Contains(picker, `second`) {
+			t.Fatal("picker does not contain both patterns and the current selection")
+		}
+		if strings.Contains(page, `class="pattern-editor"`) {
+			t.Fatal("shell retains pattern library column")
+		}
+	}
+	legacy := getPage(t, client, address+"/?panel=patterns&pattern=first")
+	if !strings.Contains(legacy, `class="pattern-editor"`) || !strings.Contains(legacy, `class="pattern-library"`) || !strings.Contains(legacy, "Create pattern") || !strings.Contains(legacy, "Use this pattern") || strings.Contains(legacy, `class="clip-toolbar"`) {
+		t.Fatal("legacy pattern layout changed")
+	}
+}

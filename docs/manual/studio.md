@@ -298,7 +298,13 @@ The editor also supports [touch editing on phone screens](screenshots/studio-pro
 
 ## Patterns
 
-Use **Create pattern** in the pattern editor to start a new grid. Choose its
+In the Clip tab, use the pattern picker to switch patterns. The toolbar shows
+the pattern's timing and preview controls; **New** creates a pattern,
+**Generate pattern** opens Pattern Machine, and **More** holds variation and
+song placement or scene assignment controls. The grid fills the dock below.
+Select a step to edit its fields below the grid.
+
+Use **New** in the Clip tab (or **Create pattern** in the pattern editor) to start a new grid. Choose its
 track, name, and length (1–64 steps). The track supplies the appropriate notes,
 acid, or drum pattern type, including a custom kit's lanes. Choose a scene to
 create and assign together in one Undo step, or **Library only** to leave the

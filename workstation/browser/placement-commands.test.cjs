@@ -229,6 +229,7 @@ test('Studio views, Record entry and Mac placement commands retain drafts and Un
     await sameClipContext('after Undo');
     if(proof) await page.screenshot({path:path.join(proof,'draw-undone.png')});
 
+    await page.locator('#detail-panel-clip .clip-picker summary').click();
     await page.locator('#detail-panel-clip .pattern-choice').filter({hasText:'pulse'}).click();
     await until(()=>new URL(page.url()).searchParams.get('pattern')==='pulse','different pattern did not open');await ready();
     assert.equal(new URL(page.url()).searchParams.has('placement'),false,'a different pattern inherited the old placement');
