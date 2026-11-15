@@ -27,3 +27,25 @@ func TestMixerFaderSavesTheLevelOncePerGesture(t *testing.T) {
 		t.Fatalf("edition 1 should keep only the field: %s", html)
 	}
 }
+
+// A bus level takes only the values the service lists. The Set form posts them
+// as text, and the select never shows a choice that is not saved.
+func TestChoiceLevelPostsTextAndShowsOnlyTheSavedChoice(t *testing.T) {
+	s := &studioApp{}
+	sfx := mixerField{Path: "sfx.level", Value: 0.0, Choices: []string{"off"}, Supported: true, Descriptor: paramdefs.Descriptor{Min: -60, Max: 6, Unit: "dB"}}
+	html := gosx.RenderHTML(s.mixerField(workspace{Edition: 2}, "token", "level", sfx))
+	for _, want := range []string{`name="valueType" value="text"`, `<select name="value" required><option value="" selected disabled>0dB</option><option value="off">off</option></select>`} {
+		if !strings.Contains(html, want) {
+			t.Errorf("unsaved choice: missing %s in %s", want, html)
+		}
+	}
+	sfx.SourceValue = "off"
+	if html := gosx.RenderHTML(s.mixerField(workspace{Edition: 2}, "token", "level", sfx)); !strings.Contains(html, `<select name="value"><option value="off" selected>off</option></select>`) {
+		t.Errorf("saved choice: %s", html)
+	}
+	// Its fader shows the level and cannot move: the service refuses other values.
+	fader := gosx.RenderHTML(s.mixerFader(workspace{Edition: 2}, "token", "sfx", sfx))
+	if !strings.Contains(fader, "disabled") || strings.Contains(fader, "<form") || strings.Contains(fader, "data-commit") || !strings.Contains(fader, `0.0<small>dB</small>`) {
+		t.Errorf("fixed fader: %s", fader)
+	}
+}

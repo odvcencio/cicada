@@ -290,8 +290,13 @@ func TestEffectPresetUsesDeclaredDefaultsWithoutExtraInstance(t *testing.T) {
 	}
 }
 
+// An edition-1 score addresses its returns by kind (send_a, send_b), so it
+// keeps one delay and one reverb return; a second reverb needs edition 2.
 func TestEffectPresetRetainsLegacySendTargets(t *testing.T) {
-	for _, test := range []struct{ kind, send string }{{"delay", "send_a"}, {"reverb", "send_b"}} {
+	for _, test := range []struct{ kind, send, limit string }{
+		{"delay", "send_a", "multiple delay instances"},
+		{"reverb", "send_b", "a second reverb return needs edition 2"},
+	} {
 		t.Run(test.kind, func(t *testing.T) {
 			score, ds := notation.Parse([]byte("cicada 1\nfx " + test.kind + " { mix=0.2 }\npreset wet { instrument=" + test.kind + " mix=0.8 }\nfx echo wet {}\ntrack lead acid { " + test.send + "=0.5 }" + presetSong))
 			if score == nil {
@@ -302,7 +307,7 @@ func TestEffectPresetRetainsLegacySendTargets(t *testing.T) {
 				t.Fatalf("legacy target pruned: %+v %+v", resolved.Effects, ds)
 			}
 			p, ds := FromScore(score)
-			if p != nil || !strings.Contains(fmt.Sprint(ds), "multiple "+test.kind+" instances") {
+			if p != nil || !strings.Contains(fmt.Sprint(ds), test.limit) {
 				t.Fatalf("expected existing instance limit: %+v %+v", p, ds)
 			}
 		})

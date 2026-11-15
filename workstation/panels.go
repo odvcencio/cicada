@@ -14,6 +14,7 @@ import (
 
 	"m31labs.dev/cicada/language"
 	"m31labs.dev/cicada/workstation/ui"
+	"m31labs.dev/cicada/workstation/view"
 	"m31labs.dev/gosx"
 	"m31labs.dev/gosx/action"
 	"m31labs.dev/gosx/editor"
@@ -44,7 +45,7 @@ func (s *studioApp) panel(ctx *server.Context, v workspace, csrf, panel string) 
 	case "takes":
 		return s.takes(ctx, v, csrf)
 	case "sampler":
-		return s.sampler(ctx, v, csrf)
+		return gosx.Fragment(s.sampler(ctx, v, csrf), s.samplePacks(ctx, v, csrf))
 	case "history":
 		return s.history(ctx, v, csrf)
 	case "export":
@@ -148,33 +149,15 @@ func (s *studioApp) session(ctx *server.Context, v workspace, csrf, selected str
 	if v.Project == nil {
 		return failure(fmt.Errorf("save a valid score to open the session"))
 	}
+	return s.sessionView(ctx, v, csrf, selected, false)
+}
+
+func (s *studioApp) sessionView(ctx *server.Context, v workspace, csrf, selected string, shell bool) gosx.Node {
 	p := v.Project
-	if len(p.Scenes) == 0 {
-		return s.arrangement(ctx, v, csrf, selected)
+	if shell || len(p.Scenes) == 0 {
+		return s.arrangementView(ctx, v, csrf, selected, shell)
 	}
-	var heads []gosx.Node
-	heads = append(heads, gosx.El("th", gosx.Text("Track")))
-	for _, scene := range p.Scenes {
-		heads = append(heads, gosx.El("th", s.form(v, csrf, "session", "transport", hidden("scene", scene.ID), submit("action", "launch", scene.ID))))
-	}
-	var rows []gosx.Node
-	for _, track := range p.Tracks {
-		cells := []gosx.Node{gosx.El("th", gosx.Text(track.ID))}
-		for _, scene := range p.Scenes {
-			binding := scene.Bindings[track.ID]
-			if binding == "" || binding == "keep" {
-				cells = append(cells, gosx.El("td", gosx.Text("Keep")))
-				continue
-			}
-			command, label := "slot", binding
-			if binding == "off" {
-				command, label = "trackStop", "Stop"
-			}
-			cells = append(cells, gosx.El("td", s.form(v, csrf, "session", "transport", hidden("track", track.ID), hidden("pattern", binding), submit("action", command, label))))
-		}
-		rows = append(rows, gosx.El("tr", gosx.Fragment(cells...)))
-	}
-	return gosx.Fragment(s.arrangement(ctx, v, csrf, selected), ui.Panel(ui.PanelProps{ID: "session", Title: "Scene launch matrix", Description: "Launches use the score timing, or the next bar if none is set."}, gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll")), gosx.El("table", gosx.Attrs(gosx.Attr("aria-label", "Scene launch matrix")), gosx.El("thead", gosx.El("tr", gosx.Fragment(heads...))), gosx.El("tbody", gosx.Fragment(rows...))))))
+	return gosx.Fragment(s.arrangement(ctx, v, csrf, selected), view.SceneLaunchMatrix(p, v.Revision, csrf))
 }
 
 var drumOrder = []string{"bd", "sd", "ch", "oh", "cp", "rs", "lt", "mt", "ht", "cb", "cy"}
@@ -204,90 +187,6 @@ func selectInput(name, value string, choices []string, label ...string) gosx.Nod
 	return gosx.El("select", attrs, gosx.Fragment(options...))
 }
 
-func (s *studioApp) mixer(ctx *server.Context, v workspace, csrf string) gosx.Node {
-	mixer, err := s.loadMixer(ctx, v)
-	if err != nil {
-		return failure(err)
-	}
-	v.Revision = mixer.Revision
-	v.Edition = mixer.Edition
-	var strips []gosx.Node
-	all := append(append(slices.Clone(mixer.Tracks), mixer.Buses...), mixer.Master)
-	for index, strip := range all {
-		attrs := gosx.Attrs(gosx.Attr("class", "strip"), gosx.Attr("data-mixer-strip", "track"))
-		switch {
-		case index < len(mixer.Tracks):
-			attrs = append(attrs, gosx.Attr("data-track-color", strconv.Itoa(index%trackColors)))
-		case index == len(all)-1:
-			attrs = gosx.Attrs(gosx.Attr("class", "strip"), gosx.Attr("data-mixer-strip", "master"))
-		default:
-			attrs = gosx.Attrs(gosx.Attr("class", "strip"), gosx.Attr("data-mixer-strip", "bus"))
-		}
-		var fields []gosx.Node
-		keys := make([]string, 0, len(strip.Fields))
-		for key := range strip.Fields {
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
-		for _, key := range keys {
-			// The M and S buttons replace the generic Set forms for these keys.
-			if (key == "mute" || key == "solo") && mixerToggleShows(v, strip.Fields[key]) {
-				continue
-			}
-			if key == "insert" && strip.Fields[key].Supported {
-				fields = append(fields, s.effectChain(v, csrf, strip))
-				continue
-			}
-			fields = append(fields, s.mixerField(v, csrf, key, strip.Fields[key]))
-		}
-		for _, send := range strip.Sends {
-			fields = append(fields, s.mixerField(v, csrf, "send to "+send.To, send.mixerField))
-		}
-		if v.Project != nil {
-			for _, track := range v.Project.Tracks {
-				if track.ID == strip.ID && track.Kind == "audio" {
-					fields = append(fields, s.form(v, csrf, "mixer", "mixer", hidden("action", "vocal-chain"), hidden("track", strip.ID), submit("", "", "Add vocal chain")), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("High-pass EQ, compression and de-essing, saved on this track. Adjust their controls below.")))
-				}
-			}
-		}
-		meterID := "track:" + strip.ID
-		switch {
-		case index == len(all)-1:
-			meterID = "master"
-		case index >= len(mixer.Tracks):
-			meterID = "bus:" + strip.ID
-		}
-		// Bus and master pan are unsupported, so mixerPan renders nothing there.
-		// strip-tools keeps a fixed height so the meter and fader line up across strips.
-		tools := gosx.El("div", gosx.Attrs(gosx.Attr("class", "strip-tools")),
-			gosx.El("div", gosx.Attrs(gosx.Attr("class", "strip-toggles")), s.mixerToggle(v, csrf, "mixer", strip.Name, "mute", strip.Fields["mute"]), s.mixerToggle(v, csrf, "mixer", strip.Name, "solo", strip.Fields["solo"])),
-			s.mixerPan(v, csrf, strip.Name, strip.Fields["pan"]))
-		channel := []gosx.Node{stripMeter(meterID, strip.Name), s.mixerFader(v, csrf, strip.Name, strip.Fields["level"])}
-		var loudness gosx.Node = gosx.Fragment()
-		if meterID == "master" {
-			loudness = masterLoudness()
-		}
-		strips = append(strips, gosx.El("section", attrs, gosx.El("h3", gosx.Text(strip.Name)), tools, gosx.El("div", gosx.Attrs(gosx.Attr("class", "strip-channel")), gosx.Fragment(channel...)), loudness, gosx.Fragment(fields...)))
-	}
-	for _, ret := range mergeMixerReturns(mixer.Returns, mixer.Effects) {
-		var fields []gosx.Node
-		for _, f := range ret.Fields {
-			fields = append(fields, s.mixerField(v, csrf, f.Path, f))
-		}
-		var returnMeter gosx.Node = gosx.Fragment()
-		if ret.Meter != "" {
-			returnMeter = gosx.El("div", gosx.Attrs(gosx.Attr("class", "strip-channel")), stripMeter("return:"+ret.Meter, ret.Name))
-		}
-		strips = append(strips, gosx.El("section", gosx.Attrs(gosx.Attr("class", "strip"), gosx.Attr("id", "effect-"+ret.Name)), gosx.El("h3", gosx.Text(ret.Name)), gosx.El("div", gosx.Attrs(gosx.Attr("class", "strip-tools"))), returnMeter, gosx.Fragment(fields...)))
-	}
-	chorusFields := []gosx.Node{hidden("source_revision", v.SourceRevision), hidden("action", "add-chorus"), field("Chorus name", textInput("name", "chorus")), submit("", "", "Create chorus")}
-	if v.Edition == 1 {
-		chorusFields = append(chorusFields, gosx.El("label", gosx.Attrs(gosx.Attr("class", "upgrade-confirm")), gosx.El("input", gosx.Attrs(gosx.Attr("type", "checkbox"), gosx.Attr("name", "confirmUpgrade"), gosx.BoolAttr("required"))), gosx.Text("Upgrade score to edition 2 for this change")))
-	}
-	addChorus := s.form(v, csrf, "mixer", "mixer", chorusFields...)
-	return ui.Panel(ui.PanelProps{ID: "mixer", Title: "Mixer", Description: "Track, bus, return, effect, and master parameters are saved to the score."}, addChorus, gosx.El("div", gosx.Attrs(gosx.Attr("class", "strips")), gosx.Fragment(strips...)))
-}
-
 // loadMixer returns the saved mixer state. A workspace built by loadWorkspace
 // carries a loader that reads /api/mixer once per request; without one, each
 // call reads it.
@@ -311,12 +210,15 @@ func mergeMixerReturns(lists ...[]mixerReturn) []mixerReturn {
 			at, seen := index[ret.Name]
 			if !seen {
 				index[ret.Name] = len(merged)
-				merged = append(merged, mixerReturn{Name: ret.Name, Meter: ret.Meter})
+				merged = append(merged, mixerReturn{Name: ret.Name, Kind: ret.Kind, Meter: ret.Meter})
 				at = len(merged) - 1
 			}
 			entry := &merged[at]
 			if entry.Meter == "" {
 				entry.Meter = ret.Meter
+			}
+			if entry.Kind == "" {
+				entry.Kind = ret.Kind
 			}
 			for _, f := range ret.Fields {
 				if !slices.ContainsFunc(entry.Fields, func(have mixerField) bool { return have.Path == f.Path }) {
@@ -333,14 +235,19 @@ func mixerToggleShows(v workspace, f mixerField) bool {
 	return f.Supported && v.Edition != 1
 }
 
+// mixerFaderShows reports whether mixerFader renders a fader for f.
+func mixerFaderShows(v workspace, f mixerField) bool {
+	return f.Supported && v.Edition != 1 && f.Descriptor.Max > f.Descriptor.Min
+}
+
 // mixerFader shows a strip's level as a vertical fader. The engine saves it once
 // per gesture (strip_commit_js.go), through the same mixer action as the
-// strip's numeric level field,
-// which stays for exact values and for "off". Edition 1 scores confirm an
-// upgrade with each mixer change, so they keep only the field.
+// channel's numeric level field in Device, which stays for exact values and
+// for "off". Edition 1 scores confirm an upgrade with each mixer change, so
+// they keep only the field.
 func (s *studioApp) mixerFader(v workspace, csrf, name string, f mixerField) gosx.Node {
 	d := f.Descriptor
-	if !f.Supported || v.Edition == 1 || d.Max <= d.Min {
+	if !mixerFaderShows(v, f) {
 		return gosx.Fragment()
 	}
 	value, numeric := f.Value.(float64)
@@ -354,18 +261,27 @@ func (s *studioApp) mixerFader(v workspace, csrf, name string, f mixerField) gos
 	if d.DisplayStep > 0 {
 		step = strconv.FormatFloat(d.DisplayStep, 'f', -1, 64)
 	}
-	input := gosx.El("input", gosx.Attrs(gosx.Attr("type", "range"), gosx.Attr("name", "value"),
+	attrs := gosx.Attrs(gosx.Attr("type", "range"), gosx.Attr("name", "value"),
 		gosx.Attr("min", strconv.FormatFloat(d.Min, 'f', -1, 64)), gosx.Attr("max", strconv.FormatFloat(d.Max, 'f', -1, 64)), gosx.Attr("step", step),
-		gosx.Attr("value", strconv.FormatFloat(value, 'f', -1, 64)), gosx.Attr("aria-label", name+" level fader"), gosx.Attr("data-commit", "settle")))
+		gosx.Attr("value", strconv.FormatFloat(value, 'f', -1, 64)))
+	level := gosx.El("span", gosx.Attrs(gosx.Attr("class", "strip-readout")), gosx.Text(readout), gosx.El("small", gosx.Text(d.Unit)))
+	if len(f.Choices) > 0 {
+		// The service takes only the listed values for this level (a bus takes
+		// "-3dB" or "off") and refuses any other, so the fader shows the level
+		// and cannot move. Device sets it.
+		hint := name + " level is set in Device: " + strings.Join(f.Choices, " or ")
+		attrs = append(attrs, gosx.Attr("aria-label", hint), gosx.Attr("title", hint), gosx.BoolAttr("disabled"))
+		return gosx.El("div", gosx.Attrs(gosx.Attr("class", "strip-fader")), gosx.El("input", attrs), level)
+	}
+	attrs = append(attrs, gosx.Attr("aria-label", name+" level fader"), gosx.Attr("data-commit", "settle"))
 	return gosx.El("div", gosx.Attrs(gosx.Attr("class", "strip-fader"), gosx.Attr("data-mixer-fader", f.Path)),
-		s.form(v, csrf, "mixer", "mixer", hidden("path", f.Path), hidden("valueType", "number"), input),
-		gosx.El("span", gosx.Attrs(gosx.Attr("class", "strip-readout")), gosx.Text(readout), gosx.El("small", gosx.Text(d.Unit))))
+		s.form(v, csrf, "mixer", "mixer", hidden("path", f.Path), hidden("valueType", "number"), gosx.El("input", attrs)), level)
 }
 
 // mixerToggle is a one-click mute or solo button. It posts the opposite of the
 // saved value through the mixer action, so the change reaches the score and
 // Undo restores it. Edition 1 scores confirm an upgrade with each mixer
-// change, so they keep only the Set form.
+// change, so they keep only the Set form in Device.
 func (s *studioApp) mixerToggle(v workspace, csrf, panel, name, kind string, f mixerField) gosx.Node {
 	if !mixerToggleShows(v, f) {
 		return gosx.Fragment()
@@ -382,35 +298,44 @@ func (s *studioApp) mixerToggle(v workspace, csrf, panel, name, kind string, f m
 // track in the Arrange rail. It reads the saved mixer state once. When the
 // mixer is unavailable, or the score is edition 1, every track gets nothing.
 func (s *studioApp) trackRail(ctx *server.Context, v workspace, csrf string) func(string) gosx.Node {
-	none := func(string) gosx.Node { return gosx.Fragment() }
-	if ctx == nil || s.backend == nil {
-		return none
-	}
-	mixer, err := s.loadMixer(ctx, v)
-	if err != nil || mixer.Edition == 1 {
-		return none
-	}
-	v.Revision, v.Edition = mixer.Revision, mixer.Edition
 	strips := map[string]mixerStrip{}
-	for _, strip := range mixer.Tracks {
-		strips[strip.ID] = strip
+	if ctx != nil && s.backend != nil {
+		if mixer, err := s.loadMixer(ctx, v); err == nil && mixer.Edition != 1 {
+			v.Revision, v.Edition = mixer.Revision, mixer.Edition
+			for _, strip := range mixer.Tracks {
+				strips[strip.ID] = strip
+			}
+		}
 	}
 	return func(track string) gosx.Node {
-		strip, ok := strips[track]
-		if !ok {
-			return gosx.Fragment()
+		var toggles []gosx.Node
+		if strip, ok := strips[track]; ok {
+			toggles = append(toggles, s.mixerToggle(v, csrf, "session", track, "mute", strip.Fields["mute"]), s.mixerToggle(v, csrf, "session", track, "solo", strip.Fields["solo"]))
 		}
-		return gosx.El("div", gosx.Attrs(gosx.Attr("class", "rail-toggles")), s.mixerToggle(v, csrf, "session", track, "mute", strip.Fields["mute"]), s.mixerToggle(v, csrf, "session", track, "solo", strip.Fields["solo"]))
+		input := gosx.El("input", gosx.Attrs(gosx.Attr("type", "text"), gosx.Attr("name", "name"), gosx.Attr("value", track), gosx.Attr("aria-label", "New name for "+track), gosx.BoolAttr("required")))
+		form := ui.Form(ui.FormProps{Action: "/__actions/track-rename", CSRF: csrf, Revision: v.Revision, ReturnTo: "/?panel=session", Class: "action-form"}, hidden("source_revision", v.SourceRevision), hidden("track", track), input, gosx.El("p", gosx.Attrs(gosx.Attr("class", "rail-rename-hint")), gosx.Text("Stop playback before renaming.")), submit("", "", "Rename track"))
+		label := "Rename"
+		if ctx != nil && ctx.Request.URL.Path == "/studio" {
+			label = "✎"
+		}
+		rename := gosx.El("details", gosx.Attrs(gosx.Attr("class", "rail-rename"), gosx.BoolAttr("data-discard-on-close")), gosx.El("summary", gosx.Attrs(gosx.Attr("aria-label", "Rename "+track), gosx.Attr("title", "Rename "+track)), gosx.Text(label)), form)
+		return gosx.El("div", gosx.Attrs(gosx.Attr("class", "rail-toggles")), gosx.Fragment(toggles...), rename)
 	}
 }
 
+// mixerPanShows reports whether mixerPan renders a slider for f.
+func mixerPanShows(v workspace, f mixerField) bool {
+	_, numeric := f.Value.(float64)
+	return f.Supported && v.Edition != 1 && numeric && f.Descriptor.Max > f.Descriptor.Min
+}
+
 // mixerPan shows a track's pan as a horizontal range that saves once per
-// gesture, like the level fader. The reset button returns it to centre. The numeric
-// Set field stays for exact values.
+// gesture, like the level fader. The reset button returns it to centre. The
+// numeric Set field in Device stays for exact values.
 func (s *studioApp) mixerPan(v workspace, csrf, name string, f mixerField) gosx.Node {
 	d := f.Descriptor
-	value, numeric := f.Value.(float64)
-	if !f.Supported || v.Edition == 1 || !numeric || d.Max <= d.Min {
+	value, _ := f.Value.(float64)
+	if !mixerPanShows(v, f) {
 		return gosx.Fragment()
 	}
 	step := "0.01"
@@ -477,9 +402,12 @@ func masterLoudness() gosx.Node {
 	return gosx.El("dl", gosx.Attrs(gosx.Attr("class", "strip-loudness"), gosx.Attr("aria-label", "Master loudness")), gosx.Fragment(rows...))
 }
 
+// mixerField is the exact-value form of one mixer field: a labelled input and
+// Set. Device shows it for the selected channel. A field the service does not
+// support shows as not available, with the reason.
 func (s *studioApp) mixerField(v workspace, csrf, label string, f mixerField) gosx.Node {
 	if !f.Supported {
-		return gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text(label+": "+f.Reason))
+		return mixerUnavailable(label, f.Reason)
 	}
 	value := fmt.Sprint(f.Value)
 	valueType := "text"
@@ -519,13 +447,41 @@ func (s *studioApp) mixerField(v workspace, csrf, label string, f mixerField) go
 		input = selectInput("value", value, descriptor.Values)
 	}
 	if len(f.Choices) > 0 {
-		input = selectInput("value", value, f.Choices)
+		// The service takes these values as the score writes them ("-3dB",
+		// "off"), so they post as text.
+		valueType = "text"
+		current := f.SourceValue
+		if current == "" {
+			current = value + descriptor.Unit
+		}
+		input = choiceInput(current, f.Choices)
 	}
 	fields := []gosx.Node{hidden("path", f.Path), hidden("valueType", valueType), field(label, input), submit("", "", "Set")}
 	if v.Edition == 1 {
-		fields = append(fields, gosx.El("label", gosx.Attrs(gosx.Attr("class", "upgrade-confirm")), gosx.El("input", gosx.Attrs(gosx.Attr("type", "checkbox"), gosx.Attr("name", "confirmUpgrade"), gosx.BoolAttr("required"))), gosx.Text("Upgrade score to edition 2 for this change")))
+		fields = append(fields, upgradeConfirm())
 	}
 	return gosx.El("div", gosx.Attrs(gosx.Attr("class", "mixer-control")), s.form(v, csrf, "mixer", "mixer", fields...))
+}
+
+// choiceInput is a select over the only values a field takes. When the saved
+// value is not one of them it leads with that value, which cannot be chosen,
+// so the control never shows a choice that is not saved.
+func choiceInput(current string, choices []string) gosx.Node {
+	saved := slices.ContainsFunc(choices, func(choice string) bool { return strings.EqualFold(choice, current) })
+	attrs := gosx.Attrs(gosx.Attr("name", "value"))
+	var options []gosx.Node
+	if !saved {
+		attrs = append(attrs, gosx.BoolAttr("required"))
+		options = append(options, gosx.El("option", gosx.Attrs(gosx.Attr("value", ""), gosx.BoolAttr("selected"), gosx.BoolAttr("disabled")), gosx.Text(current)))
+	}
+	for _, choice := range choices {
+		option := gosx.Attrs(gosx.Attr("value", choice))
+		if strings.EqualFold(choice, current) {
+			option = append(option, gosx.BoolAttr("selected"))
+		}
+		options = append(options, gosx.El("option", option, gosx.Text(choice)))
+	}
+	return gosx.El("select", attrs, gosx.Fragment(options...))
 }
 
 func (s *studioApp) history(ctx *server.Context, v workspace, csrf string) gosx.Node {

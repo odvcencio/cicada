@@ -12,6 +12,14 @@ import (
 func TestSamplerPanelShowsPadsChopControlsEffectsAndNativeForms(t *testing.T) {
 	address, client, _ := testApp(t)
 	page := getPage(t, client, address+"/?panel=sampler&pad=3")
+	inputStart := strings.Index(page, `<input id="sampler-expand"`)
+	if inputStart < 0 {
+		t.Fatal("sampler expand checkbox missing")
+	}
+	inputEnd := strings.IndexByte(page[inputStart:], '>')
+	if inputEnd < 0 || !strings.Contains(page[inputStart:inputStart+inputEnd], "data-studio-view-control") {
+		t.Error("sampler expand checkbox is not a view control")
+	}
 	if strings.Count(page, `data-sampler-pad="`) != 16 {
 		t.Fatal("sampler does not have sixteen pads")
 	}
