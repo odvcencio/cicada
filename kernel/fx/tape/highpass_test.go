@@ -16,6 +16,12 @@ import (
 const tapeHighpassDigest = "3c476567c105062755dbcf5e2934d16c28a0a836aaa6f7e705fdde95a5ec88c4"
 
 func TestTapeHighpassDigest(t *testing.T) {
+	if !fx.EchoHighpassEnabled {
+		// Under TinyGo t.Skip fails the test (it has no runtime.Goexit), so
+		// say why and return.
+		t.Log("portable (TinyGo) kernels compile the echo high-pass out: nothing to pin")
+		return
+	}
 	d := bitdigest.New()
 	settings := []Params{
 		{Division: fx.Eighth, Feedback: .7, Wow: .4, Flutter: .2, Saturation: .3, DampHz: 5_000, HighpassHz: 300},

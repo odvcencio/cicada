@@ -17,6 +17,12 @@ import (
 const echoHighpassDigest = "7dcbd1a99ea15f859619da7fc517a244d95c9de161f164f19a1a7f9e02d7d570"
 
 func TestEchoHighpassDigest(t *testing.T) {
+	if !EchoHighpassEnabled {
+		// Under TinyGo t.Skip fails the test (it has no runtime.Goexit), so
+		// say why and return.
+		t.Log("portable (TinyGo) kernels compile the echo high-pass out: nothing to pin")
+		return
+	}
 	d := bitdigest.New()
 	settings := []DelayParams{
 		{Division: Eighth, Feedback: .7, DampHz: 16_000, Width: 1, Mix: 1, HighpassHz: 300},

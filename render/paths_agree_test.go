@@ -96,6 +96,7 @@ var pathsEngineOnly = map[string]string{
 	"detail/instrument-modulation.cicada": "modulators",
 	"detail/modulators.cicada":            "modulators",
 	"drum-machines/main.cicada":           "an arrangement",
+	"fx/dub-echo-highpass.cicada":         "a tape echo",
 	"keys/sampled/bell_keys.cicada":       "sample packs",
 	"keys/sampled/brass_stab.cicada":      "sample packs",
 	"keys/sampled/clav.cicada":            "sample packs",
