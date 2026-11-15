@@ -6,6 +6,7 @@ import (
 	"math"
 
 	"m31labs.dev/cicada/kernel/dsp/detmath"
+	"m31labs.dev/cicada/kernel/dsp/subnormal"
 
 	"m31labs.dev/cicada/kernel/voice/keyboard"
 )
@@ -128,6 +129,7 @@ type Instrument struct {
 	sustainPedal                    bool
 	driveT, gainT, glideAlpha       float32
 	gliding                         bool
+	frames                          uint32 // samples since New or Reset, for flushSubnormals
 }
 
 func New(rate int, params Params) (*Instrument, error) {
@@ -294,6 +296,7 @@ func (i *Instrument) Reset() {
 	i.chorusLP = [2]float32{}
 	i.dcInput, i.dcOutput = [2]float32{}, [2]float32{}
 	i.write, i.clock, i.pwmPhase, i.sustainPedal = 0, 0, 0, false
+	i.frames = 0
 	for c := range i.chorusPhases {
 		i.chorusPhases[c] = float32(c) / 3
 	}
@@ -501,7 +504,39 @@ func (i *Instrument) NextStereo() (float32, float32) {
 	i.dcOutput[0] = float32(float32(left-i.dcInput[0]) + float32(i.dcAlpha*i.dcOutput[0]))
 	i.dcOutput[1] = float32(float32(right-i.dcInput[1]) + float32(i.dcAlpha*i.dcOutput[1]))
 	i.dcInput[0], i.dcInput[1] = left, right
-	return i.dcOutput[0], i.dcOutput[1]
+	left, right = i.dcOutput[0], i.dcOutput[1]
+	i.frames++
+	if i.frames%flushFrames == 0 {
+		i.flushSubnormals()
+	}
+	return left, right
+}
+
+// flushFrames is how often, in samples, flushSubnormals runs. A decaying
+// filter state can stay subnormal for at most this many samples. Flushing
+// the filters at every sample instead cost 11% of the release on arm64,
+// which has no subnormal penalty to win back.
+const flushFrames = 256
+
+// flushSubnormals replaces subnormal values with zeros (kernel/dsp/subnormal)
+// in the chorus and output filters, whose gain to the output is below 4, and
+// in the flushFrames chorus delay slots written since the previous sweep. A
+// slot is read at least 0.0096 s (423 samples at 44.1 kHz) after it is
+// written, so it is flushed before it is read. The sweep runs at sample
+// positions counted from New or Reset, so the result does not depend on the
+// block size or the target.
+func (i *Instrument) flushSubnormals() {
+	for c := range i.chorusLP {
+		i.chorusLP[c] = subnormal.Flush(i.chorusLP[c])
+	}
+	for c := range i.dcOutput {
+		i.dcInput[c] = subnormal.Flush(i.dcInput[c])
+		i.dcOutput[c] = subnormal.Flush(i.dcOutput[c])
+	}
+	for k := 1; k <= flushFrames; k++ {
+		slot := (i.write - k) & 8191
+		i.delay[slot] = subnormal.Flush(i.delay[slot])
+	}
 }
 
 // Slots in the keyboard control table.

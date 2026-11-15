@@ -139,9 +139,11 @@ func (u *liveUI) enableNativeMIDI() {
 			return
 		}
 		u.nativeMIDICancel = nil
+		u.releaseMIDIPrefix("midi:native:")
+		u.midiReady = false
+		u.syncMIDIState()
 		u.nativeMIDINames = nil
 		u.renderMIDIPortDevices()
-		u.releaseMIDIPrefix("midi:native:")
 		u.query("[data-live-control=midi]").Set("textContent", "Enable MIDI")
 		u.query("[data-live-control=midi]").Set("disabled", false)
 		if canceled {
@@ -210,6 +212,8 @@ func (u *liveUI) readNativeMIDI(ctx context.Context, generation uint64) (message
 		}
 		switch event.Type {
 		case "devices":
+			u.midiReady = true
+			u.syncMIDIState()
 			for _, id := range event.Removed {
 				u.releaseMIDIPrefixAt("midi:native:"+id+":", at)
 			}

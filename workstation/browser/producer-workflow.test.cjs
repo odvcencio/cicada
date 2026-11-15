@@ -8,6 +8,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const stall = require('./page-stall.cjs');
+const { withGpuRaster } = require('./chrome-gpu-raster.cjs');
 
 async function until(fn, message) {
   const end = Date.now() + 20000;
@@ -30,7 +31,9 @@ test('Producer workflow edits vocal timing, joins, effect chains and drawn autom
   const initialSource = currentSource();
   assert.ok(initialSource.includes('// cicada-vocal-test: disposable fixture'));
   const { chromium } = require(process.env.CICADA_PLAYWRIGHT_MODULE || 'playwright');
-  const browser = await chromium.launch(stall.withChromeLog({ headless: true, executablePath: process.env.CICADA_CHROME_PATH, args: ['--no-sandbox', '--mute-audio'] }, chromium));
+  // GPU rasterization: in software, Chrome 152 can freeze this page for good
+  // after the first click on the Session page (chrome-gpu-raster.cjs).
+  const browser = await chromium.launch(stall.withChromeLog(withGpuRaster({ headless: true, executablePath: process.env.CICADA_CHROME_PATH, args: ['--no-sandbox', '--mute-audio'] }), chromium));
   const storage = process.env.CICADA_PRODUCER_STORAGE || '/tmp/cicada-pro2-browser-session.json';
   assert.ok(path.isAbsolute(storage) && storage.startsWith('/tmp/'));
   const desktop = await browser.newContext({ viewport: { width: 1440, height: 1100 }, reducedMotion: 'reduce', ...(fs.existsSync(storage) ? { storageState: storage } : {}) });

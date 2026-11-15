@@ -372,3 +372,26 @@ func (c *countedSnapshot) Compare(before, after []byte, files map[string][]byte)
 	c.calls++
 	return c.SnapshotRenderCheck.Compare(before, after, files)
 }
+
+func TestSplitCacheSeparatesRenderModes(t *testing.T) {
+	before := []byte("cicada 2\ntrack bass acid { mute = on }\npattern beat { " + chanceSteps + " }\narrange { place run bass beat { at = @1.1.1 length = 4bars } }\n")
+	after := []byte("cicada 2\ntrack bass acid { mute = on }\npattern beat { " + chanceSteps + " }\narrange { place run bass beat { at = @1.1.1 length = 2bars } place run-2 bass beat { at = @3.1.1 length = 2bars } }\n")
+	path := writeProject(t, map[string]string{"main.cicada": string(before)})
+	cached := Cached(path, New(path))
+	same, normalID, err := cached.Compare(before, after, nil)
+	if err != nil || !same {
+		t.Fatalf("normal comparison: same=%v err=%v", same, err)
+	}
+	split := cached.(edits.SplitRenderCheck).ForSplit().(edits.SnapshotRenderCheck)
+	same, splitID, err := split.Compare(before, after, nil)
+	if err != nil || same || normalID == splitID {
+		t.Fatalf("split comparison: same=%v ids equal=%v err=%v", same, normalID == splitID, err)
+	}
+	again := cached.(edits.SplitRenderCheck).ForSplit().(edits.SnapshotRenderCheck)
+	AfterSnapshot = func() { t.Error("cached split rendered again") }
+	defer func() { AfterSnapshot = nil }()
+	_, _, err = again.Compare(before, after, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+}

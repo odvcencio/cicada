@@ -9,6 +9,22 @@ import (
 	"github.com/andybalholm/brotli"
 )
 
+// Two pairs of numbers bound the core kernel (decision 10, hypha://m31labs/cicada):
+//   - the working limit, rawLimit and brotliLimit: the measured size plus 4,096 bytes each,
+//     re-based by a pull request whose purpose adds kernel code, which states the old limit,
+//     the measured size and the new limit here;
+//   - the hard ceiling of decision 9, rawCeiling and brotliCeiling: 335,872 bytes raw and
+//     122,880 Brotli. No pull request moves it; going over it needs the owner.
+//
+// 332,139 bytes raw and 120,863 Brotli: re-based on 2026-11-12 by #323, which flushes
+// subnormal numbers in the decaying state and smoothed controls of the voices and effects
+// (kernel/dsp/subnormal). Old limit 328,525 raw and 119,562 Brotli; measured size with main
+// fc3f73ad merged 328,043 raw and 116,767 Brotli (TinyGo 0.41.1, Binaryen 133); new limit the
+// measured size plus 4,096. The flushes add about 3,458 raw bytes: the piano's and the
+// reverb's sweeps about 770 and 570 (wasm-opt 116, when they were added), the rest the sweeps
+// of the delay, compressor, acid voice, drum kit and sample voice and the reverb's
+// per-channel diffuser sweep.
+//
 // 328,525 bytes raw and 119,562 bytes Brotli: lowered on 2026-11-12 from 328 KiB raw and
 // 120 KiB Brotli to the core's size with the whole determinism stack merged with main 6f8d023a
 // (324,429 bytes raw and 115,466 Brotli at commit db973cb2, TinyGo 0.41.1 and Binaryen 133) plus
@@ -26,8 +42,12 @@ import (
 // (version 116, which scripts/wasm-opt.sh uses when WASMOPT is unset) it is 329,264.
 // Raised from 300 KiB to 320 KiB on 2026-10-04 by owner decision so the graph delay/comb,
 // experimental guitar and phase-modulation voices fit together (about 321.7 KB raw).
-const rawLimit = 328_525
-const brotliLimit = 119_562
+const rawLimit = 332_139
+const brotliLimit = 120_863
+
+// rawCeiling and brotliCeiling are decision 9's hard ceiling (see above).
+const rawCeiling = 335_872
+const brotliCeiling = 122_880
 const processorLimit = 5 * 1024
 const keysModularRawLimit = 576 * 1024
 const keysModularBrotliLimit = 224 * 1024
@@ -75,8 +95,14 @@ func main() {
 	} else {
 		fmt.Printf("kernel WASM: raw=%d/%d bytes, Brotli=%d/%d bytes\n", len(data), rawLimit, compressed.Len(), brotliLimit)
 	}
-	if !reportOnly && !keysModular && !modular && (len(data) > rawLimit || compressed.Len() > brotliLimit) {
-		fail(fmt.Errorf("kernel WASM exceeds the size budget"))
+	if !reportOnly && !keysModular && !modular {
+		fmt.Printf("kernel WASM ceiling (decision 9): raw=%d/%d bytes, Brotli=%d/%d bytes\n", len(data), rawCeiling, compressed.Len(), brotliCeiling)
+		if len(data) > rawCeiling || compressed.Len() > brotliCeiling {
+			fail(fmt.Errorf("kernel WASM is over the ceiling of decision 9: needs the owner"))
+		}
+		if len(data) > rawLimit || compressed.Len() > brotliLimit {
+			fail(fmt.Errorf("kernel WASM exceeds the size budget (the working limit; a pull request whose purpose adds kernel code re-bases it, see cmd/cicada-wasm-size)"))
+		}
 	}
 	if len(os.Args) == 3 {
 		processor, err := os.ReadFile(os.Args[2])
