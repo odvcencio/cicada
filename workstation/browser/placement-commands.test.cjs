@@ -120,16 +120,12 @@ test('Studio views, Record entry and Mac placement commands retain drafts and Un
     live:!!window.__arrangePaneRefs.live && window.__arrangePaneRefs.live===document.querySelector('#cicada-live'),
   }));
   const recordingRevealed = async (entry='vocal navigation') => {
-    await page.locator('#view-panel-arrange').waitFor({state:'visible'});
-    await page.locator('#studio-center').waitFor({state:'visible'});
-    try { await until(()=>headingInCenter('#vocals'),'Record did not scroll vocal controls into the visible center pane'); }
-    catch (error) {
-      const layout=await page.evaluate(()=>{
-        const pane=document.querySelector('#studio-center .shell-scroll'), heading=document.querySelector('#vocals .panel-heading');
-        return {pane:pane.getBoundingClientRect().toJSON(),heading:heading.getBoundingClientRect().toJSON(),scrollTop:pane.scrollTop,scrollHeight:pane.scrollHeight,view:document.querySelector('#studio-center').getAttribute('data-studio-region'),region:document.querySelector('#studio-shell').getAttribute('data-phone-region'),href:location.href};
-      });
-      assert.fail(entry+': '+error.message+' '+JSON.stringify(layout));
-    }
+    await page.locator('#detail-panel-takes').waitFor({state:'visible'});
+    assert.equal(new URL(page.url()).searchParams.get('dock'), 'takes');
+    assert.equal(await page.locator('#vocals .panel-heading').evaluate(node=>{
+      const bounds=node.getBoundingClientRect(), pane=document.querySelector('#studio-detail .shell-scroll').getBoundingClientRect();
+      return bounds.top>=pane.top-1 && bounds.bottom<=Math.min(pane.bottom,innerHeight)+1;
+    }), true, entry+' heading must be within the visible dock');
     await page.waitForTimeout(100);
     assert.equal(await page.locator('#vocals [data-capture-control=record]').isDisabled(),true,'fixture without an audio track must keep Record take disabled');
     assert.equal(await block('one').getAttribute('data-placement-selected'),'true','revealing recording changed the selected placement');
@@ -308,7 +304,7 @@ test('Studio views, Record entry and Mac placement commands retain drafts and Un
     }),true,'placement timeline must appear in the initial Arrange viewport');
     const vocalLink=page.locator('#view-panel-arrange').getByRole('link',{name:'Record & comp vocals',exact:true});
     const timelineLink=page.locator('#view-panel-arrange').getByRole('link',{name:'Song timeline',exact:true});
-    assert.equal(await vocalLink.getAttribute('href'),'#vocals');
+    assert.equal(new URL(await vocalLink.getAttribute('href'), page.url()).searchParams.get('dock'),'takes');
     assert.equal(await timelineLink.getAttribute('href'),'#arrangement');
     const beforeLinks={posts:posts.length,navigations:navigations.length};
     await page.evaluate(()=>{window.__arrangeNavigationDocument=document;window.__arrangePaneRefs={shell:document.querySelector('#studio-shell'),live:document.querySelector('#cicada-live')};});
@@ -387,8 +383,7 @@ test('Studio views, Record entry and Mac placement commands retain drafts and Un
     }
     assert.equal((await state()).source,fixture);
 
-    // On a narrow window, Record also returns from Detail to the center region
-    // so the revealed Arrange controls are actually on screen.
+    // On a narrow window, Record reveals the Detail region.
     await shellTab('view','session');
     await page.setViewportSize({width:390,height:844});
     const beforeRegions={posts:posts.length,navigations:navigations.length};
@@ -406,7 +401,7 @@ test('Studio views, Record entry and Mac placement commands retain drafts and Un
     const beforeMobileRecord={posts:posts.length,navigations:navigations.length};
     await page.locator('[data-gosx-command="transport.record"]').click();
     await recordingRevealed();
-    assert.equal(await page.locator('#studio-shell').getAttribute('data-phone-region'),'center');
+    assert.equal(await page.locator('#studio-shell').getAttribute('data-phone-region'),'detail');
     assert.equal(posts.length,beforeMobileRecord.posts);
     assert.equal(navigations.length,beforeMobileRecord.navigations);
     assert.equal(await draftEditor.inputValue(),scoreDraft,'mobile Record discarded a Code draft');
@@ -422,6 +417,9 @@ test('Studio views, Record entry and Mac placement commands retain drafts and Un
     await shellTab('view','session');
     await page.locator('[data-gosx-command="transport.record"]').click();
     await recordingRevealed('context round-trip');
+    // Record reveals the Takes dock and leaves the main view where it was.
+    assert.equal(await page.locator('#view-panel-session').isVisible(),true,'Record changed the main view');
+    await shellTab('view','arrange');
     // Hold the real placement GET so the local choice is newer than the
     // server-rendered dock defaults. Do not mock its response or add a delay.
     let releaseSelection, selectionRequested;

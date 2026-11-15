@@ -156,31 +156,63 @@ func studioEditRequest(r *http.Request, edit studioEdit) *http.Request {
 }
 
 // fileRevision answers the revision of one project file's text as it is on
-// disk; file "" is the score. Code recovery asks for it on every checkpoint,
-// so it takes no lock and parses nothing: musical edits and transport
-// commands never wait for it.
+// disk, and textRevision, the revision of that text with each CRLF read as
+// LF (a lone CR is kept); file "" is the score. Code recovery asks for it on
+// every checkpoint, so it takes no lock and parses nothing: musical edits and
+// transport commands never wait for it. A name that is not a project source,
+// or a file that cannot be read, is answered 422; 404 means a service without
+// this route.
 func (s *studio) fileRevision(w http.ResponseWriter, r *http.Request) {
-	name, path := r.URL.Query().Get("file"), s.path
-	if name != "" {
-		if known, ok := s.filePaths.Load(name); ok {
-			path = known.(string)
-		} else {
-			found, err := s.filePath(name)
-			if err != nil {
-				studioJSON(w, 404, map[string]any{"error": err.Error()})
+	name := r.URL.Query().Get("file")
+	var source []byte
+	var err error
+	if name == "" {
+		source, err = os.ReadFile(s.path)
+	} else {
+		known, ok := s.filePaths.Load(name)
+		if !ok {
+			found, findErr := s.fileLocation(name)
+			if findErr != nil {
+				studioJSON(w, 422, map[string]any{"error": findErr.Error()})
 				return
 			}
-			s.filePaths.Store(name, found)
-			path = found
+			known, _ = s.filePaths.LoadOrStore(name, found)
+		}
+		// Through os.Root: a symlink put in place after the name was checked
+		// cannot lead outside the project.
+		at := known.(studioFileLocation)
+		var root *os.Root
+		if root, err = os.OpenRoot(at.root); err == nil {
+			source, err = root.ReadFile(at.name)
+			root.Close()
 		}
 	}
-	source, err := os.ReadFile(path)
 	if err != nil {
-		studioJSON(w, 404, map[string]any{"error": err.Error()})
+		studioJSON(w, 422, map[string]any{"error": err.Error()})
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	studioJSON(w, 200, map[string]any{"file": name, "revision": studioRevision(source)})
+	studioJSON(w, 200, map[string]any{"file": name, "revision": studioRevision(source), "textRevision": studioRevision(bytes.ReplaceAll(source, []byte("\r\n"), []byte("\n")))})
+}
+
+// studioFileLocation is a project file found once by name: the project's
+// root and the file's path inside it.
+type studioFileLocation struct{ root, name string }
+
+// fileLocation is filePath for fileRevision: the file must be a project
+// source inside the project's root.
+func (s *studio) fileLocation(name string) (studioFileLocation, error) {
+	sources, err := project.ReadSources(s.path, nil)
+	if err != nil {
+		return studioFileLocation{}, err
+	}
+	for _, file := range sources.Files {
+		relative, err := filepath.Rel(sources.Root, file.Path)
+		if err == nil && filepath.IsLocal(relative) && filepath.ToSlash(relative) == name {
+			return studioFileLocation{root: sources.Root, name: relative}, nil
+		}
+	}
+	return studioFileLocation{}, fmt.Errorf("file is not a project source")
 }
 
 func (s *studio) projectRevision(w http.ResponseWriter, r *http.Request) {

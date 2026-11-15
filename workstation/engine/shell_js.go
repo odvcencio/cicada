@@ -92,7 +92,7 @@ func mountShell(host enginewasm.Context) (enginewasm.Handle, error) {
 			case "transport.home":
 				selector = "#transport-form button[value=home]"
 			case "transport.record":
-				if !revealVocalWorkspace(ctx, host, root) {
+				if !revealVocalWorkspace(ctx, host, root, true) {
 					return
 				}
 				action := "record"
