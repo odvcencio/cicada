@@ -123,7 +123,7 @@ func TestVoiceDropChecksPackZones(t *testing.T) {
 
 func TestVoiceChangeReferences(t *testing.T) {
 	for _, tc := range []struct{ declaration, want string }{
-		{`fx duck comp { sidechain = "lead" }`, "effect duck sidechain"},
+		{"fx duck comp { sidechain = \"lead\" }\nbus music { insert = duck }", "effect duck sidechain"},
 		{`envelope follow { source = lead attack = 10ms release = 200ms }`, "envelope follow source"},
 	} {
 		score := "cicada 2\ntempo 120\n" + tc.declaration + "\ntrack lead acid {}\npattern melody { a1 . c2 . }\nscene main { lead = melody }\nsong { main }\n"
@@ -189,8 +189,8 @@ func TestVoiceChangeRefusesUnmodeledInput(t *testing.T) {
 	previous := notation.PatternSyntax[key]
 	delete(notation.PatternSyntax, key)
 	t.Cleanup(func() { notation.PatternSyntax[key] = previous })
-	score := "cicada 2\ntempo 120\ntrack lead acid {}\npattern melody { c4 . e4 . bend: 0ct . 0ct . }\nscene main { lead = melody }\nsong { main }\n"
-	result, err, _, _ := applyVoiceChange(t, score, `{"kind":"settrackvoice","track":"lead","voice":"sound"}`, true)
+	score := "cicada 2\ntempo 120\ninstrument organ { voice mono { out = sine(pitch) * env(gate, 300ms) } }\ntrack lead acid {}\npattern melody { c4 . e4 . bend: 0ct . 0ct . }\nscene main { lead = melody }\nsong { main }\n"
+	result, err, _, _ := applyVoiceChange(t, score, `{"kind":"settrackvoice","track":"lead","voice":"organ"}`, false)
 	if err == nil || result.Error == nil || result.Error.Reason != "voice_input_unmodeled" || !strings.Contains(strings.Join(result.Error.Uses, " "), "row bend") {
 		t.Fatalf("%v %+v", err, result.Error)
 	}
