@@ -113,7 +113,7 @@ func (p *shellPage) panel(name string) gosx.Node {
 	if name == "code" {
 		v = p.codeView
 	}
-	return shellLinks(p.ctx.Request.URL, p.s.shellPanel(p.ctx, v, p.csrf, name))
+	return shellPanelLinks(p.ctx.Request.URL, p.s.shellPanel(p.ctx, v, p.csrf, name), name == "session")
 }
 
 // regionContent renders one update region's content. The bar and step readout
@@ -209,7 +209,16 @@ func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, boo
 	}
 	state := p.transport()
 	browserOpen, codeOpen := shellPanes(ctx.Request)
-	registerShell(ctx, tab, dock, browserOpen, codeOpen)
+	if query.Get("reveal") == "sampler" || query.Get("reveal") == "takes" {
+		browserOpen = true
+	}
+	libraryTab := oneOf(query.Get("library"), []string{"sounds", "samples", "takes"})
+	if query.Get("reveal") == "sampler" {
+		libraryTab = "samples"
+	} else if query.Get("reveal") == "takes" {
+		libraryTab = "takes"
+	}
+	registerShell(ctx, tab, dock, libraryTab, browserOpen, codeOpen)
 	registerArrangementTempos(ctx)
 
 	keys := func(id string) string {
@@ -249,10 +258,19 @@ func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, boo
 	}
 
 	browser := ui.Browser(ui.BrowserProps{Open: browserOpen, Width: strconv.Itoa(shellBrowserWidth)},
-		ui.BrowserSection(ui.BrowserSectionProps{ID: "browser-instruments", Signal: "$layout.instrumentsOpen", Title: "Instruments", Open: true}, p.region("browser-instruments")),
-		ui.BrowserSection(ui.BrowserSectionProps{ID: "browser-generate", Signal: "$layout.generateOpen", Title: "Generate"}, p.region("browser-generate")),
-		ui.BrowserSection(ui.BrowserSectionProps{ID: "browser-takes", Signal: "$layout.takesOpen", Title: "Takes"}, p.region("browser-takes")),
-		ui.BrowserSection(ui.BrowserSectionProps{ID: "browser-sampler", Signal: "$layout.samplerOpen", Title: "Sampler"}, p.region("browser-sampler")),
+		gosx.El("div", gosx.Attrs(gosx.Attr("id", "library-tabs"), gosx.Attr("data-gosx-tabs", ""), gosx.Attr("data-gosx-tabs-signal", "$layout.libraryTab")),
+			gosx.El("nav", gosx.Attrs(gosx.Attr("class", "gsx-tabs__list library-tabs__list"), gosx.Attr("role", "tablist"), gosx.Attr("aria-orientation", "horizontal"), gosx.Attr("aria-label", "Library")),
+				ui.Tab(ui.TabProps{ID: "library-tab-sounds", Value: "sounds", Href: shellLink(current, "library", "sounds"), Panel: "library-panel-sounds", Selected: libraryTab == "sounds"}, gosx.Text("Sounds")),
+				ui.Tab(ui.TabProps{ID: "library-tab-samples", Value: "samples", Href: shellLink(current, "library", "samples"), Panel: "library-panel-samples", Selected: libraryTab == "samples"}, gosx.Text("Samples")),
+				ui.Tab(ui.TabProps{ID: "library-tab-takes", Value: "takes", Href: shellLink(current, "library", "takes"), Panel: "library-panel-takes", Selected: libraryTab == "takes"}, gosx.Text("Takes"))),
+			ui.TabPanel(ui.TabPanelProps{ID: "library-panel-sounds", Tab: "library-tab-sounds", Hidden: libraryTab != "sounds"},
+				gosx.El("section", gosx.Attrs(gosx.Attr("id", "browser-instruments"), gosx.Attr("class", "shell-section")), p.region("browser-instruments")),
+				ui.BrowserSection(ui.BrowserSectionProps{ID: "browser-generate", Signal: "$layout.generateOpen", Title: "Generate"}, p.region("browser-generate"))),
+			ui.TabPanel(ui.TabPanelProps{ID: "library-panel-samples", Tab: "library-tab-samples", Hidden: libraryTab != "samples"},
+				gosx.El("section", gosx.Attrs(gosx.Attr("id", "browser-sampler"), gosx.Attr("class", "shell-section")), p.region("browser-sampler"))),
+			ui.TabPanel(ui.TabPanelProps{ID: "library-panel-takes", Tab: "library-tab-takes", Hidden: libraryTab != "takes"},
+				gosx.El("section", gosx.Attrs(gosx.Attr("id", "browser-takes"), gosx.Attr("class", "shell-section")), p.region("browser-takes"))),
+		),
 	)
 	center := ui.Center(ui.CenterProps{
 		View:        tab,
@@ -301,7 +319,8 @@ func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, boo
 type dockClip struct{ name, detail string }
 
 // dockSelection names what the detail dock edits: the Clip tab's pattern with
-// the tracks that play it, and the Device and Automation tabs' track. It
+// the tracks that play it, and the Device and Automation tabs' channel (a
+// track unless the Mixer opened a bus, a return, the master or an effect). It
 // follows the same defaults as the editors, so the header matches them.
 func dockSelection(v workspace, query url.Values) (dockClip, string) {
 	if v.Project == nil {
@@ -340,9 +359,16 @@ func dockSelection(v workspace, query url.Values) (dockClip, string) {
 		}
 		clip = dockClip{name: p.ID, detail: strings.Join(parts, " · ")}
 	}
+	if query.Get("createScene") == "1" {
+		clip = dockClip{}
+		trackID, sceneID := query.Get("track"), query.Get("scene")
+		if silentSongScenes(v.Project, trackID)[sceneID] {
+			clip = dockClip{name: "New pattern", detail: trackID + " · " + sceneID}
+		}
+	}
 	track := ""
-	if t := deviceTrack(v.Project, query); t != nil {
-		track = t.ID + " · " + t.Kind
+	if channel, ok := v.deviceSelection(query); ok {
+		track = channel.Title()
 	}
 	return clip, track
 }
@@ -411,13 +437,13 @@ func shellPanes(r *http.Request) (library, code bool) {
 }
 
 // registerShell declares the shell's shared signals, persisted layout and commands.
-func registerShell(ctx *server.Context, tab, dock string, browserOpen, codeOpen bool) {
+func registerShell(ctx *server.Context, tab, dock, libraryTab string, browserOpen, codeOpen bool) {
 	runtime := ctx.Runtime()
 	layout := func(name string, initial any) controller.Output {
 		return controller.Output{Name: name, Signal: "$layout." + name, Initial: initial}
 	}
 	var save, load []controller.StorageSlot
-	for _, name := range []string{"browserWidth", "codeWidth", "dockHeight", "browserOpen", "codeOpen", "instrumentsOpen", "generateOpen", "takesOpen", "samplerOpen"} {
+	for _, name := range []string{"browserWidth", "codeWidth", "dockHeight", "browserOpen", "codeOpen", "instrumentsOpen", "presetSaveOpen", "instrumentRecordOpen", "generateOpen", "takesOpen", "samplerOpen"} {
 		slot := controller.StorageSlot{Key: name, Signal: "$layout." + name}
 		save, load = append(save, slot), append(load, slot)
 	}
@@ -431,8 +457,8 @@ func registerShell(ctx *server.Context, tab, dock string, browserOpen, codeOpen 
 			{Name: "selectionActive", Signal: "$selectionActive", Initial: false},
 			{Name: "placementSelectionActive", Signal: "$placementSelectionActive", Initial: false},
 			layout("browserWidth", shellBrowserWidth), layout("codeWidth", shellCodeWidth), layout("dockHeight", shellDockHeight),
-			layout("browserOpen", browserOpen), layout("codeOpen", codeOpen),
-			layout("instrumentsOpen", true), layout("generateOpen", false), layout("takesOpen", false), layout("samplerOpen", false),
+			layout("browserOpen", browserOpen), layout("codeOpen", codeOpen), layout("libraryTab", libraryTab),
+			layout("instrumentsOpen", false), layout("presetSaveOpen", false), layout("instrumentRecordOpen", false), layout("generateOpen", false), layout("takesOpen", false), layout("samplerOpen", false),
 		},
 		Storage: &controller.Storage{Area: "local", Namespace: "studio:layout", Load: load, Save: save},
 	})
@@ -445,13 +471,14 @@ func registerShell(ctx *server.Context, tab, dock string, browserOpen, codeOpen 
 // shellKept lists the query keys a shell destination carries over from the
 // page the user is on. Everything else comes from the destination itself, so a
 // stale pattern step or lane never survives an explicit choice.
-var shellKept = []string{"tab", "dock", "region", "file"}
+var shellKept = []string{"tab", "dock", "library", "region", "file"}
 
 var shellLinkPattern = regexp.MustCompile(`href="(/\?[^"]*)"`)
 
 // shellDestination turns a legacy panel destination ("/?panel=<name>&<state>")
 // into the matching /studio URL: the destination's own state plus the shell
-// selection and file from "from". Other targets are returned unchanged.
+// selection and file from "from". A Mixer destination also keeps the channel
+// Device shows. Other targets are returned unchanged.
 func shellDestination(from *url.URL, target string, needPanel bool) string {
 	parsed, err := url.Parse(target)
 	if err != nil || parsed.IsAbs() || parsed.Host != "" || parsed.Path != "/" {
@@ -461,8 +488,14 @@ func shellDestination(from *url.URL, target string, needPanel bool) string {
 	if needPanel && query.Get("panel") == "" {
 		return target
 	}
+	kept := shellKept
+	if query.Get("panel") == "mixer" {
+		// A Mixer strip's save comes back with the channel Device shows, so a
+		// fader move does not send Device to another channel.
+		kept = append(kept[:len(kept):len(kept)], "deviceTrack", "placement")
+	}
 	query.Del("panel")
-	for _, name := range shellKept {
+	for _, name := range kept {
 		if value := from.Query().Get(name); value != "" && query.Get(name) == "" {
 			query.Set(name, value)
 		}
@@ -501,6 +534,10 @@ var (
 // "/". A GET form keeps the shell selection and file as hidden fields and drops
 // the legacy "panel" field.
 func shellLinks(current *url.URL, node gosx.Node) gosx.Node {
+	return shellPanelLinks(current, node, false)
+}
+
+func shellPanelLinks(current *url.URL, node gosx.Node, arrange bool) gosx.Node {
 	rendered := gosx.RenderHTML(node)
 	if !strings.Contains(rendered, `href="/?`) && !shellGetForm.MatchString(rendered) {
 		return node
@@ -517,7 +554,23 @@ func shellLinks(current *url.URL, node gosx.Node) gosx.Node {
 	})
 	return gosx.RawHTML(shellLinkPattern.ReplaceAllStringFunc(rendered, func(match string) string {
 		target := html.UnescapeString(shellLinkPattern.FindStringSubmatch(match)[1])
-		return `href="` + html.EscapeString(shellDestination(current, target, true)) + `"`
+		destination := shellDestination(current, target, true)
+		if arrange {
+			legacy, err := url.Parse(target)
+			if err == nil {
+				q := legacy.Query()
+				panel := q.Get("panel")
+				if (panel == "sampler" && q.Get("placement") != "") || (panel == "takes" && q.Get("clip") != "") {
+					resolved, _ := url.Parse(destination)
+					query := resolved.Query()
+					query.Set("reveal", panel)
+					query.Set("region", "browser")
+					resolved.RawQuery = query.Encode()
+					destination = resolved.String()
+				}
+			}
+		}
+		return `href="` + html.EscapeString(destination) + `"`
 	}))
 }
 
@@ -586,7 +639,7 @@ func (s *studioApp) shellPanel(ctx *server.Context, v workspace, csrf, name stri
 	case "session":
 		// Automation lives in its detail tab in the shell. The standalone
 		// Session panel still renders its editors through panel().
-		timeline := s.session(ctx, v, csrf, ctx.Request.URL.Query().Get("placement"))
+		timeline := s.sessionView(ctx, v, csrf, ctx.Request.URL.Query().Get("placement"), true)
 		vocals := s.vocals(ctx, v, csrf)
 		if v.Project.Edition != 2 {
 			return timeline

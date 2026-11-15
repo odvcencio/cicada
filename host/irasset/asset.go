@@ -1,11 +1,11 @@
-// Package irasset fetches and prepares licensed impulse responses outside the
-// audio callback. It verifies exact WAV bytes before allocating decoded PCM.
+// Package irasset prepares licensed impulse responses outside the audio
+// callback. It verifies exact WAV bytes before allocating decoded PCM.
+// Package irfetch downloads them; it is apart so that the score compiler
+// does not link net/http.
 package irasset
 
 import (
 	"bufio"
-	"bytes"
-	"context"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"net/http"
 	"net/url"
 	"strings"
 
@@ -100,45 +99,6 @@ func ReadManifest(r io.Reader) (Manifest, error) {
 		return Manifest{}, errors.New("trailing impulse manifest content")
 	}
 	return m, nil
-}
-
-// Fetch bounds the transfer and verifies its checksum before returning any
-// audio. The caller controls cancellation and HTTP timeouts through context
-// and client. Call it on a worker or host thread, never an audio owner.
-func Fetch(ctx context.Context, client *http.Client, e Entry) ([]byte, error) {
-	if err := e.Validate(); err != nil {
-		return nil, err
-	}
-	if client == nil {
-		return nil, errors.New("impulse fetch requires an HTTP client")
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, e.URL, nil)
-	if err != nil {
-		return nil, err
-	}
-	response, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("impulse fetch returned HTTP %d", response.StatusCode)
-	}
-	if response.ContentLength > e.Bytes {
-		return nil, errors.New("impulse transfer exceeds declared byte count")
-	}
-	data, err := io.ReadAll(io.LimitReader(response.Body, e.Bytes+1))
-	if err != nil {
-		return nil, err
-	}
-	if int64(len(data)) != e.Bytes {
-		return nil, errors.New("impulse transfer differs from declared byte count")
-	}
-	checksum, err := audioasset.SHA256(bytes.NewReader(data))
-	if err != nil || checksum != e.SHA256 {
-		return nil, errors.New("impulse transfer checksum mismatch")
-	}
-	return data, nil
 }
 
 // Impulse contains owned, verified PCM at the requested sample rate. It is

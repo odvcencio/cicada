@@ -10,7 +10,7 @@ import (
 // Only the private startup URL printed to the desktop parent carries this
 // one-use capability. It never appears in workspace HTML or collaboration links.
 func (s *studioApp) bootstrapLocalOwner(w http.ResponseWriter, r *http.Request) {
-	s.bootstrapOwner(w, r, "/")
+	s.bootstrapOwner(w, r, "/studio")
 }
 
 func (s *studioApp) bootstrapNativeOwner(w http.ResponseWriter, r *http.Request) {

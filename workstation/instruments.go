@@ -19,8 +19,8 @@ func (s *studioApp) instruments(ctx *server.Context, v workspace, csrf string) g
 		return failure(fmt.Errorf("save a valid score to open instruments"))
 	}
 	p := v.Project
-	var library []gosx.Node
-	for _, patch := range instrument.Patches() {
+	var library, details []gosx.Node
+	for i, patch := range instrument.Patches() {
 		instrumentName := availableInstrumentName(p, patch.ID)
 		trackName := availableInstrumentTrack(p, patch.ID)
 		voices := "8-note polyphony"
@@ -28,11 +28,15 @@ func (s *studioApp) instruments(ctx *server.Context, v workspace, csrf string) g
 			voices = "Monophonic"
 		}
 		form := s.form(v, csrf, "instruments", "instrument", hidden("action", "add-preset"), hidden("pattern", patch.ID), field("Instrument name", textInput("newName", instrumentName)), field("New track name", textInput("track", trackName)), submit("", "", "Add instrument and track"))
-		listen := gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-sound-preview", patch.ID), gosx.Attr("data-sound-name", patch.Name), gosx.Attr("aria-label", "Listen to "+patch.Name), gosx.Attr("aria-pressed", "false"), gosx.BoolAttr("disabled")), gosx.Text("Listen"))
-		library = append(library, gosx.El("section", gosx.Attrs(gosx.Attr("class", "instrument-patch"), gosx.Attr("data-instrument-patch", patch.ID)),
-			gosx.El("div", gosx.Attrs(gosx.Attr("class", "instrument-patch-heading")), gosx.El("strong", gosx.Text(patch.Name)), listen),
-			gosx.El("small", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text(voices)), gosx.El("p", gosx.Text(patch.Description)),
-			gosx.El("details", gosx.El("summary", gosx.Text("Add to song")), form)))
+		listen := gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-sound-preview", patch.ID), gosx.Attr("data-sound-name", patch.Name), gosx.Attr("aria-label", "Audition "+patch.Name), gosx.Attr("aria-pressed", "false"), gosx.BoolAttr("disabled")), gosx.Text("Audition"))
+		library = append(library, gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("class", "instrument-patch"), gosx.Attr("data-instrument-patch", patch.ID), gosx.Attr("aria-controls", "sound-detail-"+patch.ID), gosx.Attr("data-sound-search-text", patch.Name+" "+patch.Description), gosx.Attr("aria-pressed", strconv.FormatBool(i == 0))),
+			gosx.El("span", gosx.Attrs(gosx.Attr("class", "instrument-patch-tile"), gosx.Attr("aria-hidden", "true")), gosx.Text(string([]rune(patch.Name)[0]))),
+			gosx.El("span", gosx.Attrs(gosx.Attr("class", "instrument-patch-label")), gosx.El("strong", gosx.Text(patch.Name)), gosx.El("small", gosx.Text(voices)))))
+		attrs := []any{gosx.Attr("id", "sound-detail-"+patch.ID), gosx.Attr("data-sound-detail", patch.ID)}
+		if i != 0 {
+			attrs = append(attrs, gosx.BoolAttr("hidden"))
+		}
+		details = append(details, gosx.El("div", gosx.Attrs(attrs...), gosx.El("strong", gosx.Text(patch.Name)), gosx.El("p", gosx.Text(patch.Description)), listen, gosx.El("details", gosx.El("summary", gosx.Text("Add")), form, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Adding an instrument and track is one Undo step. Use Create pattern on its card to start writing notes, or assign an existing notes pattern in the pattern editor.")))))
 	}
 	var tracks []gosx.Node
 	for _, track := range p.Tracks {
@@ -67,26 +71,29 @@ func (s *studioApp) instruments(ctx *server.Context, v workspace, csrf string) g
 	}
 	props, _ := json.Marshal(map[string]any{"csrf": csrf, "tempo": p.TempoMilli, "root": p.Key.Root, "scale": p.Key.Scale})
 	sounds := meterEngine(ctx, engine.Config{Name: "CicadaSounds", Kind: engine.KindSurface, MountID: "cicada-sounds", Runtime: engine.RuntimeGoWASM, Props: props, Capabilities: []engine.Capability{engine.CapFetch, engine.CapKeyboard}, RequiredCapabilities: []engine.Capability{engine.CapWASM, engine.CapFetch}},
-		gosx.Fragment(gosx.El("p", gosx.Attrs(gosx.Attr("data-sound-status", ""), gosx.Attr("role", "status"), gosx.Attr("aria-live", "polite")), gosx.Text("Preparing sound previews…")),
-			gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-sound-stop", ""), gosx.BoolAttr("disabled")), gosx.Text("Stop preview")),
-			gosx.El("div", gosx.Attrs(gosx.Attr("class", "instrument-patches")), gosx.Fragment(library...))))
-	var savePreset gosx.Node = gosx.Fragment()
+		gosx.Fragment(gosx.El("input", gosx.Attrs(gosx.Attr("type", "search"), gosx.Attr("placeholder", "Search sounds"), gosx.Attr("aria-label", "Search sounds"), gosx.Attr("data-studio-view-control", ""), gosx.Attr("data-sound-search", ""))),
+			gosx.El("div", gosx.Attrs(gosx.Attr("class", "instrument-patches"), gosx.Attr("role", "group"), gosx.Attr("aria-label", "Sounds")), gosx.Fragment(library...)),
+			gosx.El("p", gosx.Attrs(gosx.Attr("data-sound-empty", ""), gosx.Attr("role", "status"), gosx.Attr("aria-live", "polite"), gosx.BoolAttr("hidden")), gosx.Text("No sounds match")),
+			gosx.El("section", gosx.Attrs(gosx.Attr("class", "selected-sound")), gosx.El("h3", gosx.Text("Selected sound")), gosx.Fragment(details...),
+				gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-sound-stop", ""), gosx.BoolAttr("disabled")), gosx.Text("Stop preview")),
+				gosx.El("p", gosx.Attrs(gosx.Attr("data-sound-status", ""), gosx.Attr("role", "status"), gosx.Attr("aria-live", "polite")), gosx.Text("Preparing sound previews…")))))
+	var savePreset gosx.Node = gosx.El("details", gosx.Attrs(gosx.Attr("data-preset-save", ""), gosx.Attr("data-gosx-collapsible", "$layout.presetSaveOpen")), gosx.El("summary", gosx.Text("Save a track as a preset")), gosx.El("p", gosx.Text("Add a track first.")))
 	if len(p.Tracks) > 0 {
 		trackIDs := make([]string, 0, len(p.Tracks))
 		for _, track := range p.Tracks {
 			trackIDs = append(trackIDs, track.ID)
 		}
-		savePreset = gosx.El("details", gosx.Attrs(gosx.Attr("data-preset-save", "")),
+		savePreset = gosx.El("details", gosx.Attrs(gosx.Attr("data-preset-save", ""), gosx.Attr("data-gosx-collapsible", "$layout.presetSaveOpen")),
 			gosx.El("summary", gosx.Text("Save a track as a preset")),
 			gosx.El("p", gosx.Text("Save the track’s current sound settings in the score. Undo restores the previous score.")),
 			s.form(v, csrf, "instruments", "preset-save", hidden("source_revision", v.SourceRevision),
 				field("Track", selectInput("track", trackIDs[0], trackIDs)),
 				field("Preset name", textInput("name", "")), submit("", "", "Save preset")))
 	}
-	return gosx.Fragment(ui.Panel(ui.PanelProps{ID: "instrument-library", Title: "Choose a sound", Description: "Try each sound on its own in your song’s key and tempo. Then add it and make it yours."}, sounds, savePreset,
-		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Adding an instrument and track is one Undo step. Use Create pattern on its card to start writing notes, or assign an existing notes pattern in the pattern editor."))),
-		ui.Panel(ui.PanelProps{ID: "project-instruments", Title: "Your instruments", Description: "Shape each track with the declared controls. Use default removes its override; Undo restores any setting."}, gosx.El("div", gosx.Attrs(gosx.Attr("class", "strips")), gosx.Fragment(tracks...)), gosx.El("p", gosx.El("a", gosx.Attrs(gosx.Attr("href", "/?panel=code")), gosx.Text("Edit the shared instrument graph in Score")))),
-		s.recorded(ctx, v, csrf), s.samplePacks(ctx, v, csrf))
+	return gosx.Fragment(ui.Panel(ui.PanelProps{ID: "instrument-library", Title: "Choose a sound", Description: "Try each sound on its own in your song’s key and tempo. Then add it and make it yours."}, sounds),
+		gosx.El("details", gosx.Attrs(gosx.Attr("data-gosx-collapsible", "$layout.instrumentsOpen")), gosx.El("summary", gosx.Text("Project instruments")), ui.Panel(ui.PanelProps{ID: "project-instruments", Title: "Your instruments", Description: "Shape each track with the declared controls. Use default removes its override; Undo restores any setting."}, gosx.El("div", gosx.Attrs(gosx.Attr("class", "strips")), gosx.Fragment(tracks...)), gosx.El("p", gosx.El("a", gosx.Attrs(gosx.Attr("href", "/?panel=code")), gosx.Text("Edit the shared instrument graph in Score"))))),
+		savePreset,
+		gosx.El("details", gosx.Attrs(gosx.Attr("data-gosx-collapsible", "$layout.instrumentRecordOpen")), gosx.El("summary", gosx.Text("Record an instrument")), s.recorded(ctx, v, csrf)))
 }
 
 func instrumentUnit(unit string) string {

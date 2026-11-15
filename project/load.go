@@ -34,6 +34,32 @@ type Sources struct {
 	Bindings     map[string]map[string]string
 	librarySum   []byte
 	revisionOnly bool
+	files        ProjectFiles // where the sources were read; nil is OSFiles
+}
+
+// VerifiesAssets reports whether Parse checks the score's audio files against
+// their declarations (VerifyAssets). It is false for a project read from
+// memory (MemoryFiles), which holds no audio: such a score trusts the hash,
+// frames, rate and channels it declares, and the host verifies them when it
+// commits. A caller shows that, for example "audio verified at commit".
+func (s *Sources) VerifiesAssets() bool {
+	verifier, ok := s.reader().(AssetVerifier)
+	return !ok || verifier.VerifiesAssets()
+}
+
+func describeFiles(files ProjectFiles) string {
+	if _, ok := files.(MemoryFiles); ok {
+		return "memory"
+	}
+	return "this source"
+}
+
+// reader is where the project's other files are read from.
+func (s *Sources) reader() ProjectFiles {
+	if s.files == nil {
+		return OSFiles{}
+	}
+	return s.files
 }
 
 // ReadSources loads the closest explicit manifest, or the requested loose or
@@ -41,7 +67,14 @@ type Sources struct {
 // can include cicada.mod and cicada.sum for validation before an editor
 // commits manifest changes or new pins.
 func ReadSources(path string, overrides map[string][]byte) (*Sources, error) {
-	return readSources(path, overrides, nil)
+	return ReadSourcesIn(OSFiles{}, path, overrides)
+}
+
+// ReadSourcesIn is ReadSources with every project file read from files, such
+// as MemoryFiles for a project held in memory. Overrides follow the same rule
+// as on disk: they replace a file that files holds and cannot add one.
+func ReadSourcesIn(files ProjectFiles, path string, overrides map[string][]byte) (*Sources, error) {
+	return readSourcesMode(files, path, overrides, nil, false)
 }
 
 // Resolution pins which manifest governs a score, so a caller that has already
@@ -67,10 +100,18 @@ func LoadScorePinned(path string, overrides map[string][]byte, resolution Resolu
 }
 
 func readSources(path string, overrides map[string][]byte, pin *Resolution) (*Sources, error) {
-	return readSourcesMode(path, overrides, pin, false)
+	return readSourcesMode(OSFiles{}, path, overrides, pin, false)
 }
 
-func readSourcesMode(path string, overrides map[string][]byte, pin *Resolution, revisionOnly bool) (*Sources, error) {
+func readSourcesMode(files ProjectFiles, path string, overrides map[string][]byte, pin *Resolution, revisionOnly bool) (*Sources, error) {
+	switch files.(type) {
+	case OSFiles, *OSFiles:
+	default:
+		// Only the disk has a working folder to resolve a relative path in.
+		if !filepath.IsAbs(path) {
+			return nil, sourceError(path, 1, 1, "CICADA-SOURCE-PATH", "a score read from "+describeFiles(files)+" is named by an absolute path", nil)
+		}
+	}
 	absolute, err := filepath.Abs(path)
 	if err != nil {
 		return nil, err
@@ -79,7 +120,7 @@ func readSourcesMode(path string, overrides map[string][]byte, pin *Resolution, 
 	if pin != nil {
 		manifestPath = pin.ManifestPath
 	} else {
-		_, manifestPath, err = edition.ScoreEdition(absolute)
+		_, manifestPath, err = edition.ScoreEditionWith(files.ReadFile, absolute)
 		if err != nil {
 			var manifestError *edition.ManifestError
 			if errors.As(err, &manifestError) {
@@ -88,13 +129,13 @@ func readSourcesMode(path string, overrides map[string][]byte, pin *Resolution, 
 			return nil, err
 		}
 	}
-	set := &Sources{Root: filepath.Dir(absolute), ManifestPath: manifestPath, revisionOnly: revisionOnly}
+	set := &Sources{Root: filepath.Dir(absolute), ManifestPath: manifestPath, revisionOnly: revisionOnly, files: files}
 	paths := []string{absolute}
 	if manifestPath != "" {
 		set.Root = filepath.Dir(manifestPath)
 		data, ok := overrides[manifestPath]
 		if !ok {
-			data, err = os.ReadFile(manifestPath)
+			data, err = files.ReadFile(manifestPath)
 			if err != nil {
 				return nil, err
 			}
@@ -108,14 +149,14 @@ func readSourcesMode(path string, overrides map[string][]byte, pin *Resolution, 
 			// tooling. Load that score only if it actually imports this file.
 			dir := filepath.Dir(set.Root)
 			for {
-				data, readErr := os.ReadFile(filepath.Join(dir, "cicada.mod"))
+				data, readErr := files.ReadFile(filepath.Join(dir, "cicada.mod"))
 				if readErr == nil {
 					parent, parseErr := edition.ParseProjectManifest(data)
 					if parseErr != nil {
 						return nil, parseErr
 					}
 					if parent.Project != "" && parent.Entry != "" {
-						containing, loadErr := readSourcesMode(filepath.Join(dir, filepath.FromSlash(parent.Entry)), overrides, nil, revisionOnly)
+						containing, loadErr := readSourcesMode(files, filepath.Join(dir, filepath.FromSlash(parent.Entry)), overrides, nil, revisionOnly)
 						if loadErr != nil {
 							return nil, loadErr
 						}
@@ -151,7 +192,7 @@ func readSourcesMode(path string, overrides map[string][]byte, pin *Resolution, 
 		set.librarySum = overrides[filepath.Join(set.Root, "cicada.sum")]
 		data, ok := overrides[absolute]
 		if !ok {
-			data, err = os.ReadFile(absolute)
+			data, err = files.ReadFile(absolute)
 			if err != nil {
 				return nil, sourceError(path, 1, 1, "CICADA-SOURCE-MISSING", "cannot read score: "+err.Error(), err)
 			}
@@ -162,7 +203,7 @@ func readSourcesMode(path string, overrides map[string][]byte, pin *Resolution, 
 		}
 		return set, nil
 	}
-	root, err := os.OpenRoot(set.Root)
+	root, err := files.OpenRoot(set.Root)
 	if err != nil {
 		return nil, err
 	}
@@ -213,7 +254,9 @@ func (s *Sources) Parse() (*notation.Score, []notation.Diagnostic) {
 		score, diagnostics = notation.ParseFiles(s.Files, s.sourceEdition())
 	}
 	diagnostics = append(diagnostics, s.verifyLibraries()...)
-	diagnostics = append(diagnostics, VerifyAssets(score, s.Root)...)
+	if s.VerifiesAssets() {
+		diagnostics = append(diagnostics, VerifyAssets(score, s.Root)...)
+	}
 	if score != nil {
 		for i := range score.Assets {
 			if score.Assets[i].Root == "" {
@@ -227,12 +270,25 @@ func (s *Sources) Parse() (*notation.Score, []notation.Diagnostic) {
 // LoadScore is shared by commands and editors. Compilation remains a separate
 // stage so tools can inspect the positioned source model.
 func LoadScore(path string, overrides map[string][]byte) (*notation.Score, []notation.Diagnostic, error) {
-	sources, err := ReadSources(path, overrides)
+	score, diagnostics, _, err := LoadScoreIn(OSFiles{}, path, overrides)
+	return score, diagnostics, err
+}
+
+// LoadScoreIn is LoadScore with every project file read from files.
+//
+// assetsVerified says whether the diagnostics include the check of the score's
+// audio files against their declarations (VerifyAssets). It is false for files
+// held in memory, which hold no audio: the score's asset declarations are then
+// trusted, and a host verifies them when it commits. A caller that shows the
+// result says so, for example "audio verified at commit"; one that does not
+// care discards it with _, which a review can see.
+func LoadScoreIn(files ProjectFiles, path string, overrides map[string][]byte) (score *notation.Score, diagnostics []notation.Diagnostic, assetsVerified bool, err error) {
+	sources, err := ReadSourcesIn(files, path, overrides)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
-	score, diagnostics := sources.Parse()
-	return score, diagnostics, nil
+	score, diagnostics = sources.Parse()
+	return score, diagnostics, sources.VerifiesAssets(), nil
 }
 
 func (s *Sources) sourceEdition() int {
