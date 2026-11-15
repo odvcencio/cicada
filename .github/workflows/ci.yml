@@ -1039,6 +1039,10 @@ jobs:
           # internal/diagnostics scans every Go file, including workstation/, for
           # diagnostic codes; a Studio-only change must run it too.
           go test -race ./internal/buildaudit ./internal/studiohttp ./internal/diagnostics -count=1
+          # Two more root-module guards read workstation/ source: fixed bar lengths
+          # and the deterministic-math near tier.
+          go test ./kernel/seq -run '^TestNoFixedBarLength$' -count=1
+          go test ./kernel/dsp/detmath -run '^TestNearTierOnlyAtListedSites$' -count=1
           make test-workstation
           (cd workstation && go vet ./...)
           make build-workstation-release
