@@ -99,7 +99,7 @@ func restorePendingShellChoice(host enginewasm.Context, root js.Value) {
 			break
 		}
 	}
-	for name, choices := range map[string][]string{"view": {"arrange", "session", "mixer"}, "dock": {"clip", "device", "automation"}, "library": {"sounds", "samples", "takes"}} {
+	for name, choices := range map[string][]string{"view": {"arrange", "session", "mixer"}, "dock": {"clip", "device", "automation", "takes"}, "library": {"sounds", "samples", "takes"}} {
 		value := workspaceString(intent, name)
 		for _, allowed := range choices {
 			if value != allowed {

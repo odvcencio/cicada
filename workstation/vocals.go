@@ -79,9 +79,32 @@ func vocalPunchInput(name, value string, meterOff bool) gosx.Node {
 	return gosx.El("input", gosx.Attrs(gosx.Attr("name", name), gosx.Attr("value", value), gosx.Attr("disabled", meterOff), gosx.Attr("data-meter-unavailable", meterOff)))
 }
 
+// vocalTrack follows the recording panel's requested or default track.
+func vocalTrack(v workspace, requested string) string {
+	if requested != "" {
+		return requested
+	}
+	if v.Project == nil {
+		return ""
+	}
+	chosen := ""
+	for _, track := range v.Project.Tracks {
+		if track.Kind != "audio" {
+			continue
+		}
+		if chosen == "" || track.ID == "danilo" {
+			chosen = track.ID
+		}
+	}
+	return chosen
+}
+
 func (s *studioApp) vocals(ctx *server.Context, v workspace, csrf string) gosx.Node {
-	if v.Project == nil || v.Project.Edition != 2 {
+	if v.Project == nil {
 		return gosx.Fragment()
+	}
+	if v.Project.Edition != 2 {
+		return ui.Panel(ui.PanelProps{ID: "vocals", Title: "Record vocals"}, gosx.El("p", gosx.Text("Vocal recording needs an edition 2 score. "), gosx.El("a", gosx.Attrs(gosx.Attr("href", "/?panel=mixer")), gosx.Text("Upgrade through Mixer")), gosx.Text(" before adding an audio track.")))
 	}
 	var state struct {
 		control.CaptureState
@@ -92,18 +115,18 @@ func (s *studioApp) vocals(ctx *server.Context, v workspace, csrf string) gosx.N
 		return failure(err)
 	}
 	p := v.Project
-	var selectedRange struct {
-		TakeID string `json:"takeId"`
-		Start  string `json:"start"`
-		End    string `json:"end"`
-	}
-	session.Current(ctx.Request).Decode("vocal-range", &selectedRange)
 	var tracks []string
 	for _, track := range p.Tracks {
 		if track.Kind == "audio" {
 			tracks = append(tracks, track.ID)
 		}
 	}
+	var selectedRange struct {
+		TakeID string `json:"takeId"`
+		Start  string `json:"start"`
+		End    string `json:"end"`
+	}
+	session.Current(ctx.Request).Decode("vocal-range", &selectedRange)
 	end := int64(0)
 	if p.Arrange != nil {
 		for _, place := range p.Arrange.Placements {
@@ -112,15 +135,7 @@ func (s *studioApp) vocals(ctx *server.Context, v workspace, csrf string) gosx.N
 	} else {
 		end = p.SongEndTick()
 	}
-	chosen := ctx.Request.URL.Query().Get("vocalTrack")
-	if chosen == "" && len(tracks) > 0 {
-		chosen = tracks[0]
-		for _, track := range tracks {
-			if track == "danilo" {
-				chosen = track
-			}
-		}
-	}
+	chosen := vocalTrack(v, ctx.Request.URL.Query().Get("vocalTrack"))
 	button := func(action, label string, disabled bool) gosx.Node {
 		return gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("name", "action"), gosx.Attr("value", action), gosx.Attr("data-capture-control", action), gosx.Attr("disabled", disabled), gosx.Attr("class", map[bool]string{true: "primary", false: ""}[action == "record"])), gosx.Text(label))
 	}
@@ -135,7 +150,11 @@ func (s *studioApp) vocals(ctx *server.Context, v workspace, csrf string) gosx.N
 	followControl := field("Follow song tempo (keep pitch)", gosx.El("input", gosx.Attrs(gosx.Attr("type", "checkbox"), gosx.Attr("name", "elastic"), gosx.Attr("value", "on"), gosx.Attr("checked", defaultElastic), gosx.Attr("disabled", active))))
 	returnTo := "/?panel=session"
 	if ctx.Request.URL.Path == "/studio" {
-		returnTo = ctx.Request.URL.RequestURI()
+		target := *ctx.Request.URL
+		query := target.Query()
+		query.Set("dock", "takes")
+		target.RawQuery = query.Encode()
+		returnTo = target.RequestURI()
 	}
 	meterReason, meterOff := meterNotice(p.Meter)
 

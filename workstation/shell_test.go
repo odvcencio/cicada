@@ -105,14 +105,31 @@ func TestShellArrangeStartsWithTimelineAndLinksToVocals(t *testing.T) {
 	address, client, _ := detailDockApp(t)
 	body := getPage(t, client, address+"/studio?placement=lead-intro&dock=device")
 	timeline, vocals := strings.Index(body, `id="arrangement"`), strings.Index(body, `id="vocals"`)
-	if timeline < 0 || vocals < 0 || timeline >= vocals {
-		t.Fatal("Arrange must expose the timeline before vocal setup")
+	panel := strings.Index(body, `id="detail-panel-takes"`)
+	if timeline < 0 || vocals < panel || panel < 0 || strings.Count(body, `id="cicada-vocals"`) != 1 || strings.Count(body, `id="cicada-vocal-lanes"`) > 1 {
+		t.Fatal("vocal engines must occur once in the Takes panel")
+	}
+	panel = -1
+	for _, id := range []string{"clip", "device", "automation", "takes"} {
+		next := strings.Index(body, `id="detail-tab-`+id+`"`)
+		if next < 0 || next <= panel {
+			t.Fatal("dock tabs are missing or out of order")
+		}
+		panel = next
+	}
+	link := regexp.MustCompile(`<a[^>]*data-reveal-vocals=""[^>]*>Record &amp; comp vocals</a>`).FindString(body)
+	if link == "" || !regexp.MustCompile(`href="[^"]*dock=takes(?:&amp;|"|&)`).MatchString(link) {
+		t.Errorf("vocal link must reveal the Takes dock: %s", link)
+	}
+	selected := getPage(t, client, address+"/studio?dock=takes")
+	if !regexp.MustCompile(`<a[^>]*id="detail-tab-takes"[^>]*aria-current="page"`).MatchString(selected) {
+		t.Fatal("Takes tab was not selected")
 	}
 	for _, want := range []string{
 		`href="#arrangement" data-gosx-native="true"`,
-		`href="#vocals" data-gosx-native="true"`,
+		`data-reveal-vocals=""`,
 		`data-gosx-tab="arrange"`, `data-gosx-tab="session"`, `data-gosx-tab="mixer"`,
-		`data-gosx-tab="clip"`, `data-gosx-tab="device"`, `data-gosx-tab="automation"`,
+		`data-gosx-tab="clip"`, `data-gosx-tab="device"`, `data-gosx-tab="automation"`, `data-gosx-tab="takes"`,
 		`data-shell-region="code"`,
 	} {
 		if !strings.Contains(body, want) {
@@ -261,8 +278,8 @@ func TestShellTabsFollowTheARIATabPattern(t *testing.T) {
 		}
 	}
 	tabs := regexp.MustCompile(`<a[^>]*role="tab"[^>]*>`).FindAllString(body, -1)
-	if len(tabs) != 9 {
-		t.Fatalf("got %d tabs, want 9 (three Views, three Detail, three Library)", len(tabs))
+	if len(tabs) != 10 {
+		t.Fatalf("got %d tabs, want 10 (three Views, four Detail, three Library)", len(tabs))
 	}
 	attr := func(tag, name string) string {
 		match := regexp.MustCompile(`\s` + name + `="([^"]*)"`).FindStringSubmatch(tag)
@@ -300,7 +317,7 @@ func TestShellTabsFollowTheARIATabPattern(t *testing.T) {
 		t.Errorf("want one selected tab per list, got %d selected", selected)
 	}
 	// Every panel renders so in-place switching has content.
-	for _, want := range []string{`id="view-panel-arrange"`, `id="view-panel-session"`, `id="view-panel-mixer"`, `id="detail-panel-clip"`, `id="detail-panel-device"`, `id="detail-panel-automation"`} {
+	for _, want := range []string{`id="view-panel-arrange"`, `id="view-panel-session"`, `id="view-panel-mixer"`, `id="detail-panel-clip"`, `id="detail-panel-device"`, `id="detail-panel-automation"`, `id="detail-panel-takes"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("shell lacks %s", want)
 		}

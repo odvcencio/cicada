@@ -37,7 +37,7 @@ func TestShellPatchOrderNamesEveryRegionOnce(t *testing.T) {
 		}
 		seen[id] = true
 	}
-	if len(seen) != 20 || shellPatchOrder[0] != "dock-clip" {
+	if len(seen) != 21 || shellPatchOrder[0] != "dock-clip" {
 		t.Errorf("patch order %v", shellPatchOrder)
 	}
 }

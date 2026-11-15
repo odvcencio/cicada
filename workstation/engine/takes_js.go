@@ -65,6 +65,10 @@ func mountTakes(host enginewasm.Context) (enginewasm.Handle, error) {
 	}
 	releaseCapture := capturePublisher.acquire()
 	lastActive := props.Active
+	releaseUnsaved := func() {}
+	if js.Global().Get("location").Get("pathname").String() == "/studio" {
+		releaseUnsaved = holdUnsavedWork("capture:"+root.Get("id").String(), func() bool { return lastActive != "" })
+	}
 	captureWatch := signal.Watch(func() {
 		update := nativeCapture.Get()
 		if !update.Ready || closed.Load() {
@@ -77,10 +81,11 @@ func mountTakes(host enginewasm.Context) (enginewasm.Handle, error) {
 		} else if !closed.Load() {
 			active, recording := state.Active != "", state.Capture != nil && state.Capture.Recording
 			root.Call("setAttribute", "data-capture-active", fmt.Sprint(active))
-			if lastActive != "" && state.Active == "" {
+			finished := lastActive != "" && state.Active == ""
+			lastActive = state.Active
+			if finished {
 				workspaceRefreshRequested.Update(func(n uint64) uint64 { return n + 1 })
 			}
-			lastActive = state.Active
 			buttons := root.Call("querySelectorAll", "[data-capture-control]")
 			for i := 0; i < buttons.Length(); i++ {
 				b := buttons.Index(i)
@@ -149,6 +154,7 @@ func mountTakes(host enginewasm.Context) (enginewasm.Handle, error) {
 		if closed.Swap(true) {
 			return
 		}
+		releaseUnsaved()
 		releaseCapture()
 		captureWatch.Dispose()
 		watch.Dispose()
