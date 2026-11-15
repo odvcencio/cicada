@@ -130,11 +130,57 @@ func bindShellNavigation(host enginewasm.Context, root js.Value) (func(), error)
 			pendingScenePatternURL = link.Get("href").String()
 			return nil
 		}
+		// Selecting a scene block uses the already-rendered forms: it must not
+		// navigate away from a Live engine that may be holding notes.
+		edit := target.Call("closest", ".timeline-edit[data-song-index]")
+		if workspacePresent(edit) {
+			index := workspaceAttr(edit, "data-song-index")
+			blocks := root.Call("querySelectorAll", ".arrangement-block[data-song-index]")
+			var selected js.Value
+			for i := 0; i < blocks.Length(); i++ {
+				block := blocks.Index(i)
+				block.Call("removeAttribute", "data-song-selected")
+				if workspaceAttr(block, "data-song-index") == index {
+					selected = block
+				}
+			}
+			if workspacePresent(selected) {
+				event.Call("preventDefault")
+				selected.Call("setAttribute", "data-song-selected", "")
+				selected.Set("open", true)
+				summary := selected.Call("querySelector", "summary")
+				if workspacePresent(summary) {
+					summary.Call("scrollIntoView", map[string]any{"block": "nearest", "inline": "nearest", "behavior": "auto"})
+					if event.Get("detail").Int() == 0 {
+						summary.Call("focus", map[string]any{"preventScroll": true})
+					}
+				}
+			}
+			return nil
+		}
 		// Managed navigation retains the shell controller, so an explicit URL
 		// alone does not switch the existing dock signal. Reveal Automation
 		// before following the catalog-selected amp curve link.
 		if workspacePresent(target.Call("closest", "[data-amp-automation-link]")) {
 			_ = host.SetSignal("$dock", "automation")
+			return nil
+		}
+		// A Mixer strip's name opens that channel in Device.
+		if choice := target.Call("closest", "[data-mixer-select]"); workspacePresent(choice) {
+			_ = host.SetSignal("$dock", "device")
+			if js.Global().Get("innerWidth").Float() < 800 {
+				root.Call("setAttribute", "data-phone-region", "detail")
+				url := shellCurrentURL()
+				url.Get("searchParams").Call("set", "region", "detail")
+				syncShellLocation(root, url)
+			}
+			// The server's link names only the channel. Follow it with the
+			// rest of the page's selections (pattern, placement, file) kept.
+			url := shellCurrentURL()
+			for key, value := range map[string]string{"tab": "mixer", "dock": "device", "deviceTrack": workspaceAttr(choice, "data-mixer-select")} {
+				url.Get("searchParams").Call("set", key, value)
+			}
+			choice.Call("setAttribute", "href", url.Get("pathname").String()+url.Get("search").String())
 			return nil
 		}
 		// Native fragment navigation emits popstate in WebKit and Chromium.
@@ -309,6 +355,10 @@ func syncShellLocation(root, url js.Value) {
 			continue
 		}
 		copyShellContext(target, url)
+		if link.Call("hasAttribute", "data-mixer-select").Bool() {
+			target.Get("searchParams").Call("set", "tab", "mixer")
+			target.Get("searchParams").Call("set", "dock", "device")
+		}
 		// A scene clip opens its pattern in the Clip dock, whichever dock or
 		// phone region is showing now.
 		if link.Call("hasAttribute", "data-scene-pattern-open").Bool() {

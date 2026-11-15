@@ -257,16 +257,24 @@ type mixerField struct {
 type mixerSend struct {
 	mixerField
 	To string `json:"to"`
+	// Level is the send level as the score writes it, such as "-12dB" or
+	// "0.25"; Value is the linear gain the engine uses. Pre is a pre-fader tap.
+	Level string `json:"level"`
+	Pre   bool   `json:"pre"`
 }
 type mixerStrip struct {
-	Name    string                `json:"name"`
-	ID      string                `json:"id"`
-	Fields  map[string]mixerField `json:"fields"`
-	Sends   []mixerSend           `json:"sends"`
-	Inserts []string              `json:"inserts"`
+	Name string `json:"name"`
+	ID   string `json:"id"`
+	// SourceKind is a track's instrument kind; buses and the master have none.
+	SourceKind string                `json:"sourceKind"`
+	Fields     map[string]mixerField `json:"fields"`
+	Sends      []mixerSend           `json:"sends"`
+	Inserts    []string              `json:"inserts"`
 }
 type mixerReturn struct {
-	Name   string       `json:"name"`
+	Name string `json:"name"`
+	// Kind is the effect kind, such as "delay", "reverb" or "eq".
+	Kind   string       `json:"kind"`
 	Meter  string       `json:"meter"`
 	Fields []mixerField `json:"fields"`
 }
