@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"m31labs.dev/cicada/internal/controls"
 )
 
 const catalogScore = `cicada 2
@@ -93,5 +95,22 @@ func TestSetParamRefusesWithStructuredReasons(t *testing.T) {
 		if !errors.As(err, &located) || located.Field != tc.field {
 			t.Errorf("%s = %s: the intent error does not name field %s: %v", tc.entity, tc.value, tc.field, err)
 		}
+	}
+}
+
+func TestKeyboardTimeUnitsInScoreAndSetparam(t *testing.T) {
+	c, ok := controls.All().Control("fm_bass.op1_attack")
+	if !ok {
+		t.Fatal("missing keyboard attack")
+	}
+	got, err := controlLiteral(controls.TrackControl{Control: c}, "300")
+	if err != nil || got != "300ms" {
+		t.Fatalf("plain setparam value: %q, %v", got, err)
+	}
+	if n, ok := controls.CatalogNumber(c, "0.3"); !ok || n != 300 {
+		t.Fatalf("plain score value: %v, %v", n, ok)
+	}
+	if !strings.Contains(c.Note, "setparam plain numbers are milliseconds") {
+		t.Fatalf("note: %q", c.Note)
 	}
 }

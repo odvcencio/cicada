@@ -204,7 +204,7 @@ func controlRange(c controls.Control) string {
 func directionText(c controls.Control) string {
 	var parts []string
 	for _, d := range c.Directions {
-		if d.Change == controls.ChangeNone {
+		if d.Change == controls.ChangeNone || d.Change == controls.ChangeUnknown {
 			continue
 		}
 		parts = append(parts, d.Property+" "+d.Change+" ("+d.Basis+")")

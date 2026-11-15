@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -9,6 +11,7 @@ import (
 
 	"m31labs.dev/cicada/host/soundprobe"
 	"m31labs.dev/cicada/internal/controls"
+	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
 
@@ -108,7 +111,15 @@ func explainTrack(name, scorePath string, asJSON bool, stdout io.Writer) error {
 	}
 	view, err := controls.ForTrack(score, name)
 	if err != nil {
-		return &explainError{"unknown_track", err}
+		names := make([]string, 0, len(score.Tracks))
+		for _, track := range score.Tracks {
+			names = append(names, track.Name)
+		}
+		suggestion := notation.AudioReferenceMessage("track", name, names)
+		if len(names) > 0 && !strings.Contains(suggestion, "did you mean") {
+			suggestion += fmt.Sprintf("; available track: %q", names[0])
+		}
+		return &explainError{"unknown_track", fmt.Errorf("%w; %s", err, suggestion)}
 	}
 	if asJSON {
 		return writeAgentJSON(stdout, explainTrackDocument{Schema: explainSchema, Kind: "track", Score: jsonPath(scorePath), Track: view})
@@ -208,20 +219,45 @@ func explainRun(args []string, asJSON bool, stdout io.Writer) error {
 		return &explainError{"usage", errors.New(explainUsage)}
 	}
 	name := others[0]
-	if !strings.HasPrefix(name, "graph.") {
-		if _, isControl := controls.All().Control(name); isControl {
-			_, err := explainCatalog(name, asJSON, stdout)
-			return err
-		}
-	}
-	err := explain(stdout, name, asJSON)
-	if err == nil {
-		return nil
-	}
-	if handled, catalogErr := explainCatalog(name, asJSON, stdout); handled {
+	// A name may refer to both a language construct and a catalog entry.
+	var construct bytes.Buffer
+	constructErr := explain(&construct, name, asJSON)
+	var catalog bytes.Buffer
+	handled, catalogErr := explainCatalog(name, asJSON, &catalog)
+	if catalogErr != nil {
 		return catalogErr
 	}
-	return &explainError{"unknown_thing", fmt.Errorf("%w; cicada params --json lists every voice, patch, effect and control", err)}
+	if constructErr == nil && handled {
+		if !asJSON {
+			_, err := fmt.Fprintf(stdout, "%s\n%s", construct.String(), catalog.String())
+			return err
+		}
+		var doc, entry map[string]any
+		if err := json.Unmarshal(construct.Bytes(), &doc); err != nil {
+			return err
+		}
+		if err := json.Unmarshal(catalog.Bytes(), &entry); err != nil {
+			return err
+		}
+		delete(entry, "schema")
+		doc["catalog"] = entry
+		return writeExplainJSON(stdout, doc)
+	}
+	if constructErr == nil {
+		_, err := stdout.Write(construct.Bytes())
+		return err
+	}
+	if handled {
+		_, err := stdout.Write(catalog.Bytes())
+		return err
+	}
+	if ownerName, _, ok := strings.Cut(name, "."); ok {
+		if _, found := controls.All().Owner(ownerName); found {
+			return &explainError{"unknown_thing", fmt.Errorf("owner %q exists but has no control %q; %s", ownerName, name, catalogSuggestion(name, false))}
+		}
+	}
+	return &explainError{"unknown_thing", fmt.Errorf("%w; %s", constructErr, catalogSuggestion(name, false))}
+
 }
 
 // probeSchema names the explain --probe --json document.
@@ -265,10 +301,10 @@ func explainProbe(args []string, asJSON bool, stdout io.Writer) error {
 			}
 		}
 	} else {
-		return &explainError{"unknown_thing", fmt.Errorf("no control or owner %q; cicada params --json lists them", args[0])}
+		return &explainError{"unknown_thing", fmt.Errorf("no control or owner %q; %s", args[0], catalogSuggestion(args[0], true))}
 	}
 	if len(ids) == 0 {
-		return &explainError{"not_probeable", fmt.Errorf("the probe measures numeric controls of voices, keyboard patches, library patches and kit lanes; %s has none", args[0])}
+		return &explainError{"not_probeable", fmt.Errorf("the probe measures numeric controls of voices, keyboard patches, library patches and kit lanes; %s has none; %s; for example fm_bass.gain", args[0], catalogSuggestion(args[0], true))}
 	}
 	table := controls.Measured()
 	document := probeDocument{Schema: probeSchema, Phrase: soundprobe.Phrases, Method: soundprobe.Method, Controls: []probedJSON{}}
@@ -296,4 +332,43 @@ func numbers(values []float64) string {
 		parts = append(parts, formatNumber(v))
 	}
 	return strings.Join(parts, " / ")
+}
+
+// catalogSuggestion reuses the spelling suggestions used for score diagnostics.
+func catalogSuggestion(name string, probeable bool) string {
+	catalog := controls.All()
+	var names []string
+	for _, c := range catalog.Controls {
+		owner, _ := catalog.Owner(c.Owner)
+		if !probeable || soundprobe.Probeable(owner, c) {
+			names = append(names, c.ID)
+		}
+	}
+	for _, owner := range catalog.Owners {
+		if !probeable {
+			names = append(names, owner.Name)
+			continue
+		}
+		for _, c := range catalog.Of(owner.Name) {
+			if soundprobe.Probeable(owner, c) {
+				names = append(names, owner.Name)
+				break
+			}
+		}
+	}
+	if !probeable {
+		if fields, err := project.Fields(); err == nil {
+			for _, construct := range fields.Constructs {
+				names = append(names, construct.Name)
+			}
+			for _, field := range fields.Fields {
+				names = append(names, field.Construct+"."+field.Name)
+			}
+		}
+	}
+	suggestion := notation.AudioReferenceMessage("control or owner", name, names)
+	if len(names) > 0 && !strings.Contains(suggestion, "did you mean") {
+		suggestion += fmt.Sprintf("; available name: %q", names[0])
+	}
+	return suggestion
 }

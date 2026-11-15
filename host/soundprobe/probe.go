@@ -32,7 +32,7 @@ var Phrases = map[string]string{
 }
 
 // Method describes how the three values are chosen, for the table.
-const Method = "low and high are half and twice the default for times, frequencies and ratios, otherwise the default minus and plus a quarter of the range, kept inside the range; an instrument parameter without a range takes half and twice its default, or plus and minus 0.25 when it lies within 0..1"
+const Method = "sustain switches use 0 and 1; otherwise low and high are half and twice the default for times, frequencies and ratios, otherwise the default minus and plus a quarter of the range, kept inside the range; an instrument parameter without a range takes half and twice its default, or plus and minus 0.25 when it lies within 0..1"
 
 // Probeable reports whether the probe measures a control: a number of a voice,
 // keyboard patch, library patch or kit lane, other than the octave.
@@ -57,6 +57,10 @@ func Values(c controls.Control) ([3]float64, bool) {
 	def, ok := c.Default.(float64)
 	if !ok {
 		return [3]float64{}, false
+	}
+	owner, _ := controls.All().Owner(c.Owner)
+	if c.Name == "sustain" && (owner.Kind == controls.KindPatch || strings.HasPrefix(c.Owner, "model_")) {
+		return [3]float64{0, def, 1}, true
 	}
 	var lo, hi float64
 	relative := c.Unit == "Hz" || c.Unit == "ms" || strings.Contains(c.Name, "ratio")
@@ -146,6 +150,7 @@ func score(owner controls.Owner, c controls.Control, v float64) (string, string,
 // Measurement is the listening report's view of the probe track.
 type Measurement struct {
 	LevelDB, CentroidHz, AttackMS, DecayMS float64
+	Silent                                 bool
 }
 
 // Measure renders the probe score for a control at one value and reads the
@@ -167,7 +172,7 @@ func Measure(owner controls.Owner, c controls.Control, v float64) (Measurement, 
 	}
 	for _, track := range analysis.Report.Tracks {
 		if track.ID == "t" {
-			return Measurement{LevelDB: track.RMSdBFS, CentroidHz: track.CentroidHz, AttackMS: track.AttackMs, DecayMS: track.Decay20Ms}, nil
+			return Measurement{Silent: track.Silent, LevelDB: track.RMSdBFS, CentroidHz: track.CentroidHz, AttackMS: track.AttackMs, DecayMS: track.Decay20Ms}, nil
 		}
 	}
 	return Measurement{}, fmt.Errorf("%s = %g: the report has no probe track", c.ID, v)
@@ -180,15 +185,22 @@ func Probe(owner controls.Owner, c controls.Control) (controls.ProbedControl, er
 		return controls.ProbedControl{}, fmt.Errorf("%s has no probe values", c.ID)
 	}
 	p := controls.ProbedControl{At: values[:]}
+	silent := make([]bool, 0, 3)
+	anySilent := false
 	for _, v := range values {
 		m, err := Measure(owner, c, v)
 		if err != nil {
 			return controls.ProbedControl{}, err
 		}
+		silent = append(silent, m.Silent)
+		anySilent = anySilent || m.Silent
 		p.LevelDB = append(p.LevelDB, m.LevelDB)
 		p.CentroidHz = append(p.CentroidHz, m.CentroidHz)
 		p.AttackMS = append(p.AttackMS, m.AttackMS)
 		p.DecayMS = append(p.DecayMS, m.DecayMS)
+	}
+	if anySilent {
+		p.Silent = silent
 	}
 	return p, nil
 }

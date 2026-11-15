@@ -6,6 +6,7 @@ import (
 	"errors"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -236,5 +237,42 @@ func TestExplainJSONForControlsOwnersAndTracks(t *testing.T) {
 	}
 	if c := values["mix.level"]; c.Owner != "mix" {
 		t.Fatalf("the mixer strip is listed: %+v", c)
+	}
+}
+
+func TestExplainCatalogAndConstructCollisions(t *testing.T) {
+	for _, name := range []string{"sampler.mode", "sampler.voices", "sampler.sustain", "bus", "master", "sampler"} {
+		var out bytes.Buffer
+		if err := explainCommand([]string{name, "--json"}, &out); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		var doc map[string]json.RawMessage
+		if err := json.Unmarshal(out.Bytes(), &doc); err != nil {
+			t.Fatal(err)
+		}
+		if len(doc["catalog"]) == 0 || (len(doc["construct"]) == 0 && len(doc["name"]) == 0) {
+			t.Errorf("%s: %s", name, out.String())
+		}
+	}
+}
+
+func TestExplainSuggestions(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want []string
+	}{
+		{[]string{"fm_bass.op9_level", "--json"}, []string{"owner", "exists", "fm_bass.op1_level"}},
+		{[]string{"fm_bass.op9_level", "--probe", "--json"}, []string{"did you mean", "fm_bass.op1_level"}},
+		{[]string{"mix.pan", "--probe", "--json"}, []string{"fm_bass.gain"}},
+	} {
+		var out bytes.Buffer
+		if err := explainCommand(tc.args, &out); err == nil {
+			t.Fatalf("%v: expected refusal", tc.args)
+		}
+		for _, want := range tc.want {
+			if !strings.Contains(out.String(), want) {
+				t.Errorf("%v: missing %q in %s", tc.args, want, out.String())
+			}
+		}
 	}
 }

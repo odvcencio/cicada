@@ -28,10 +28,11 @@ const (
 // Changes a direction reports when the control rises from its low value to
 // its high value.
 const (
-	ChangeUp    = "up"
-	ChangeDown  = "down"
-	ChangeMixed = "mixed" // rises then falls, or falls then rises
-	ChangeNone  = "none"  // stays within the threshold
+	ChangeUp      = "up"
+	ChangeDown    = "down"
+	ChangeMixed   = "mixed"   // rises then falls, or falls then rises
+	ChangeUnknown = "unknown" // the probe did not establish a direction
+	ChangeNone    = "none"    // stays within the threshold
 )
 
 // Direction says which way a measured property moves when the control rises.
@@ -39,6 +40,7 @@ type Direction struct {
 	Property string `json:"property"`
 	Change   string `json:"change"`
 	Basis    string `json:"basis"`
+	Reason   string `json:"reason,omitempty"`
 	// At and Measured are the probed control values (low, default, high) and
 	// the property at each; Unit is the property's unit.
 	At       []float64 `json:"at,omitempty"`
@@ -71,6 +73,7 @@ type ProbedControl struct {
 	CentroidHz []float64 `json:"centroid_hz"`
 	AttackMS   []float64 `json:"attack_ms"`
 	DecayMS    []float64 `json:"decay_ms"`
+	Silent     []bool    `json:"silent,omitempty"`
 }
 
 // MeasuredSchema names directions.json's format.
@@ -140,29 +143,61 @@ func (t MeasuredTable) Encode() ([]byte, error) {
 
 // Directions turns one probe result into directions.
 func (p ProbedControl) Directions() []Direction {
+	// A row without the silent field has no silent point.
+	silent := p.Silent
+	if len(silent) != len(p.At) {
+		silent = make([]bool, len(p.At))
+	}
+	unexercised := len(p.At) == 3 && identical(p.LevelDB) && identical(p.CentroidHz) && identical(p.AttackMS) && identical(p.DecayMS)
+	filter := func(values []float64) ([]float64, []float64) {
+		var at, measured []float64
+		if len(values) != len(p.At) {
+			return nil, nil
+		}
+		for i, v := range values {
+			if !silent[i] {
+				at = append(at, p.At[i])
+				measured = append(measured, v)
+			}
+		}
+		return at, measured
+	}
+	makeDirection := func(property, unit string, values []float64, significant func(float64, float64) bool) Direction {
+		at, measured := filter(values)
+		d := direction(property, unit, at, measured, significant)
+		if unexercised {
+			d.Basis, d.Change, d.Reason = BasisUnknown, ChangeUnknown, "not exercised by the probe"
+		}
+		return d
+	}
 	return []Direction{
-		direction(PropertyLevel, "dB", p.At, p.LevelDB, func(a, b float64) bool { return math.Abs(b-a) >= LevelThresholdDB }),
-		direction(PropertyBrightness, "Hz", p.At, p.CentroidHz, func(a, b float64) bool {
+		makeDirection(PropertyLevel, "dB", p.LevelDB, func(a, b float64) bool { return math.Abs(b-a) >= LevelThresholdDB }),
+		makeDirection(PropertyBrightness, "Hz", p.CentroidHz, func(a, b float64) bool {
 			return math.Abs(b-a) >= BrightnessThreshold*math.Max(math.Abs(a), math.Abs(b))
 		}),
-		direction(PropertyAttack, "ms", p.At, p.AttackMS, func(a, b float64) bool {
+		makeDirection(PropertyAttack, "ms", p.AttackMS, func(a, b float64) bool {
 			return math.Abs(b-a) >= AttackThresholdMS && math.Abs(b-a) >= timeRelativeThreshold*math.Max(math.Abs(a), math.Abs(b))
 		}),
-		direction(PropertyDecay, "ms", p.At, p.DecayMS, func(a, b float64) bool {
+		makeDirection(PropertyDecay, "ms", p.DecayMS, func(a, b float64) bool {
 			return math.Abs(b-a) >= DecayThreshold*math.Max(math.Abs(a), math.Abs(b))
 		}),
 	}
 }
 
-// direction reads low, default and high. A step counts when significant
+func identical(values []float64) bool {
+	return len(values) == 3 && values[0] == values[1] && values[1] == values[2]
+}
+
+// direction reads audible points from low to high. A step counts when significant
 // says so; two counted steps with opposite signs are mixed.
 func direction(property, unit string, at, values []float64, significant func(a, b float64) bool) Direction {
 	d := Direction{Property: property, Basis: BasisMeasured, At: at, Measured: values, Unit: unit, Change: ChangeNone}
-	if len(values) != 3 {
+	if len(values) < 2 {
+		d.Basis, d.Change, d.Reason = BasisUnknown, ChangeUnknown, "fewer than two audible probe points"
 		return d
 	}
 	sign := func(a, b float64) int {
-		if !significant(a, b) {
+		if a == b || !significant(a, b) {
 			return 0
 		}
 		if b > a {
@@ -170,7 +205,11 @@ func direction(property, unit string, at, values []float64, significant func(a, 
 		}
 		return -1
 	}
-	first, second, whole := sign(values[0], values[1]), sign(values[1], values[2]), sign(values[0], values[2])
+	first, second := sign(values[0], values[1]), 0
+	if len(values) > 2 {
+		second = sign(values[1], values[2])
+	}
+	whole := sign(values[0], values[len(values)-1])
 	switch {
 	case first*second < 0:
 		d.Change = ChangeMixed
@@ -218,7 +257,7 @@ func (b *builder) applyDirections() {
 			for j := range c.Directions {
 				if c.Directions[j].Property == PropertyLevel {
 					// The probe verifies the statement; keep its numbers.
-					c.Directions[j].Basis = BasisStated
+					c.Directions[j].Basis, c.Directions[j].Change, c.Directions[j].Reason = BasisStated, ChangeUp, ""
 					replaced = true
 				}
 			}

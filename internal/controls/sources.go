@@ -190,7 +190,7 @@ func (b *builder) keyboardPatches() {
 			c.Unit = keyboardUnit(p.Unit)
 			c.secondsPlain = p.Unit == "s"
 			if c.secondsPlain {
-				c.Note = "a plain number is seconds (0.3); a number with ms or s is converted (300ms)"
+				c.Note = "in score text a plain number is seconds (0.3); setparam plain numbers are milliseconds (300); either accepts units (300ms)"
 			}
 			c.SetIn, c.Meaning = []string{InTrack}, keyboard.Meaning(patch, p.Name)
 			if words := d.Values; len(words) > 0 && p.Integer && int(p.Max-p.Min)+1 == len(words) && p.Min == 0 {

@@ -1043,15 +1043,20 @@ Each control has:
 - `directions`: which way it moves what `cicada audition --json` measures for
   the track when the control rises. `property` is `level`, `brightness`,
   `attack` or `decay` (the track's `rms_dbfs`, `centroid_hz`, `attack_ms` and
-  `decay20_ms`); `change` is `up`, `down`, `mixed` or `none`; `basis` is
-  `stated` (certain from the signal path, such as an output gain) or
-  `measured`. A measured direction also gives `at`, the low, default and high
-  values the probe rendered, and `measured`, the property at each, in `unit`.
-  A control with no direction has none known.
+  `decay20_ms`); `change` is `up`, `down`, `mixed`, `none` or `unknown`; `basis`
+  is `stated` (certain from the signal path, such as an output gain),
+  `measured`, or `unknown`. A direction is `unknown` when the probe did not
+  exercise the control or fewer than two of its renders were audible, and
+  `reason` then says which. A measured direction also gives `at`, the audible
+  values among the low, default and high values the probe rendered, and
+  `measured`, the property at each, in `unit`. A control with no direction
+  has none known.
 
 The measurements come from a probe that renders two bars of a fixed phrase at
 each of the three values. They are checked in, so `params` answers at once;
 `cicada explain <control> --probe --json` measures again (`cicada.probe.v1`).
+The browser demo WebAssembly build includes the catalog; the kernel
+WebAssembly build and the UI engine, which have size budgets, do not.
 
 Filters keep part of the list, and combine: `--voice <voice>` one voice or
 patch, such as `acid` or `fm_bass`, or one family, such as `fm`;
@@ -1065,7 +1070,10 @@ as it always has.
 
 `cicada explain <owner>.<name> --json` gives one control and its owner, and
 `cicada explain <owner> --json` an owner and its controls (`cicada.explain.v1`,
-with `kind` `control` or `owner`). `cicada explain track:<track> <score> --json`
+with `kind` `control` or `owner`). When a name is also a language construct
+or field, the construct's response has a `catalog` field that holds the
+control's or owner's response without its `schema`.
+`cicada explain track:<track> <score> --json`
 gives what one track takes (`kind` `track`): the controls of its voice and of
 its mixer strip, each with its current `value`, `value_source` (`track`,
 `preset`, `instrument` or `default`) and `overridden`, true when the track block sets it.

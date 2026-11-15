@@ -18,7 +18,7 @@ const tablePath = "../../internal/controls/directions.json"
 var sample = []string{
 	"fm_bass.op1_level", "fm_bass.op2_level", "fm_bass.op3_level", "fm_bass.op4_level", "fm_bass.op5_level", "fm_bass.op6_level",
 	"fm_bass.gain", "tine_ep.hammer_felt", "clav.string_mute", "tonewheel_organ.drawbar3", "poly_keys.cutoff",
-	"string_machine.attack", "acid.cutoff", "drums.bd_decay", "round-bass.brightness",
+	"string_machine.attack", "acid.cutoff", "drums.bd_decay", "drums.cb_decay", "drums.ch_decay", "drums.cp_decay", "drums.cy_decay", "drums.ht_decay", "drums.lt_decay", "drums.mt_decay", "drums.oh_decay", "drums.rs_decay", "drums.sd_decay", "round-bass.brightness",
 }
 
 // sampleIDs is what every pull request probes: the sample above and one
@@ -175,14 +175,24 @@ func TestTableCoversEveryProbeableControl(t *testing.T) {
 // wherever it measured the same control.
 func TestStatedDirectionsAgreeWithMeasurements(t *testing.T) {
 	checked := 0
+	table := controls.Measured()
 	for _, c := range controls.All().Controls {
-		for _, d := range c.Directions {
-			if d.Basis != controls.BasisStated || len(d.Measured) == 0 {
+		probe, ok := table.Controls[c.ID]
+		if !ok {
+			continue
+		}
+		for _, stated := range c.Directions {
+			if stated.Basis != controls.BasisStated {
 				continue
 			}
-			checked++
-			if d.Change != controls.ChangeUp {
-				t.Errorf("%s: stated %s up, measured %s (%v at %v)", c.ID, d.Property, d.Change, d.Measured, d.At)
+			for _, measured := range probe.Directions() {
+				if measured.Property != stated.Property || measured.Basis != controls.BasisMeasured {
+					continue
+				}
+				checked++
+				if measured.Change != controls.ChangeUp {
+					t.Errorf("%s: stated %s up, measured %s (%v at %v)", c.ID, measured.Property, measured.Change, measured.Measured, measured.At)
+				}
 			}
 		}
 	}
@@ -206,4 +216,17 @@ func TestProbeScoresParse(t *testing.T) {
 		t.Fatal("no probe scores")
 	}
 	t.Logf("%d probeable controls, %d renders for the full table", len(ProbeableIDs()), 3*len(ProbeableIDs()))
+}
+
+func TestSustainProbeValues(t *testing.T) {
+	for _, id := range []string{"fm_bass.sustain", "model_conga.sustain"} {
+		c, ok := controls.All().Control(id)
+		if !ok {
+			t.Fatalf("missing %s", id)
+		}
+		values, ok := Values(c)
+		if !ok || values[0] != 0 || values[2] != 1 {
+			t.Errorf("%s: %v, %v", id, values, ok)
+		}
+	}
 }
