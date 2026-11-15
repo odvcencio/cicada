@@ -85,7 +85,7 @@ func (s *studioApp) arrangementView(ctx *server.Context, v workspace, csrf, sele
 		if len(p.Song) > 1 {
 			controls = append(controls, s.form(v, csrf, "session", "song", hidden("index", i), block, submit("action", "delete", "Remove block")))
 		}
-		attrs := gosx.Attrs(gosx.Attr("class", "arrangement-block"), gosx.Attr("data-song-index", i), gosx.Attr("id", "song-block-"+i))
+		attrs := gosx.Attrs(gosx.Attr("class", "arrangement-block"), gosx.Attr("data-song-index", i), gosx.Attr("data-song-key", songBlockKey(p.Song, index)), gosx.Attr("id", "song-block-"+i))
 		if index == selectedBlock {
 			attrs = append(attrs, gosx.BoolAttr("open"), gosx.BoolAttr("data-song-selected"))
 		}
@@ -161,7 +161,7 @@ func (s *studioApp) arrangementView(ctx *server.Context, v workspace, csrf, sele
 	settings := s.form(v, csrf, "session", "project", field("Title", textInput("title", p.Title)), field("Tempo (BPM)", numberInput("tempo", strconv.FormatFloat(float64(p.TempoMilli)/1000, 'f', -1, 64), "20", "300")), field("Key", selectInput("root", phraseKeys[p.Key.Root], phraseKeys)), field("Scale", selectInput("scale", p.Key.Scale, phraseScales)), submit("", "", "Save project settings"))
 	if shell {
 		panel := func(label string, content ...gosx.Node) gosx.Node {
-			return gosx.El("details", gosx.Attrs(gosx.Attr("class", "arrange-popover")), gosx.El("summary", gosx.Text(label)), gosx.El("div", gosx.Attrs(gosx.Attr("class", "arrange-popover-panel")), gosx.Fragment(content...)))
+			return gosx.El("details", gosx.Attrs(gosx.Attr("class", "arrange-popover"), gosx.Attr("name", "arrange-tools")), gosx.El("summary", gosx.Text(label)), gosx.El("div", gosx.Attrs(gosx.Attr("class", "arrange-popover-panel")), gosx.Fragment(content...)))
 		}
 		end := p.MeterMap().BarStart(int64(bar - 1))
 		exact := s.listeningForm(v, csrf, selected, hidden("action", "loop"), field("Loop start", textInput("start", placementLiteral(p.MeterMap(), 0, true))), field("Loop end", textInput("end", placementLiteral(p.MeterMap(), min(end, p.MeterMap().BarStart(4)), true))), submit("", "", "Loop range"))
@@ -174,9 +174,9 @@ func (s *studioApp) arrangementView(ctx *server.Context, v workspace, csrf, sele
 			panel("Project", settings, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Changing the key retunes scale-degree notes. Explicit letter pitches retain their pitch."))))
 		return ui.Panel(ui.PanelProps{ID: "arrangement", Title: "Arrangement"}, tools,
 			gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll timeline"), gosx.Attr("aria-label", "Song timeline")), gosx.Fragment(rows...)),
-			gosx.El("p", gosx.Attrs(gosx.Attr("class", "arrange-status")), gosx.Text(length+" · Click a clip to edit it below. ↳ carries the previous pattern.")),
+			gosx.El("p", gosx.Attrs(gosx.Attr("class", "arrange-status")), gosx.Text(length+" · Click a clip to edit it below. ↳ carries the previous pattern. After a song edit, choose Edit again to continue.")),
 			gosx.El("p", gosx.Attrs(gosx.BoolAttr("data-scene-open-status"), gosx.Attr("role", "status"), gosx.Attr("aria-live", "polite"), gosx.Attr("class", "scene-open-status"))), selectionNotice,
-			gosx.El("div", gosx.Attrs(gosx.Attr("class", "arrangement-blocks"), gosx.Attr("aria-label", "Section inspector")), gosx.Fragment(blocks...)))
+			gosx.El("div", gosx.Attrs(gosx.Attr("class", "arrangement-blocks"), gosx.Attr("role", "group"), gosx.Attr("aria-label", "Section inspector")), gosx.Fragment(blocks...)))
 	}
 	return ui.Panel(ui.PanelProps{ID: "arrangement", Title: "Arrangement", Description: length}, gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll timeline"), gosx.Attr("aria-label", "Song timeline")), gosx.Fragment(rows...)), gosx.El("p", gosx.Attrs(gosx.BoolAttr("data-scene-open-status"), gosx.Attr("role", "status"), gosx.Attr("aria-live", "polite"), gosx.Attr("class", "scene-open-status"))), s.sessionListening(v, csrf, selected, p.MeterMap().BarStart(int64(bar-1))), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Click a scene name to play from that block, or Edit to change the block. After a song edit, choose Edit again to continue. Click a clip to edit its pattern. ↳ carries the previous pattern.")), selectionNotice, gosx.El("div", gosx.Attrs(gosx.Attr("class", "arrangement-blocks")), gosx.Fragment(blocks...)), gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), appendBlock), gosx.El("details", gosx.Attrs(gosx.Attr("class", "pattern-management")), gosx.El("summary", gosx.Text("Project settings")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), settings), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Changing the key retunes scale-degree notes. Explicit letter pitches retain their pitch."))))
 }

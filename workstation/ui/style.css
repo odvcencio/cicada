@@ -976,65 +976,53 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
 .shell #arrangement .placement-select .clip-preview { display:block; width:100%; height:22px; flex:1; min-height:10px; fill:var(--arrange-kind); opacity:.85; }
 
 /* Mute and solo under each track name in the rail. */
-.shell #arrangement .rail-toggles { grid-column:2; display:flex; gap:4px; margin-top:3px; }
+.shell #arrangement .rail-toggles { grid-column:2; display:grid; grid-template-columns:22px 22px minmax(22px,1fr); gap:4px; margin-top:3px; }
 .shell #arrangement .timeline-track .rail-toggles { margin-top:0; }
 .shell #arrangement .rail-toggles .strip-toggle { min-width:22px; min-height:22px; padding:0 5px; font-size:11px; }
 
 /* A scene name plays the block; its separate edit link opens its controls. */
 .shell #arrangement .timeline-section .timeline-edit { flex:none; display:inline-flex; align-items:center; justify-content:center; min-width:24px; min-height:24px; padding:2px 4px; border-radius:3px; color:var(--muted); font:11px system-ui,sans-serif; text-decoration:none; }
 .shell #arrangement .timeline-section .timeline-edit:hover, .shell #arrangement .timeline-section .timeline-edit:focus-visible { color:var(--amber); background:var(--hover); }
-.shell #arrangement .arrangement-block[data-song-selected] { order:-1; border-color:var(--amber); }
+.shell #arrangement .arrangement-block[open] { order:-1; border-color:var(--amber); }
 
 @media (pointer:coarse) {
   .shell #arrangement .timeline-section .timeline-edit { min-width:44px; min-height:44px; }
 }
 
 /* Track renaming stays beside the track, with its form open only on request. */
-.shell #arrangement .rail-rename { grid-column:2; min-width:0; font-size:11px; }
+.shell #arrangement .rail-rename { grid-column:3; grid-row:1; min-width:0; font-size:11px; }
+.shell #arrangement .rail-rename[open] { grid-column:1 / -1; grid-row:1 / span 2; pointer-events:none; }
+.shell #arrangement .rail-rename[open] > summary { margin-left:52px; pointer-events:auto; }
+.shell #arrangement .rail-rename[open] > form { margin-top:4px; pointer-events:auto; }
 .shell #arrangement .rail-rename summary { cursor:pointer; color:var(--muted); }
-.shell #arrangement .rail-rename .action-form { display:grid; gap:4px; margin:4px 0; }
+.shell #arrangement .rail-rename .action-form { display:grid; gap:4px; width:100%; min-width:0; margin:0; }
 .shell #arrangement .rail-rename-hint { margin:0; color:var(--muted); font-size:11px; line-height:1.3; }
-.shell #arrangement .rail-rename input { width:100%; min-width:0; }
-.shell #arrangement .rail-rename button { min-width:0; padding:4px; }
+.shell #arrangement .rail-rename input { box-sizing:border-box; width:100%; min-width:0; }
+.shell #arrangement .rail-rename button { box-sizing:border-box; width:100%; min-width:0; padding:4px; }
 
 /* Scene-song controls float above the timeline and wrap on narrow screens. */
-.shell #arrangement .arrange-tools { position:relative; z-index:4; display:flex; flex-wrap:wrap; align-items:center; gap:6px; min-width:0; padding:5px 10px; background:var(--panel); border-bottom:1px solid var(--border); }
+.shell #arrangement .arrange-tools { position:relative; z-index:6; display:flex; flex-wrap:wrap; align-items:center; gap:6px; min-width:0; padding:5px 10px; background:var(--panel); border-bottom:1px solid var(--border); }
 .shell #arrangement .arrange-tools-spacer { flex:1; }
 .shell #arrangement .arrange-tools .action-form { margin:0; }
-.shell #arrangement .arrange-popover { position:relative; }
 .shell #arrangement .arrange-popover > summary { cursor:pointer; padding:5px 8px; border:1px solid var(--border); border-radius:4px; background:var(--raised); }
-.shell #arrangement .arrange-popover-panel, .shell #arrangement .rail-rename .action-form { position:absolute; z-index:10; top:100%; left:0; width:max-content; max-width:min(320px, calc(100vw - 20px)); padding:10px; border:1px solid var(--border); border-radius:4px; background:var(--panel); box-shadow:0 4px 12px #0008; }
-.shell #arrangement .arrange-popover:nth-last-child(-n+2) .arrange-popover-panel { left:auto; right:0; }
+.shell #arrangement .arrange-popover-panel { position:absolute; z-index:10; top:100%; left:0; width:max-content; max-width:min(320px, calc(100vw - 20px)); padding:10px; border:1px solid var(--border); border-radius:4px; background:var(--panel); box-shadow:0 4px 12px #0008; }
+.shell #arrangement .arrange-popover-panel { left:0; right:0; width:auto; max-width:100%; box-sizing:border-box; }
 .shell #arrangement .arrange-popover-panel .action-form { display:flex; flex-wrap:wrap; align-items:end; gap:8px; }
 .shell #arrangement .arrange-popover-panel .field { margin:0; }
 .shell #arrangement .arrange-popover-panel p { margin:8px 0 0; }
 .shell #arrangement .arrange-status { margin:8px 12px; color:var(--muted); font-size:12px; }
-.shell #arrangement .arrangement-block:not([data-song-selected]) { display:none; }
-.shell #arrangement .arrangement-block[data-song-selected] { width:100%; }
-.shell #arrangement .arrangement-block[data-song-selected] > summary::before { content:"Section · "; }
+.shell #arrangement .arrangement-block:not([open]) { display:none; }
+.shell #arrangement .arrangement-block[open] { width:100%; }
+.shell #arrangement .arrangement-block[open] > summary::before { content:"Section · "; }
 .shell #arrangement .rail-toggles { align-items:center; margin-top:0; }
-.shell #arrangement .rail-rename { position:relative; }
 .shell #arrangement .rail-rename summary { display:flex; align-items:center; justify-content:center; width:22px; height:22px; border:1px solid var(--border); border-radius:3px; background:var(--raised); list-style:none; }
 .shell #arrangement .rail-rename summary::-webkit-details-marker { display:none; }
-.shell #arrangement .rail-rename .action-form { display:grid; gap:4px; margin:0; min-width:190px; }
 .shell #arrangement :is(.arrange-popover summary,.rail-rename summary):focus-visible { outline:2px solid var(--amber); outline-offset:2px; }
-.shell #arrangement :is(.timeline-row,.placement-row):has(.rail-rename[open]) { position:relative; z-index:5; }
-.shell #arrangement :is(.timeline-track,.placement-track):has(.rail-rename[open]) { z-index:5; }
-.shell #arrangement :is(.timeline-row,.placement-row):nth-last-child(-n+2) .rail-rename .action-form { top:auto; bottom:100%; }
-/* Leave room above short timelines, and keep two adjacent open forms apart. */
-.shell #arrangement .timeline:has(.timeline-row:nth-child(-n+3):nth-last-child(-n+2) .rail-rename[open]),
-.shell #arrangement .placement-scroll:has(.placement-row:nth-child(-n+4):nth-last-child(-n+2) .rail-rename[open]) { padding-top:160px; }
-.shell #arrangement :is(.timeline-row,.placement-row):has(.rail-rename[open]) + :is(.timeline-row,.placement-row) .rail-rename[open] .action-form { left:calc(100% + 190px); }
 @media (max-width:600px) {
   .shell #arrangement .arrange-tools-spacer { display:none; }
 }
 .shell #arrangement :is(.timeline-row > .timeline-track,.placement-row > .placement-track) { padding-block:3px; }
 .shell #arrangement :is(.timeline-track,.placement-track) small { line-height:1.1; }
-@media (max-width:600px) {
-  .shell #arrangement .arrange-popover { position:static; }
-  .shell #arrangement .arrange-popover-panel,
-  .shell #arrangement .arrange-popover:nth-last-child(-n+2) .arrange-popover-panel { left:10px; right:auto; }
-}
 
 /* Clip dock: the pattern list, one tool row, then the grid. The dock bar
    already names the pattern, so the panel's own heading is for screen readers. */

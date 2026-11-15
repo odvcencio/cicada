@@ -208,7 +208,7 @@ playback. **Play full song** restores all parts and starts at the beginning;
 
 ![Tidal Glass placement editing and listening controls, captured from the release build at 1440 px.](screenshots/studio-session-listening-1440.png)
 
-For a scene song, the Arrange tool strip provides playback, exact looping, **Add section**, and **Project**. Choose a section’s **Edit** link to open its controls below the lanes; the Session view holds the scene launch grid.
+For a scene song, the Arrange tool strip provides playback, exact looping, **Add section**, and **Project**. Choose a section’s **Edit** link to open its controls below the lanes. For every project with scenes, the scene launch grid is in Session.
 
 **Project** opens project settings for the title, tempo, key, and scale. Tempo keeps up
 to three decimal places. Changing the key retunes scale-degree notes; explicit

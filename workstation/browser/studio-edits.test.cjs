@@ -1076,13 +1076,16 @@ test('Remove block after another client inserted a block earlier is not sent', a
     assert.equal(await page.locator('#update-center-arrange details[data-song-index]').count(), 2, 'the stale view already showed the copy');
     const second = page.locator('#update-center-arrange details[data-song-index="1"]');
     await page.locator('#update-center-arrange .timeline-edit[data-song-index="1"]').click();
+    await second.locator('summary').waitFor({state: 'visible'});
+    assert.equal(await page.locator('#update-center-arrange details.arrangement-block[open]').count(), 1);
     allow.add('center-arrange');
     const songs = sent('/__actions/song');
     await second.getByRole('button', {name: 'Remove block'}).click();
     await until(async () => anotherChange.test(await status()), 'the held removal was not reported');
     await page.waitForTimeout(300);
     assert.equal(sent('/__actions/song'), songs, 'Remove block was sent after another client changed the song');
-    assert.equal(await page.locator('#update-center-arrange details[data-song-index]').count(), 3, 'the page does not show the copied block');
+    assert.equal(await page.locator('#update-center-arrange details.arrangement-block[open]').count(), 0, 'the inspector closes when its block changes');
+    assert.equal(await page.locator('#update-center-arrange [data-scene-open-status]').textContent(), 'The song changed. Choose Edit on a block to continue editing it.');
     assert.equal((await state('/api/state')).source, theirs.source, 'the song changed');
   } finally {
     await page.unroute('**/__studio/regions**');

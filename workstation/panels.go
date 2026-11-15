@@ -314,7 +314,11 @@ func (s *studioApp) trackRail(ctx *server.Context, v workspace, csrf string) fun
 		}
 		input := gosx.El("input", gosx.Attrs(gosx.Attr("type", "text"), gosx.Attr("name", "name"), gosx.Attr("value", track), gosx.Attr("aria-label", "New name for "+track), gosx.BoolAttr("required")))
 		form := ui.Form(ui.FormProps{Action: "/__actions/track-rename", CSRF: csrf, Revision: v.Revision, ReturnTo: "/?panel=session", Class: "action-form"}, hidden("source_revision", v.SourceRevision), hidden("track", track), input, gosx.El("p", gosx.Attrs(gosx.Attr("class", "rail-rename-hint")), gosx.Text("Stop playback before renaming.")), submit("", "", "Rename track"))
-		rename := gosx.El("details", gosx.Attrs(gosx.Attr("class", "rail-rename")), gosx.El("summary", gosx.Attrs(gosx.Attr("aria-label", "Rename "+track)), gosx.Text("✎")), form)
+		label := "Rename"
+		if ctx != nil && ctx.Request.URL.Path == "/studio" {
+			label = "✎"
+		}
+		rename := gosx.El("details", gosx.Attrs(gosx.Attr("class", "rail-rename")), gosx.El("summary", gosx.Attrs(gosx.Attr("aria-label", "Rename "+track), gosx.Attr("title", "Rename "+track)), gosx.Text(label)), form)
 		return gosx.El("div", gosx.Attrs(gosx.Attr("class", "rail-toggles")), gosx.Fragment(toggles...), rename)
 	}
 }

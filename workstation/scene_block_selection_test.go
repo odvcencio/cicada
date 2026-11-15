@@ -3,11 +3,34 @@ package main
 import (
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
 	"m31labs.dev/cicada/project"
 )
+
+func assertSongBlock(t *testing.T, body string, index int, selected bool) {
+	t.Helper()
+	attr := func(tag, name string) bool {
+		return regexp.MustCompile(`\s` + regexp.QuoteMeta(name) + `(?:\s|=|/?>)`).MatchString(tag)
+	}
+	for _, tag := range regexp.MustCompile(`<details\b[^>]*>`).FindAllString(body, -1) {
+		if !strings.Contains(tag, `id="song-block-`+strconv.Itoa(index)+`"`) {
+			continue
+		}
+		if !strings.Contains(tag, `data-song-index="`+strconv.Itoa(index)+`"`) {
+			t.Errorf("block %d missing its song index: %s", index, tag)
+		}
+		for _, name := range []string{"open", "data-song-selected"} {
+			if got := attr(tag, name); got != selected {
+				t.Errorf("block %d %s = %v, want %v: %s", index, name, got, selected, tag)
+			}
+		}
+		return
+	}
+	t.Errorf("missing song block %d", index)
+}
 
 func TestSceneBlockSelectionUsesDisplayedTarget(t *testing.T) {
 	p := &project.Project{Scenes: []project.Scene{{ID: "main"}, {ID: "alternate"}}, Song: []project.SongEntry{{Scene: "main", Bars: 4}, {Scene: "alternate", Bars: 2}}}
@@ -23,9 +46,8 @@ func TestSceneBlockSelectionUsesDisplayedTarget(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			q := url.Values{"panel": {"session"}, "songBlock": {tc.index}, "songKey": {tc.key}}
 			body := getPage(t, client, address+"/?"+q.Encode())
-			if got := strings.Contains(body, `data-song-index="1" id="song-block-1" open data-song-selected`); got != tc.selected {
-				t.Fatalf("selected = %v, want %v", got, tc.selected)
-			}
+			assertSongBlock(t, body, 0, false)
+			assertSongBlock(t, body, 1, tc.selected)
 			if strings.Contains(body, "songRevision") {
 				t.Fatal("rendered markup contains songRevision")
 			}
@@ -56,7 +78,7 @@ func TestShellSceneArrangementControls(t *testing.T) {
 		Edition: 2, TempoMilli: 120000,
 		Tracks: []project.Track{{ID: "bass", Kind: "acid"}},
 		Scenes: []project.Scene{{ID: "main"}, {ID: "alternate"}},
-		Song:   []project.SongEntry{{Scene: "main", Bars: 4}, {Scene: "alternate", Bars: 4}},
+		Song:   []project.SongEntry{{Scene: "main", Bars: 4}, {Scene: "alternate", Bars: 4}, {Scene: "main", Bars: 4}},
 	}
 	address, client, _ := testAppWorkspace(t, &workspace{Revision: "current", SourceRevision: "sources", Valid: true, Project: p})
 	body := getPage(t, client, address+"/studio?songBlock=1&songKey=alternate%405%2B4")
@@ -79,19 +101,42 @@ func TestShellSceneArrangementControls(t *testing.T) {
 		last = at
 	}
 	for _, want := range []string{
-		"Scene matrix · 8 bars · 0:16 at 120.0 BPM · Click a clip to edit it below. ↳ carries the previous pattern.",
-		`data-song-index="0" id="song-block-0"`,
-		`data-song-index="1" id="song-block-1" open data-song-selected`,
+		"Scene matrix · 12 bars · 0:24 at 120.0 BPM · Click a clip to edit it below. ↳ carries the previous pattern.",
 		`aria-label="Rename bass"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("missing %q", want)
 		}
 	}
-	if strings.Contains(body, `id="song-block-0" open data-song-selected`) || strings.Contains(body, "Scene launch matrix") {
-		t.Error("unselected block selected or launch matrix present in Arrange")
+	assertSongBlock(t, body, 0, false)
+	assertSongBlock(t, body, 1, true)
+	assertSongBlock(t, body, 2, false)
+	if strings.Count(body, "data-song-selected") != 1 {
+		t.Error("expected exactly one selected block")
+	}
+	selectedStart := strings.Index(body, `id="song-block-1"`)
+	if selectedStart < 0 {
+		t.Fatal("missing selected block")
+	}
+	selectedEnd := strings.Index(body[selectedStart:], "</details>")
+	if selectedEnd < 0 {
+		t.Fatal("missing end of selected block")
+	}
+	selected := body[selectedStart : selectedStart+selectedEnd]
+	for _, label := range []string{"Loop block", "Replace scene", "Set length", "Move earlier", "Move later", "Duplicate block", "Remove block"} {
+		if !strings.Contains(selected, label) {
+			t.Errorf("selected block missing %q", label)
+		}
+	}
+	if strings.Contains(body, "Scene launch matrix") {
+		t.Error("launch matrix present in Arrange")
 	}
 	legacy := getPage(t, client, address+"/?panel=session")
+	defaultShell := getPage(t, client, address+"/studio")
+	for index := range p.Song {
+		assertSongBlock(t, legacy, index, false)
+		assertSongBlock(t, defaultShell, index, false)
+	}
 	if !strings.Contains(legacy, "Scene launch matrix") {
 		t.Error("legacy session lacks scene launch matrix")
 	}
