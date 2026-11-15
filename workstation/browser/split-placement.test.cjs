@@ -74,12 +74,12 @@ test('split uses render proof, refuses invalid and stale targets, and has one Un
  const retry=page.locator('[data-workspace-retry]');if(await retry.isVisible()){await retry.click();await until(async()=>!(await retry.isVisible()),'refresh after stale split did not settle')}
  await ready();await page.locator('#undo-form button[type=submit]').click();await until(()=>fs.readFileSync(path.join(dir,'main.cicada'),'utf8')===entry,'Undo did not restore queued grid edit');await ready();
  // Follow a managed placement link and submit the newly rendered inspector.
- const riskLink=page.getByRole('link',{name:'Edit placement risk',exact:true});await riskLink.focus();await page.keyboard.press('Enter');
+ const riskLink=page.getByRole('link',{name:/^Edit placement risk:/});await riskLink.focus();await page.keyboard.press('Enter');
  await until(()=>new URL(page.url()).searchParams.get('placement')==='risk','managed placement navigation did not settle');
  await ready();const riskBox=inspector('risk');if(await riskBox.getAttribute('open')===null)await riskBox.locator('summary').first().click();
  form=await splitForm('risk');const audible=await split(form,23040);assert.equal((await audible).status(),422);
  await until(async()=>/chance steps|restarts/i.test(await page.locator('body').innerText()),'audible refusal not explained');assert.equal(fs.readFileSync(owner,'utf8'),arrangement);
- const goodLink=page.getByRole('link',{name:'Edit placement good',exact:true});await goodLink.focus();await page.keyboard.press('Enter');
+ const goodLink=page.getByRole('link',{name:/^Edit placement good:/});await goodLink.focus();await page.keyboard.press('Enter');
  await until(()=>new URL(page.url()).searchParams.get('placement')==='good','placement command blocked after refusal');await ready();form=await splitForm('good');
  // Replace the source after the browser submits its original target/receipt.
  const external=arrangement.replace('place good drums beat','place good drums chance')+'// external edit\r\n';let intercepted=false;
