@@ -7,6 +7,7 @@
  const read=async name=>{const response=await fetch('/api/'+name,{cache:'no-store'});if(!response.ok)throw Error(name+': '+response.status);return response.json()};
  const ready=()=>wait(()=>window.__gosx?.ready&&document.querySelector('#studio-shell[data-shell-actions=ready]')&&!document.querySelector('form[data-gosx-form-state=pending],form[data-gosx-form-state=submitting]'),'Studio ready');
  const click=(selector,scope=document)=>{const el=scope.querySelector(selector);if(!el||el.disabled)throw Error('Unavailable '+selector);el.click()};
+ const dock=async name=>{const tab=document.querySelector('#detail-tab-'+name);if(!tab)return;const panel=()=>document.querySelector('#detail-panel-'+name);if(panel()?.hidden)tab.click();await wait(()=>panel()&&!panel().hidden,name+' dock visible')};
  const input=(el,value)=>{if(!el)throw Error('Missing input');el.value=value;el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}))};
  (async()=>{
   await ready();const state=JSON.parse(sessionStorage.getItem(key)||'null')||{phase:0,checks:[]};const save=()=>sessionStorage.setItem(key,JSON.stringify(state));
@@ -15,7 +16,7 @@
   while(true){
    await ready();
    if(state.phase===7){if((await read('state')).source!==state.kept||!(await read('takes')).takes?.some(t=>t.id===state.takeID))throw Error('Reopened project lost the kept curve or audio take');state.checks.push('reopening retained both the audio take and automation curve');sessionStorage.removeItem(key);return {type:'cicada-native-smoke',ok:true,checks:state.checks,takeID:state.takeID,physicalAudioVerified:false,microphoneOpened:false,input:'synthetic PCM'}}
-   await wait(()=>!document.querySelector('#detail-panel-automation')?.hidden&&document.querySelector('#cicada-automation-curve[data-automation-ready=true]')&&document.querySelector('#detail-panel-automation .automation-recording [name=path]')?.value==='guitar.amp_drive','selected automation controls');
+   await dock('automation');await wait(()=>!document.querySelector('#detail-panel-automation')?.hidden&&document.querySelector('#cicada-automation-curve[data-automation-ready=true]')&&document.querySelector('#detail-panel-automation .automation-recording [name=path]')?.value==='guitar.amp_drive','selected automation controls');
    const form=()=>document.querySelector('#detail-panel-automation .automation-recording');form().querySelector('details').open=true;
    switch(state.phase){
    case 1:{
@@ -25,12 +26,12 @@
     await wait(()=>!form().querySelector('[data-automation-record-command=discard]').disabled,'cancel available');click('[data-automation-record-command=discard]',form());await wait(async()=>!(await read('automation/recording')).recording,'cancel preparation');
     await wait(()=>!form().querySelector('[data-automation-record-command=start]').disabled,'prepare available again');click('[data-automation-record-command=start]',form());await wait(async()=>(await read('automation/recording')).recording?.prepared,'prepared again');
     await wait(()=>form().querySelector('[data-automation-record-status]')?.textContent.includes('prepared'),'prepared state visible');if(typeof window.__liveWriteEvidence==='function')await window.__liveWriteEvidence('prepared');state.checks.push('explicit preparation opens no input and can be canceled');
-    const record=document.querySelector('#vocals [data-capture-control=record]');if(!record||record.disabled)throw Error('Record take unavailable');state.phase=2;save();record.click();break;
+    await dock('takes');await wait(()=>{const control=document.querySelector('#vocals [data-capture-control=record]');return control&&!control.disabled},'Record take enabled');const record=document.querySelector('#vocals [data-capture-control=record]');if(!record||record.disabled)throw Error('Record take unavailable');state.phase=2;save();record.click();break;
    }
    case 2:{
     await wait(async()=>{const c=await read('capture'),r=(await read('automation/recording')).recording;return c.activeCapture&&c.capture?.recording&&r?.active&&r.monitor&&!r.prepared},'linked audio capture');
     const slider=form().querySelector('[data-automation-record-value]');await wait(()=>slider&&!slider.disabled,'Perform enabled');input(slider,'0.7');await wait(async()=>(await read('automation/recording')).recording?.points.some(p=>Math.abs(p.value-.7)<.001),'movement recorded');
-    await wait(()=>form().querySelector('[data-automation-record-command=keep]').disabled,'Keep locked during audio capture');if(typeof window.__liveWriteEvidence==='function')await window.__liveWriteEvidence('recording');state.checks.push('Record starts the prepared pass and a movement is captured while Keep waits');state.phase=3;save();click('#vocals [data-capture-control=stop]');break;
+    await wait(()=>form().querySelector('[data-automation-record-command=keep]').disabled,'Keep locked during audio capture');if(typeof window.__liveWriteEvidence==='function')await window.__liveWriteEvidence('recording');state.checks.push('Record starts the prepared pass and a movement is captured while Keep waits');state.phase=3;save();await dock('takes');await wait(()=>{const control=document.querySelector('#vocals [data-capture-control=stop]');return control&&!control.disabled},'Finish take enabled');click('#vocals [data-capture-control=stop]');break;
    }
    case 3:{
     await wait(async()=>!(await read('capture')).activeCapture,'audio finalized');await wait(async()=>{const r=(await read('automation/recording')).recording;return r&&!r.active&&!r.prepared&&!r.invalid},'retained pass');
