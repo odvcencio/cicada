@@ -896,8 +896,10 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
 .shell #detail-tabs .shell-dock-selection span { color:var(--muted); font:11px var(--mono); }
 /* An empty label keeps its box, so the header's bottom border still runs to the edge. */
 .shell #detail-tabs .shell-dock-selection:has(> strong:empty) > * { visibility:hidden; }
+.shell #detail-tabs:not(:has(#detail-tab-clip[aria-current="page"])) [data-dock-selection=clip],
 .shell #detail-tabs:has(#detail-tab-clip[aria-current="page"]) [data-dock-selection=track],
-.shell #detail-tabs:not(:has(#detail-tab-clip[aria-current="page"])) [data-dock-selection=clip] { display:none; }
+.shell #detail-tabs:has(#detail-tab-takes[aria-current="page"]) [data-dock-selection=track],
+.shell #detail-tabs:not(:has(#detail-tab-takes[aria-current="page"])) [data-dock-selection=takes] { display:none; }
 .shell #detail-tabs > .shell-scroll { grid-column:1/-1; grid-row:2; }
 /* Update regions wrap the parts of the shell that an edit response patches in
    place. The wrapper and its body add no box, so layout ignores them. */
