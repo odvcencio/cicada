@@ -105,8 +105,9 @@ performance into the arrangement.
 
 ## Play with a MIDI keyboard
 
-In Live, choose **Enable MIDI**, then select your keyboard or controller. The
-Mac app connects through CoreMIDI, including when the embedded browser does
+In Live, choose **Enable MIDI**. Use **MIDI setup** to bind a score port to a
+keyboard or controller when the score declares MIDI ports. The Mac app connects
+through CoreMIDI, including when the embedded browser does
 not provide Web MIDI. Connecting or disconnecting an input updates the list;
 unplugging an input releases its held notes. Note and controller input follow
 the selected Live instrument. SysEx is not supported.

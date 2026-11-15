@@ -5,7 +5,7 @@
 .shell #view-panel-session #live [data-live-launch-status] { margin:0 12px 4px; color:var(--muted); font-size:11px; }
 .shell #view-panel-session #live form[action$="/__actions/launch"] > .field { display:flex; align-items:center; gap:8px; margin:0; padding:5px 12px; border-block:1px solid var(--border); background:var(--panel); }
 .shell #view-panel-session #live form[action$="/__actions/launch"] > .field select { width:auto; min-height:27px; }
-.shell #view-panel-session #live .grid-scroll { max-width:100%; overflow-x:auto; padding:8px 12px; }
+.shell #view-panel-session #live .grid-scroll { max-width:100%; overflow-x:auto; scroll-padding-left:140px; padding:8px 12px; }
 .shell #view-panel-session #live table { width:100%; border-collapse:separate; border-spacing:4px; table-layout:fixed; }
 .shell #view-panel-session #live th,
 .shell #view-panel-session #live td { padding:0; border:0; vertical-align:stretch; }
@@ -18,7 +18,7 @@
 .shell #view-panel-session #live tbody th[data-live-scene] button::before { content:"▶ "; color:var(--muted); font-size:10px; }
 .shell #view-panel-session #live tbody th[data-live-scene] button { flex-direction:row; justify-content:flex-start; gap:4px; align-items:center; }
 .shell #view-panel-session #live tbody td[data-live-slot] button { border-left:3px solid var(--track-color,var(--mint)); background:color-mix(in srgb,var(--track-color,var(--mint)) 14%,var(--bg)); }
-.shell #view-panel-session #live .live-slot-name { display:block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.shell #view-panel-session #live .live-slot-name { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; max-width:100%; overflow:hidden; white-space:normal; }
 .shell #view-panel-session #live tbody td[data-live-slot] button::after { content:"Ready"; margin-top:2px; color:var(--muted); font:400 10px var(--mono); }
 .shell #view-panel-session #live tbody td[data-live-slot][data-state=playing] button { border-color:var(--mint); box-shadow:inset 0 0 0 1px var(--mint); }
 .shell #view-panel-session #live tbody td[data-live-slot][data-state=playing] button::after { content:"▶ Playing"; color:var(--mint); }
@@ -38,13 +38,12 @@
 .shell #view-panel-session #live .live-targets, .shell #view-panel-session #live .live-target-group { display:flex; flex-wrap:wrap; align-items:center; gap:8px; min-width:0; }
 .shell #view-panel-session #live .live-target-group[hidden] { display:none; }
 .shell #view-panel-session #live .live-keyboard { display:flex; overflow-x:auto; max-width:100%; }
-.shell #view-panel-session #live .live-keyboard button { display:flex; flex:0 0 56px; flex-direction:column; align-items:center; justify-content:center; min-height:76px; }
+.shell #view-panel-session #live .live-keyboard button { flex:0 0 56px; min-height:76px; }
 .shell #view-panel-session #live .live-keyboard button.sharp { min-height:60px; align-self:flex-start; background:var(--panel); }
 .shell #view-panel-session #live .live-drums { display:grid; grid-template-columns:repeat(auto-fill,minmax(84px,104px)); }
-.shell #view-panel-session #live .live-drums button { display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:64px; aspect-ratio:1.2; }
-.shell #view-panel-session #live :is(.live-keyboard,.live-drums) small { color:var(--muted); font-size:10px; }
-.shell #view-panel-session #live :is(.live-keyboard,.live-drums) button[aria-pressed=true] small { color:inherit; }
+.shell #view-panel-session #live .live-drums button { min-height:64px; aspect-ratio:1.2; }
 @media (max-width:600px) {
+  .shell #view-panel-session #live .live-keyboard { flex-wrap:wrap; overflow-x:visible; }
   .shell #view-panel-session #live .live-drums { grid-template-columns:repeat(4,minmax(0,1fr)); }
   .shell #view-panel-session #live .live-drums button { padding:4px; }
 }

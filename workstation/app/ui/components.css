@@ -173,6 +173,9 @@ td button { width:100%; }
 .generator-form .field { margin:6px 0; }
 .live-keyboard,.live-drums { display:grid; grid-template-columns:repeat(auto-fit,minmax(65px,1fr)); gap:8px; margin:16px 0; }
 .live-keyboard button,.live-drums button { min-height:64px; touch-action:none; }
+#live :is(.live-keyboard,.live-drums) button { display:flex; flex-direction:column; align-items:center; justify-content:center; }
+#live :is(.live-keyboard,.live-drums) small { color:var(--muted); font-size:10px; }
+#live :is(.live-keyboard,.live-drums) button[aria-pressed=true] small { color:inherit; }
 #live .actions > .field { flex:1 1 180px; min-width:0; }
 #live input[data-live-macro] { accent-color:var(--mint); min-height:38px; padding:0; cursor:ew-resize; }
 #live input[data-live-macro]:disabled { cursor:not-allowed; }

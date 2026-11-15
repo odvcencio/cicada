@@ -80,12 +80,55 @@ song { main }
 	if disclosure == "" || strings.Contains(strings.SplitN(disclosure, ">", 2)[0], " open") || !strings.Contains(disclosure, "MIDI setup") {
 		t.Error("MIDI setup must be closed by default")
 	}
-	if strings.Contains(disclosure, "Release notes") || !strings.Contains(page, "Release notes") {
-		t.Error("Release notes must be outside MIDI setup")
+	for _, label := range []string{"Release notes", "Enable MIDI"} {
+		if strings.Contains(disclosure, label) || !strings.Contains(page, label) {
+			t.Errorf("%s must be outside MIDI setup", label)
+		}
 	}
-	for _, label := range []string{"Pitched track", "Pitched pattern", "Drum track", "Drum pattern"} {
+	for _, label := range []string{"Keys play: pitched track", "Keys play into: pitched pattern", "Pads play: drum track", "Pads play into: drum pattern"} {
 		if !strings.Contains(page, `aria-label="`+label+`"`) {
 			t.Errorf("missing accessible target name %s", label)
+		}
+	}
+	header := regexp.MustCompile(`(?s)<div[^>]*class="live-input-heading"[^>]*>.*?</div>`).FindString(page)
+	for _, want := range []string{`data-live-destination-pitched[^>]*>bass</span>`, `data-live-destination-drums[^>]*>drums</span>`, `data-live-midi-state[^>]*>MIDI off</span>`} {
+		if !regexp.MustCompile(want).MatchString(header) {
+			t.Errorf("missing header content %s", want)
+		}
+	}
+	if !regexp.MustCompile(`<button\b[^>]*data-live-control="midi"[^>]*>Enable MIDI</button>`).MatchString(page) {
+		t.Error("missing Enable MIDI button hook")
+	}
+	assertLiveTargets(t, page, true, true)
+}
+
+func assertLiveTargets(t *testing.T, page string, pitched, drums bool) {
+	t.Helper()
+	for _, group := range []struct {
+		name, track, pattern string
+		visible              bool
+	}{
+		{"Keys", "data-live-acid", "data-live-pattern", pitched},
+		{"Pads", "data-live-drums", "data-live-drumpattern", drums},
+	} {
+		re := regexp.MustCompile(`(?s)<div\b([^>]*\blive-target-group\b[^>]*)>(.*?)</div>`)
+		found := false
+		for _, match := range re.FindAllStringSubmatch(page, -1) {
+			if !strings.Contains(match[2], group.name+" play") {
+				continue
+			}
+			found = true
+			if strings.Contains(match[1], "hidden") == group.visible {
+				t.Errorf("%s group visibility is wrong", group.name)
+			}
+			for _, hook := range []string{group.track, group.pattern} {
+				if !regexp.MustCompile(`<select\b[^>]*\b` + hook + `(?:[= >])`).MatchString(match[2]) {
+					t.Errorf("%s group missing select %s", group.name, hook)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("missing %s target group", group.name)
 		}
 	}
 }
@@ -129,7 +172,16 @@ func TestGoSXLiveIncludesEveryModeledKeyboard(t *testing.T) {
 }
 
 func TestGoSXLiveWithoutDrumsHasNoPads(t *testing.T) {
-	score, ds := notation.Parse([]byte("cicada 2\ntrack keys piano {}\npattern n notes { c4 . }\nscene main { keys=n }\nsong { main }\n"))
+	assertLiveSingleTrack(t, "cicada 2\ntrack keys piano {}\npattern n notes { c4 . }\nscene main { keys=n }\nsong { main }\n", true)
+}
+
+func TestGoSXLiveWithoutPitchedHasNoKeys(t *testing.T) {
+	assertLiveSingleTrack(t, "cicada 2\ntrack drums drums {}\npattern d drums { bd: x... }\nscene main { drums=d }\nsong { main }\n", false)
+}
+
+func assertLiveSingleTrack(t *testing.T, source string, pitched bool) {
+	t.Helper()
+	score, ds := notation.Parse([]byte(source))
 	if len(ds) != 0 {
 		t.Fatal(ds)
 	}
@@ -154,7 +206,8 @@ func TestGoSXLiveWithoutDrumsHasNoPads(t *testing.T) {
 	app := httptest.NewServer(handler)
 	defer app.Close()
 	page := getPage(t, app.Client(), app.URL+"/?panel=live")
-	if strings.Contains(page, "data-live-drum=") {
-		t.Fatal("drum pads rendered without a drum track")
+	assertLiveTargets(t, page, pitched, !pitched)
+	if strings.Contains(page, "data-live-note=") != pitched || strings.Contains(page, "data-live-drum=") == pitched {
+		t.Error("keys or pads do not match available tracks")
 	}
 }

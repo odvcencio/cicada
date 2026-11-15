@@ -96,6 +96,7 @@ type liveUI struct {
 	playing              bool
 	sampled              time.Time
 	learning             bool
+	midiReady            bool
 	mappings             []liveMapping
 	descriptors          map[string]control.Descriptor
 	addresses            map[string]string
@@ -786,6 +787,7 @@ func (u *liveUI) bindControls() {
 		u.query("[data-live-midi-setup]").Set("open", true)
 		u.closeNotes()
 		u.learning = true
+		u.syncMIDIState()
 		u.status.Set("Waiting for a MIDI CC or note for " + u.selected("[data-live-target]"))
 	})
 	button("clear", func() {
@@ -1022,6 +1024,16 @@ func awaitPromise(ctx context.Context, p js.Value) (js.Value, error) {
 		return js.Undefined(), ctx.Err()
 	}
 }
+func (u *liveUI) syncMIDIState() {
+	state := "MIDI off"
+	if u.learning {
+		state = "MIDI learning"
+	} else if u.midiReady {
+		state = "MIDI ready"
+	}
+	u.query("[data-live-midi-state]").Set("textContent", state)
+}
+
 func (u *liveUI) enableMIDI() {
 	u.query("[data-live-midi-setup]").Set("open", true)
 	if u.nativeMIDICancel != nil {
@@ -1059,7 +1071,8 @@ func (u *liveUI) enableMIDI() {
 			return
 		}
 		u.midi = access
-		u.query("[data-live-midi-state]").Set("textContent", "MIDI ready")
+		u.midiReady = true
+		u.syncMIDIState()
 		u.bindMIDI()
 		u.on(access, "statechange", func(js.Value) { u.bindMIDI() })
 	}()
@@ -1171,6 +1184,7 @@ func (u *liveUI) midiMessageAt(device string, data js.Value, at *control.NoteTim
 				}
 			}
 			u.learning = false
+			u.syncMIDIState()
 			if u.queue("midi-learn", map[string]string{"revision": u.props.Revision, "source_revision": u.sourceRevision, "port": port, "message": message, "channel": strconv.Itoa(channel + 1), "number": strconv.Itoa(a), "target": portableTarget}) {
 				u.status.Set("Saving MIDI mapping in the score…")
 			}
@@ -1207,6 +1221,7 @@ func (u *liveUI) midiMessageAt(device string, data js.Value, at *control.NoteTim
 		}
 		u.mappings = append(u.mappings, m)
 		u.learning = false
+		u.syncMIDIState()
 		u.saveMappings()
 		u.renderMappings()
 		u.status.Set("MIDI input learned in this browser for " + target)

@@ -60,7 +60,6 @@ test('portable MIDI routes input, learns to the score, and survives reload', {ti
   await page.goto(new URL('/studio?tab=session',startup).href);
   await page.locator('#studio-shell[data-shell-actions=ready]').waitFor({timeout:90000});
   await page.waitForFunction(() => [...document.querySelectorAll('[data-live-mappings] li')].some(e => e.textContent.includes('Synthetic Keyboard')), null, {timeout:30000});
-  await page.locator('[data-live-midi-setup]').evaluate(details => { details.open = true; });
   await page.locator('[data-live-control=midi]').click();
   await page.waitForFunction(() => document.querySelector('[data-live-status]')?.textContent.includes('MIDI enabled'), null, {timeout:30000});
   await page.evaluate(() => __sendMIDI(0xb0, 74, 127));
@@ -72,7 +71,14 @@ test('portable MIDI routes input, learns to the score, and survives reload', {ti
   await page.evaluate(() => __sendMIDI(0x80, 60, 0));
   await page.locator('[data-live-target]').selectOption('param:bass.pan');
   await page.locator('[data-live-control=learn]').click();
-  await page.evaluate(() => __sendMIDI(0xb0, 71, 96));
+  await page.locator('[data-live-midi-setup]').evaluate(details => { details.open = false; });
+  assert.equal(await page.locator('[data-live-midi-state]').textContent(), 'MIDI learning');
+  await page.evaluate(() => __sendMIDI(0x90, 71, 96));
+  assert.equal(await page.locator('[data-live-midi-state]').textContent(), 'MIDI learning');
+  assert.equal(await page.evaluate(() => {
+    __sendMIDI(0xb0, 71, 96);
+    return document.querySelector('[data-live-midi-state]').textContent;
+  }), 'MIDI ready');
   await page.waitForFunction(() => document.querySelector('[data-live-status]')?.textContent.includes('saved in the score'), null, {timeout:30000});
   const score = fs.readFileSync(scorePath,'utf8');
   assert(score.includes('keys ch 1 cc 71 -> bass.pan'));
@@ -82,7 +88,6 @@ test('portable MIDI routes input, learns to the score, and survives reload', {ti
   await page.evaluate(() => localStorage.setItem('portable-test-device', 'Second Keyboard'));
   await page.reload();
   await page.waitForFunction(() => [...document.querySelectorAll('[data-live-mappings] li')].some(e => e.textContent.includes('bass.pan') && e.textContent.includes('Second Keyboard')), null, {timeout:60000});
-  await page.locator('[data-live-midi-setup]').evaluate(details => { details.open = true; });
   await page.locator('[data-live-control=midi]').click();
   await page.waitForFunction(() => document.querySelector('[data-live-status]')?.textContent.includes('MIDI enabled'), null, {timeout:30000});
   await page.evaluate(() => __sendMIDI(0xb0, 71, 127));
@@ -95,7 +100,6 @@ test('portable MIDI routes input, learns to the score, and survives reload', {ti
   await page.waitForFunction(() => document.querySelector('[data-live-status]')?.textContent.includes('saved in the score'), null, {timeout:30000});
   assert(fs.readFileSync(scorePath, 'utf8').includes('keys ch 1 note 65 -> stop-track bass'));
   await page.waitForFunction(() => [...document.querySelectorAll('[data-live-mappings] li')].some(e => e.textContent.includes('stop-track bass')), null, {timeout:60000});
-  await page.locator('[data-live-midi-setup]').evaluate(details => { details.open = true; });
   await page.locator('[data-live-control=midi]').click();
   await page.waitForFunction(() => document.querySelector('[data-live-status]')?.textContent.includes('MIDI enabled'), null, {timeout:30000});
   await page.evaluate(() => __sendMIDI(0x90, 65, 100));
@@ -108,14 +112,12 @@ test('portable MIDI routes input, learns to the score, and survives reload', {ti
   await page.waitForFunction(() => [...document.querySelectorAll('[data-live-mappings] li')].some(e => e.textContent.includes('launch-slot bass phrase')), null, {timeout:60000});
   const proof = process.env.CICADA_PORTABLE_MIDI_PROOF_DIR;
   if (proof) { fs.mkdirSync(proof,{recursive:true}); await page.locator('[data-live-mappings]').scrollIntoViewIfNeeded(); await page.screenshot({path:path.join(proof,'portable-midi-learn.png'),fullPage:true}); }
-  await page.locator('[data-live-midi-setup]').evaluate(details => { details.open = true; });
   await page.locator('[data-live-control=midi]').click();
   await page.waitForFunction(() => document.querySelector('[data-live-status]')?.textContent.includes('MIDI enabled'), null, {timeout:30000});
   await page.evaluate(() => __sendMIDI(0x90, 66, 100));
   await until(() => actions.some(m => m.action === 'slot' && m.track === 'bass' && m.pattern === 'phrase'), 'portable slot launch reaches the transport');
   await page.reload();
   await page.waitForFunction(() => [...document.querySelectorAll('[data-live-mappings] li')].some(e => e.textContent.includes('launch-slot bass phrase')), null, {timeout:60000});
-  await page.locator('[data-live-midi-setup]').evaluate(details => { details.open = true; });
   await page.locator('[data-live-control=midi]').click();
   await page.waitForFunction(() => document.querySelector('[data-live-status]')?.textContent.includes('MIDI enabled'), null, {timeout:30000});
   await page.locator('#transport-form button[value=play]').click();

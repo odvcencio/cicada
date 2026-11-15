@@ -389,7 +389,7 @@ func (s *studioApp) live(ctx *server.Context, v workspace, csrf string) gosx.Nod
 		}
 		return gosx.El("div", attrs, gosx.El("span", gosx.Text(label+" play")), selectTarget(trackHook, trackLabel, options(tracks)), gosx.El("span", gosx.Text("into")), selectTarget(patternHook, patternLabel, patternsFor(tracks)))
 	}
-	controls := gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions live-targets")), group("Keys", pitched, "data-live-acid", "data-live-pattern", "Pitched track", "Pitched pattern"), group("Pads", drums, "data-live-drums", "data-live-drumpattern", "Drum track", "Drum pattern"), button("record", "Record notes"), button("finish", "Finish note take"), button("panic", "Release notes"))
+	controls := gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions live-targets")), group("Keys", pitched, "data-live-acid", "data-live-pattern", "Keys play: pitched track", "Keys play into: pitched pattern"), group("Pads", drums, "data-live-drums", "data-live-drumpattern", "Pads play: drum track", "Pads play into: drum pattern"), button("record", "Record notes"), button("finish", "Finish note take"), button("panic", "Release notes"), button("midi", "Enable MIDI"))
 	var quantize []gosx.Node
 	for _, q := range []struct{ value, label string }{{"-1", "Score default"}, {"1", "Next beat"}, {"2", "Next bar"}, {"5", "1 bar"}, {"6", "2 bars"}, {"8", "4 bars"}} {
 		quantize = append(quantize, gosx.El("option", gosx.Attrs(gosx.Attr("value", q.value), gosx.Attr("selected", q.value == "-1")), gosx.Text(q.label)))
@@ -402,7 +402,7 @@ func (s *studioApp) live(ctx *server.Context, v workspace, csrf string) gosx.Nod
 	for _, mode := range []struct{ value, label string }{{"auto", "Auto · follow controller"}, {"lower", "MPE · lower zone"}, {"upper", "MPE · upper zone"}} {
 		midiModes = append(midiModes, gosx.El("option", gosx.Attrs(gosx.Attr("value", mode.value)), gosx.Text(mode.label)))
 	}
-	midi := gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), button("midi", "Enable MIDI"), field("Note expression", viewSelect("data-live-midimode", gosx.Fragment(midiModes...))), field("Learn target", viewSelect("data-live-target", options(targets))), field("MIDI launch timing", viewSelect("data-live-quantize", gosx.Fragment(quantize...))), button("learn", "Learn next input"), button("clear", "Clear browser mappings"))
+	midi := gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), field("Note expression", viewSelect("data-live-midimode", gosx.Fragment(midiModes...))), field("Learn target", viewSelect("data-live-target", options(targets))), field("MIDI launch timing", viewSelect("data-live-quantize", gosx.Fragment(quantize...))), button("learn", "Learn next input"), button("clear", "Clear browser mappings"))
 	var midiPorts gosx.Node = gosx.Fragment()
 	if v.Project.MIDI != nil && len(v.Project.MIDI.Ports) > 0 {
 		midiPorts = gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), field("Score MIDI port", viewSelect("data-live-port", options(v.Project.MIDI.Ports))), field("Device on this machine", viewSelect("data-live-device", gosx.El("option", gosx.Attrs(gosx.Attr("value", "")), gosx.Text("Enable MIDI to see devices")))), button("bind", "Bind device"), button("reload-ports", "Reload bindings"))
