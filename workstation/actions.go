@@ -197,6 +197,10 @@ func (s *studioApp) fileHistory(command string) action.Handler {
 		if err := actionValues(ctx); err != nil {
 			return err
 		}
+		pending, err := s.hasRetainedNoteWork(ctx)
+		if err != nil {
+			pending = true
+		}
 		path := "/api/" + command
 		if ctx.FormData["file"] != "" {
 			path = "/api/files"
@@ -206,7 +210,7 @@ func (s *studioApp) fileHistory(command string) action.Handler {
 			if f["file"] != "" && f["fileRevision"] != "" {
 				revision = f["fileRevision"]
 			}
-			payload := map[string]any{"revision": revision, "file": f["file"], "action": command}
+			payload := map[string]any{"revision": revision, "file": f["file"], "action": command, "protect_track_identities": pending || f["protect_track_identities"] == "true"}
 			if f["file"] == "" {
 				payload["source_revision"] = f["source_revision"]
 			}
@@ -218,6 +222,7 @@ func (s *studioApp) fileHistory(command string) action.Handler {
 func (s *studioApp) actions() map[string]action.Handler {
 	edit := func(f map[string]string) map[string]any { return map[string]any{"revision": f["revision"]} }
 	return map[string]action.Handler{
+		"track-rename":    s.renameTrack,
 		"split-placement": s.splitPlacement,
 		"midi-learn":      s.learnPortableMIDI,
 		"midi-bind":       s.bindPortableMIDI,
@@ -578,11 +583,20 @@ func (s *studioApp) actions() map[string]action.Handler {
 		"undo": s.fileHistory("undo"),
 		"redo": s.fileHistory("redo"),
 		"revert": func(ctx *action.Context) error {
+			if err := actionValues(ctx); err != nil {
+				return err
+			}
+			pending, err := s.hasRetainedNoteWork(ctx)
+			if err != nil {
+				pending = true
+			}
 			id, err := strconv.ParseUint(ctx.FormData["id"], 10, 64)
 			if err != nil || id == 0 {
 				return action.Validation("Choose a history entry.", nil, nil)
 			}
-			return s.mutation(fmt.Sprintf("/api/history/%d/revert", id), func(f map[string]string) (any, error) { return edit(f), nil })(ctx)
+			return s.mutation(fmt.Sprintf("/api/history/%d/revert", id), func(f map[string]string) (any, error) {
+				return map[string]any{"revision": f["revision"], "protect_track_identities": pending || f["protect_track_identities"] == "true"}, nil
+			})(ctx)
 		},
 		"audio": s.mutation("/api/audio/config", func(f map[string]string) (any, error) {
 			period := 256
