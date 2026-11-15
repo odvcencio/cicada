@@ -697,8 +697,19 @@ fader shows the level and does not move; set it in Device.
 Above the strips, **Show** limits the view to tracks or to buses and returns,
 **Meter** shows peak, RMS or both, and **Reset peaks** clears the held peaks
 and clip marks at once. These change only what this tab shows, never the
-score. **Add effect** opens **Create chorus**, which adds a chorus declaration,
-and lists each effect that is on no insert chain.
+score. **Add effect** holds **Create chorus**, which adds a chorus declaration,
+and **Send return**, and lists each effect that is on no insert chain.
+
+To add an insert, open a channel in Device, choose a kind under Insert
+effects, then select Add insert. The effect appears at the end of the chain;
+open it there to adjust its parameters. Convolution also needs the name of a
+declared impulse asset. To add a send return, open Add effect in the Mixer
+tool strip, choose a return kind under Send return, and select Add return. The
+new return has its own Mixer strip. It receives no signal until a track sends
+to it: open the track in Device and use Send to and Add send to set its level.
+A name is optional in both forms: when the field is empty, Studio names the effect after its kind (`comp`, then `comp2`).
+Both changes support Undo; edition 1 asks for confirmation to upgrade the
+score.
 
 Select a strip's name to open that channel in **Device**; its strip takes an
 amber edge. Selecting a placement in Arrange opens its track, and **Channel**
@@ -1224,13 +1235,3 @@ Tymbal backend does not run in a browser AudioWorklet; native playback and
 capture are independent of browser microphone permission. Legacy portable-host
 adapters remain qualification fixtures and are excluded from Studio's
 production routes.
-
-To add an insert, open a channel in Device, choose a kind under Insert
-effects, then select Add insert. The effect appears at the end of the chain;
-open it there to adjust its parameters. Convolution also needs the name of a
-declared impulse asset. To add a send return, open Add effect in the Mixer
-tool strip, choose a return kind under Send return, and select Add return. The
-new return has its own Mixer strip. A name is optional in both forms: when the
-field is empty, Studio names the effect after its kind (`comp`, then `comp2`).
-Both changes support Undo; edition 1 asks for confirmation to upgrade the
-score.

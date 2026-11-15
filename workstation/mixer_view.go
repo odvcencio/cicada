@@ -437,6 +437,8 @@ func (s *studioApp) stripInsertChain(v workspace, csrf string, c mixerChannel) [
 	switch {
 	case !ok:
 		return nil
+	case !insert.Supported && c.Kind == "master" && len(c.Strip.Inserts) < 16:
+		return nil
 	case !insert.Supported:
 		return []gosx.Node{mixerUnavailable("insert chain", insert.Reason)}
 	}
@@ -481,4 +483,31 @@ func mixerUnavailable(label, reason string) gosx.Node {
 // upgradeConfirm is the checkbox an edition 1 score needs with each mixer change.
 func upgradeConfirm() gosx.Node {
 	return gosx.El("label", gosx.Attrs(gosx.Attr("class", "upgrade-confirm")), gosx.El("input", gosx.Attrs(gosx.Attr("type", "checkbox"), gosx.Attr("name", "confirmUpgrade"), gosx.BoolAttr("required"))), gosx.Text("Upgrade score to edition 2 for this change"))
+}
+
+// addSend offers returns that do not yet have a send from this track.
+func (s *studioApp) addSend(v workspace, csrf string, c mixerChannel, mixer mixerState) gosx.Node {
+	sent := map[string]bool{}
+	for _, send := range c.Strip.Sends {
+		sent[send.To] = true
+	}
+	var options []gosx.Node
+	masterInserts := map[string]bool{}
+	for _, name := range mixer.Master.Inserts {
+		masterInserts[name] = true
+	}
+	for _, ret := range mergeMixerReturns(mixer.Returns, mixer.Effects) {
+		if !masterInserts[ret.Name] && (ret.Kind == "delay" || ret.Kind == "tape" || ret.Kind == "reverb") && !sent[ret.Name] {
+			options = append(options, gosx.El("option", gosx.Attrs(gosx.Attr("value", c.ID+".send."+ret.Name)), gosx.Text(ret.Name)))
+		}
+	}
+	if len(options) == 0 {
+		return gosx.Fragment()
+	}
+	fields := []gosx.Node{hidden("source_revision", v.SourceRevision), field("Send to", gosx.El("select", gosx.Attrs(gosx.Attr("name", "path")), gosx.Fragment(options...))), field("Level (dB)", textInput("value", "-12dB"))}
+	if v.Edition == 1 {
+		fields = append(fields, upgradeConfirm())
+	}
+	fields = append(fields, submit("", "", "Add send"))
+	return s.form(v, csrf, "mixer", "mixer", fields...)
 }

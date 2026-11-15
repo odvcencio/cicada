@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"m31labs.dev/cicada/edit"
+	"m31labs.dev/cicada/internal/paramdefs"
 	"m31labs.dev/gosx"
 	"m31labs.dev/gosx/action"
 )
@@ -29,7 +30,13 @@ func (s *studioApp) addEffect(ctx *action.Context) error {
 		// An empty name asks Studio to name the effect after its kind.
 		var mixer mixerState
 		if err := s.backend.call(ctx.Request.Context(), http.MethodGet, "/api/mixer", nil, &mixer); err != nil {
-			return action.Error(http.StatusServiceUnavailable, "Could not read the mixer to name the effect. Enter a name and try again.")
+			var failure *backendError
+			refusal := action.Error(http.StatusServiceUnavailable, "Could not read the mixer to name the effect. Enter a name and try again.")
+			if errors.As(err, &failure) {
+				refusal = action.Error(failure.Status, failure.Message)
+			}
+			refusal.Result.Values = f
+			return refusal
 		}
 		name = freeEffectName(mixer, f["effectkind"])
 	}
@@ -49,10 +56,17 @@ func (s *studioApp) addEffect(ctx *action.Context) error {
 		if errors.As(err, &failure) {
 			refusal := action.Error(failure.Status, failure.Message)
 			refusal.Result.Values = f
-			refusal.Result.Data = failure.Data
+			var body map[string]any
+			if json.Unmarshal(failure.Data, &body) == nil {
+				if reason, ok := body["reason"].(string); ok {
+					refusal.Result.Data, _ = json.Marshal(map[string]string{"reason": reason})
+				}
+			}
 			return refusal
 		}
-		return action.Error(http.StatusServiceUnavailable, "Could not confirm whether the effect was added. Refresh saved state before retrying.")
+		refusal := action.Error(http.StatusServiceUnavailable, "Could not confirm whether the effect was added. Refresh saved state before retrying.")
+		refusal.Result.Values = f
+		return refusal
 	}
 	ctx.FormData = nil
 	ctx.RedirectBackWithMessage(shellRedirect(ctx.Request, "/?panel=mixer"), "Effect added.")
@@ -81,8 +95,20 @@ func freeEffectName(mixer mixerState, kind string) string {
 			taken[effect.Name] = true
 		}
 	}
+	first := kind == "reverb"
+	for _, effect := range mergeMixerReturns(mixer.Returns, mixer.Effects) {
+		if effect.Kind == "reverb" {
+			masterInsert := false
+			for _, name := range mixer.Master.Inserts {
+				masterInsert = masterInsert || name == effect.Name
+			}
+			if !masterInsert {
+				first = false
+			}
+		}
+	}
 	name := kind
-	for i := 2; taken[name]; i++ {
+	for i := 2; taken[name] || paramdefs.ReturnNameCollision(name, kind, first) != ""; i++ {
 		name = fmt.Sprintf("%s%d", kind, i)
 	}
 	return name
@@ -121,6 +147,12 @@ func insertKinds(c mixerChannel) []string {
 
 func (s *studioApp) addInsert(v workspace, csrf string, c mixerChannel) gosx.Node {
 	kinds := insertKinds(c)
+	if c.Kind == "bus" && c.ID == "music" && len(c.Strip.Inserts) > 0 {
+		return gosx.El("p", gosx.Text("The music bus takes one compressor, and it has one."))
+	}
+	if (c.Kind == "track" && len(c.Strip.Inserts) >= 8) || (c.Kind == "master" && len(c.Strip.Inserts) >= 16) {
+		return gosx.El("p", gosx.Text("This chain is full."))
+	}
 	if c.Kind == "bus" && c.ID == "sfx" {
 		return gosx.El("p", gosx.Text("This bus takes no inserts"))
 	}
