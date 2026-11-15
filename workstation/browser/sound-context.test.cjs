@@ -65,7 +65,7 @@ test('sound choice follows phrase editing without replacing drafts',{timeout:240
    // until the request starts, within the same ten seconds.
    {const clip=page.locator('#arrangement a.timeline-clip[title="main / upper"]'),deadline=Date.now()+10000;let started=false;
     while(!started&&Date.now()<deadline){await clip.click({noWaitAfter:true});started=await Promise.race([requested.then(()=>true),new Promise(resolve=>setTimeout(()=>resolve(false),500))]);}
-    assert.equal(started,true,'clip navigation did not start');}
+    assert.equal(started,true,'clip navigation did not start; refusal shown: '+JSON.stringify(await page.locator('[data-scene-open-status]').textContent()));}
    await page.locator('#detail-tab-automation').click({noWaitAfter:true});release();
    await page.waitForFunction(()=>window.__sceneClipNavigationComplete&&document.documentElement.getAttribute('data-gosx-navigation-state')==='idle');
    await page.waitForFunction(()=>document.querySelector('#detail-tab-automation')?.getAttribute('aria-selected')==='true');
