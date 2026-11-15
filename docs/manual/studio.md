@@ -215,7 +215,7 @@ to three decimal places. Changing the key retunes scale-degree notes; explicit
 letter pitches keep their pitch. Every edit validates and checks the current
 disk revision before saving, and has an Undo entry.
 
-To rename a track, open the pencil button in its Arrange rail, enter the new name,
+To rename a track, open the rename button (✎) in its Arrange rail, enter the new name,
 and choose **Rename track**. Stop playback and finish recording first; a paused
 transport must also be stopped. Commit or discard unfinished or retained note
 performances before renaming. The rename updates references throughout the
