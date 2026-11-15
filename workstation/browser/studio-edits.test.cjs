@@ -763,6 +763,11 @@ test('a checkpoint answer that cannot be read is a failed attempt, and the windo
         .observe(document.body, {subtree: true, childList: true, characterData: true});
     });
     await editor.fill(text);
+    // An input event that changes no text (a patch that puts the draft back
+    // into a re-rendered editor sends one) must not turn the retry into a
+    // different checkpoint.
+    await until(() => sent.length >= 1, 'the window did not send a checkpoint');
+    for (let i = 0; i < 3; i++) await editor.dispatchEvent('input');
     await until(() => sent.length >= 2, 'the window did not send the checkpoint again');
     assert.equal(sent[0].content, text, 'the first checkpoint did not carry the text');
     assert.deepEqual(sent[1], sent[0], 'the second attempt was not the same checkpoint');
