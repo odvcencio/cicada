@@ -234,7 +234,7 @@ func (u *placementEditorUI) placementPointerUp(event js.Value) {
 		// Pointer capture targets the click at the block rather than its link.
 		// Read the selected view so its defaults and revision also follow edits
 		// saved from another panel or browser.
-		if drag.resize || u.open == nil || !u.open(drag.block) {
+		if drag.resize || drag.moved || u.open == nil || !u.open(drag.block) {
 			u.refresh(drag.block)
 		}
 	}

@@ -47,8 +47,9 @@ test('secondary arrangement controls, source conflicts, WAV and reopen', {timeou
   const response=await page.request.get(new URL(job.downloadURL,origin).href);assert.equal(response.status(),200);const wav=await response.body();assert.equal(wav.subarray(0,4).toString(),'RIFF');fs.writeFileSync(path.join(proof,filename),wav);await page.keyboard.press('Escape');return wav;
  }
  async function captureViews(){
-  // Notices from earlier saves stay until closed now that an Undo no longer
-  // navigates; close them one at a time (each close removes one).
+  // Toasts dismiss themselves after a few seconds. Click one for real while it
+  // is still there, so a covered toast fails here; clear the rest through the DOM.
+  {const toast=page.locator('[data-gosx-toast-host] button').first();if(await toast.count())await toast.click({timeout:2000}).catch(async error=>{if(await toast.count())throw error;});}
   await page.evaluate(()=>document.querySelectorAll('[data-gosx-toast-host] button').forEach(button=>button.click()));
   await until(async()=>!/connecting/i.test(await page.locator('[data-placement-playback-status]').innerText()),'desktop timeline playback status');
   await page.screenshot({path:path.join(proof,'arrangement-desktop.png')});

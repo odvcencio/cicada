@@ -165,6 +165,23 @@ func TestClipGridPrecedesListeningControls(t *testing.T) {
 	}
 }
 
+func TestClipFollowsSelectedPlacementWithoutPatternParameter(t *testing.T) {
+	p := notesProject()
+	p.Arrange = &project.Arrangement{Placements: []project.Placement{{ID: "later", Track: "keys", Content: "long", AtTick: 3840, LengthTicks: 3840}, {ID: "second", Track: "keys", Content: "riff", LengthTicks: 3840}}}
+	address, client, _ := testAppWorkspace(t, &workspace{Revision: "current", SourceRevision: "all-sources", Valid: true, Project: p})
+	page := getPage(t, client, address+"/studio?tab=arrange&dock=clip&placement=second")
+	if !strings.Contains(page, `data-pattern-id="riff"`) || strings.Contains(page, `data-pattern-id="played"`) {
+		t.Fatal("Clip must show the selected placement's pattern")
+	}
+	if !strings.Contains(page, `name="context_placement" value="second"`) || !strings.Contains(page, `name="track" value="keys"`) {
+		t.Fatal("Clip edits must retain the placement and track context")
+	}
+	page = getPage(t, client, address+"/studio")
+	if !strings.Contains(page, `data-placement-block="second"`) || !strings.Contains(page, `data-pattern-id="riff"`) || strings.Contains(page, `data-pattern-id="played"`) || !strings.Contains(page, `name="track" value="keys"`) {
+		t.Fatal("Clip must follow the earliest placement and its track when no placement is named")
+	}
+}
+
 func TestNotesActionReportsAnUnchangedPatternAndFailures(t *testing.T) {
 	var sent []map[string]any
 	reply := `{"revision":"current","valid":true,"unchanged":true,"message":"Already on the grid."}`

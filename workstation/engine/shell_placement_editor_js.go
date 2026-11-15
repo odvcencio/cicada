@@ -28,13 +28,20 @@ func bindShellPlacementEditor(host enginewasm.Context, root js.Value) func() {
 		case !root.Get("isConnected").Bool(), !workspacePresent(arrange), arrange.Get("hidden").Bool():
 			return true
 		case nativeCapture.Get().State.Active != "":
-			reason = "Finish recording before moving placements."
+			reason = "Finish recording before changing or opening placements."
 		case workspacePresent(root.Call("querySelector", "[data-gosx-form-state=pending]")):
 			reason = "Saving changes. Wait before editing another placement."
 		case workspaceAttr(document.Get("documentElement"), "data-gosx-navigation-state") == "pending":
 			reason = "Opening the workspace. Wait before editing a placement."
 		case hasUnsavedWork():
-			reason = "Save or discard unsaved edits before moving placements."
+			reason = "Save or discard unsaved edits before changing or opening placements."
+			heldLiveNotes.Range(func(_, check any) bool {
+				if check.(func() bool)() {
+					reason = "Release held notes before changing or opening placements."
+					return false
+				}
+				return true
+			})
 		}
 		if reason != "" {
 			status(reason)
@@ -47,9 +54,12 @@ func bindShellPlacementEditor(host enginewasm.Context, root js.Value) func() {
 	u.owned = func(node js.Value) bool {
 		return workspacePresent(node) && node.Get("closest").Type() == js.TypeFunction && root.Call("contains", node).Bool() && workspacePresent(node.Call("closest", "#view-panel-arrange"))
 	}
+	refreshing := false
 	u.refresh = func(block js.Value) {
 		if link := block.Call("querySelector", ".placement-select"); workspacePresent(link) {
+			refreshing = true
 			link.Call("click")
+			refreshing = false
 		}
 	}
 	placementLink := func(block js.Value) js.Value {
@@ -175,14 +185,14 @@ func bindShellPlacementEditor(host enginewasm.Context, root js.Value) func() {
 		if event.Get("key").String() == "Enter" && !event.Get("ctrlKey").Bool() && !event.Get("metaKey").Bool() && !event.Get("altKey").Bool() && !event.Get("shiftKey").Bool() && workspacePresent(target) && target.Get("closest").Type() == js.TypeFunction {
 			control := target.Call("closest", ".placement-select")
 			if workspacePresent(control) && u.owned(control) {
-				if blocked() {
-					workspaceStop(event)
-					return
-				}
 				block := control.Call("closest", "[data-placement-block]")
 				if workspacePresent(placementLink(block)) {
 					workspaceStop(event)
 					openPlacement(block, true)
+					return
+				}
+				if blocked() {
+					workspaceStop(event)
 					return
 				}
 			}
@@ -215,6 +225,13 @@ func bindShellPlacementEditor(host enginewasm.Context, root js.Value) func() {
 		if u.dragClick && workspacePresent(target) && target.Get("closest").Type() == js.TypeFunction && workspacePresent(target.Call("closest", "[data-placement-block]")) {
 			u.dragClick = false
 			workspaceStop(event)
+			return
+		}
+		if !refreshing && event.Get("detail").Int() == 0 && !event.Get("ctrlKey").Bool() && !event.Get("metaKey").Bool() && !event.Get("shiftKey").Bool() && !event.Get("altKey").Bool() && workspacePresent(target) && target.Get("closest").Type() == js.TypeFunction {
+			control := target.Call("closest", ".placement-select")
+			if workspacePresent(control) && u.owned(control) && openPlacement(control.Call("closest", "[data-placement-block]"), true) {
+				workspaceStop(event)
+			}
 		}
 	})
 	listen("change", u.placementViewChanged)

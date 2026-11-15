@@ -423,19 +423,62 @@ func (s *studioApp) patterns(ctx *server.Context, v workspace, csrf string) gosx
 		return ui.Panel(ui.PanelProps{ID: "patterns", Title: "Pattern editor", Description: "Create your first pattern, then draw notes or drum hits in its grid."}, patternMachineLink(ctx.Request.URL.Query().Get("track"), "", ctx.Request.URL.Query().Get("scene")), s.patternCreation(ctx, v, csrf, ""))
 	}
 	q := ctx.Request.URL.Query()
+	patternID, selectedTrack := q.Get("pattern"), ""
+	placementID := q.Get("placement")
+	if patternID == "" && placementID == "" && v.Project.Arrange != nil && len(v.Project.Arrange.Placements) > 0 {
+		placements := v.Project.Arrange.Placements
+		first := placements[0]
+		for _, placement := range placements[1:] {
+			if placement.AtTick < first.AtTick {
+				first = placement
+			}
+		}
+		placementID = first.ID
+	}
+	if patternID == "" && placementID != "" && v.Project.Arrange != nil {
+		for _, placement := range v.Project.Arrange.Placements {
+			if placement.ID != placementID {
+				continue
+			}
+			for _, track := range v.Project.Tracks {
+				if track.ID == placement.Track && track.Kind != "audio" {
+					for _, candidate := range v.Project.Patterns {
+						if candidate.ID == placement.Content {
+							patternID, selectedTrack = candidate.ID, track.ID
+						}
+					}
+				}
+			}
+		}
+	}
+	if selectedTrack != "" {
+		// Give every editor the same context as an explicit placement open.
+		originalRequest := ctx.Request
+		defer func() { ctx.Request = originalRequest }()
+		requestCopy := *ctx.Request
+		urlCopy := *ctx.Request.URL
+		q.Set("pattern", patternID)
+		q.Set("track", selectedTrack)
+		urlCopy.RawQuery = q.Encode()
+		requestCopy.URL = &urlCopy
+		ctx.Request = &requestCopy
+	}
 	p := v.Project.Patterns[0]
 	for _, candidate := range v.Project.Patterns {
-		if candidate.ID == q.Get("pattern") {
+		if candidate.ID == patternID {
 			p = candidate
 		}
 	}
 	track, scene, placement := "", "", ""
-	if q.Get("pattern") == p.ID {
+	if patternID == p.ID {
 		track, scene, placement = q.Get("track"), q.Get("scene"), q.Get("placement")
+		if selectedTrack != "" {
+			track = selectedTrack
+		}
 	}
 	contextURL := func(raw string) string {
 		target, err := url.Parse(raw)
-		if err != nil || target.Query().Get("pattern") != p.ID || q.Get("pattern") != p.ID {
+		if err != nil || target.Query().Get("pattern") != p.ID || patternID != p.ID {
 			return raw
 		}
 		return samePatternPlacementURL(patternContextURL(raw, track, scene), p.ID, placement)
@@ -611,8 +654,8 @@ func (s *studioApp) patterns(ctx *server.Context, v workspace, csrf string) gosx
 		patternGridTiming(v.Project.MeterMap(), p),
 		gosx.El("a", gosx.Attrs(gosx.Attr("class", "skip"), gosx.Attr("href", "#pattern-controls"), gosx.Attr("data-gosx-native", "true")), gosx.Text("Skip grid to listening and quantize")),
 		tools,
-		gosx.El("div", gosx.Attrs(gosx.Attr("class", "pattern-canvas")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll piano-roll"), gosx.Attr("data-pattern-kind", p.Kind), gosx.Attr("data-pattern-id", p.ID)), gosx.Fragment(rows...)), s.stepInspector(ctx, p, step, lane, v.Revision, v.Project.Key, form)),
-		gosx.El("div", gosx.Attrs(gosx.Attr("id", "pattern-controls"), gosx.Attr("tabindex", "-1")),
+		gosx.El("div", gosx.Attrs(gosx.Attr("class", "pattern-canvas")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll piano-roll"), gosx.Attr("role", "group"), gosx.Attr("aria-label", rollTitle), gosx.Attr("aria-describedby", "pattern-shared-note"), gosx.Attr("data-pattern-kind", p.Kind), gosx.Attr("data-pattern-id", p.ID)), gosx.Fragment(rows...)), s.stepInspector(ctx, p, step, lane, v.Revision, v.Project.Key, form)),
+		gosx.El("div", gosx.Attrs(gosx.Attr("id", "pattern-controls"), gosx.Attr("tabindex", "-1"), gosx.Attr("role", "group"), gosx.Attr("aria-label", "Pattern controls")),
 			s.patternPreview(ctx, v, csrf, p), s.noteQuantize(ctx, v, csrf, p, contextURL(patternURL(p.ID, step, lane, octave))),
 			gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted"), gosx.BoolAttr("data-workspace-help")), gosx.Text("Click a cell to write or clear it. Choose a step number to edit its articulation."))),
 		gosx.El("details", gosx.El("summary", gosx.Text("Pattern timing")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), settings, resize), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Shortening removes steps from the end of every lane. Undo restores them."))),
@@ -632,7 +675,7 @@ func rollButton(step int, label, text string, note *project.Step, active, select
 	if active && note != nil && note.Slide {
 		text = "↗"
 	}
-	attrs := gosx.Attrs(gosx.Attr("class", class), gosx.Attr("type", "submit"), gosx.Attr("name", "step"), gosx.Attr("value", strconv.Itoa(step)), gosx.Attr("aria-label", label), gosx.Attr("aria-describedby", "pattern-shared-note"), gosx.Attr("aria-pressed", active), gosx.Attr("data-active", active), gosx.Attr("data-selected", selected))
+	attrs := gosx.Attrs(gosx.Attr("class", class), gosx.Attr("type", "submit"), gosx.Attr("name", "step"), gosx.Attr("value", strconv.Itoa(step)), gosx.Attr("aria-label", label), gosx.Attr("aria-pressed", active), gosx.Attr("data-active", active), gosx.Attr("data-selected", selected))
 	if active && note != nil {
 		attrs = append(attrs, gosx.Attr("title", fmt.Sprintf("Velocity %d · ratchet %d · chance %d%%", note.Velocity, note.Ratchet, note.Probability)), gosx.Attr("style", fmt.Sprintf("--velocity:%g", float64(note.Velocity)/127)))
 	}

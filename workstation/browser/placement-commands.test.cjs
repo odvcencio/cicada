@@ -176,7 +176,7 @@ test('Studio views, Record entry and Mac placement commands retain drafts and Un
     assert.equal(await cellVisible(),true,'a piano-roll cell must be visible in the Clip dock without scrolling');
     assert.equal(await page.getByText('Edits affect every use of this pattern.',{exact:true}).count(),1,'the editor must explain shared pattern edits');
     assert.equal(await noteVisible(),true,'the shared-pattern note must be visible alongside the grid');
-    assert.equal(await page.locator('#detail-panel-clip .piano-roll .roll-cell').first().getAttribute('aria-describedby'),'pattern-shared-note');
+    assert.equal(await page.locator('#detail-panel-clip .piano-roll').getAttribute('aria-describedby'),'pattern-shared-note');
     if(proof) await page.screenshot({path:path.join(proof,'opened-answer.png')});
     await page.setViewportSize({width:390,height:844});
     assert.equal(await cellVisible(),true,'a piano-roll cell must be visible in the phone Clip dock without scrolling');
@@ -527,7 +527,7 @@ test('Studio views, Record entry and Mac placement commands retain drafts and Un
     await page.keyboard.press('Enter');
     await page.waitForFunction(()=>document.documentElement.getAttribute('data-gosx-navigation-state')==='idle');
     await page.waitForTimeout(150);
-    assert.match(await page.locator('[data-placement-edit-status]').textContent(),/Save or discard unsaved edits/);
+    assert.match(await page.locator('[data-placement-edit-status]').textContent(),/Release held notes before changing or opening placements/);
     assert.equal(await page.evaluate(()=>window.__heldClipNavigationCount),0,'clip activation navigated while a MIDI note was held');
     assert.equal(page.url(),heldURL,'clip activation changed the location while a MIDI note was held');
     assert.equal(await page.locator('[data-live-note="60"]').getAttribute('aria-pressed'),'true','clip activation released the held MIDI note');
