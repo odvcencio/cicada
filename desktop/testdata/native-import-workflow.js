@@ -105,7 +105,7 @@
       progress.originalSource = original.source;
       const section = document.querySelector('#browser-sampler');
       require(section, 'Sampler Browser section missing');
-      if (!section.open) section.querySelector('summary').click();
+      if (document.querySelector('#library-tab-samples').getAttribute('aria-selected') !== 'true') document.querySelector('#library-tab-samples').click();
       const form = document.querySelector('form[action="/__sampler/import"]');
       require(form, 'Actual Sampler import form missing');
       const input = form.querySelector('input[type=file][name=audio]');

@@ -623,8 +623,8 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
 @media (min-width:800px) {
 	.shell #sampler-expand-control { display:inline-flex; align-items:center; gap:8px; margin:0 0 12px; cursor:pointer; }
 	.shell #sampler-expand-control input { margin:0; }
-	.shell:has(#studio-browser .shell-collapsible[open] #browser-sampler[open] #sampler-expand:checked) .gsx-dock { --studio-browser-column:min(640px,calc(100vw - 480px)); }
-	.shell:has(#studio-browser .shell-collapsible[open] #browser-sampler[open] #sampler-expand:checked) #studio-browser > .gsx-split__handle { display:none; }
+	.shell:has(#studio-browser .shell-collapsible[open] #library-panel-samples:not([hidden]) #browser-sampler #sampler-expand:checked) .gsx-dock { --studio-browser-column:min(640px,calc(100vw - 480px)); }
+	.shell:has(#studio-browser .shell-collapsible[open] #library-panel-samples:not([hidden]) #browser-sampler #sampler-expand:checked) #studio-browser > .gsx-split__handle { display:none; }
 }
 
 /* Top bar: project identity, transport, position and tempo, then the
@@ -1121,6 +1121,32 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
 .shell #studio-browser .strip { padding:8px; border-radius:4px; background:var(--panel); }
 .shell #studio-browser .strip h3 { margin:0; font-size:13px; }
 .shell #studio-browser .strip > p { margin:0 0 6px; color:var(--muted); font:10px var(--mono); }
+
+/* Library tabs and compact sound picker. */
+.shell #studio-browser .library-tabs__list { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:3px; margin-bottom:8px; }
+.shell #studio-browser .library-tabs__list .gsx-tabs__tab { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:6px 2px; text-align:center; font-size:11px; }
+.shell #studio-browser [data-sound-search] { box-sizing:border-box; width:100%; min-width:0; }
+.shell #studio-browser .instrument-patch { display:flex; width:100%; height:44px; min-height:44px; gap:8px; padding:4px; text-align:left; color:var(--text); cursor:pointer; }
+.shell #studio-browser .instrument-patch[hidden], .shell #studio-browser [data-sound-detail][hidden], .shell #studio-browser [data-sound-empty][hidden] { display:none; }
+.shell #studio-browser .instrument-patch[aria-pressed="true"] { border-bottom-color:var(--amber); background:var(--panel); }
+.shell #studio-browser .instrument-patch-tile { display:grid; flex:0 0 28px; width:28px; height:28px; place-items:center; border-radius:3px; background:var(--raised); color:var(--mint); }
+.shell #studio-browser .instrument-patch-label { min-width:0; display:grid; }
+.shell #studio-browser .instrument-patch-label strong, .shell #studio-browser .instrument-patch-label small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.shell #studio-browser .instrument-patch-label small { color:var(--muted); font:10px var(--mono); }
+.shell #studio-browser .selected-sound { min-width:0; margin:12px 0; padding:10px; border:1px solid var(--border); border-radius:4px; background:var(--panel); overflow-wrap:anywhere; }
+.shell #studio-browser .selected-sound h3 { margin:0 0 6px; color:var(--muted); font:10px var(--mono); text-transform:uppercase; }
+.shell #studio-browser .selected-sound p { margin:4px 0 8px; color:var(--muted); font-size:11px; }
+.shell #studio-browser .selected-sound details { margin-top:6px; }
+.shell #studio-browser .selected-sound { display:flex; flex-wrap:wrap; gap:0 8px; }
+.shell #studio-browser .selected-sound h3 { order:1; flex-basis:100%; }
+.shell #studio-browser .selected-sound [data-sound-detail]:not([hidden]) { display:contents; }
+.shell #studio-browser .selected-sound [data-sound-detail] > strong { order:2; flex-basis:100%; }
+.shell #studio-browser .selected-sound [data-sound-detail] > p { order:3; flex-basis:100%; }
+.shell #studio-browser .selected-sound [data-sound-preview] { order:4; }
+.shell #studio-browser .selected-sound [data-sound-stop] { order:5; }
+.shell #studio-browser .selected-sound [data-sound-status] { order:6; flex-basis:100%; }
+.shell #studio-browser .selected-sound details { order:7; flex-basis:100%; }
+.shell #studio-browser :is(button, input, summary, a):focus-visible { outline:2px solid var(--amber); outline-offset:2px; }
 
 /* Mixer: a tool strip, then channel strips that scroll sideways with the master
    pinned at the right end. Every strip has the same rows in the same order
