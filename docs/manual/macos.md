@@ -21,9 +21,10 @@ controls. **Sampler** is in the left Browser. In the bottom detail dock,
 **Clip** edits patterns, **Device** shapes the selected track, and
 **Automation** edits curves and scene points. The **Code** lens shows the score.
 
-Inspect a placement to follow its track in **Device**, or choose another track
-and select **Inspect track**. Instrument parameters, mixer/routing settings,
-and insert controls save to the score and support Undo. Declared instruments
+Inspect a placement to follow its track in **Device**, select a strip's name in
+**Mixer** to open that track, bus, return or the master, or choose another
+channel and select **Inspect channel**. Instrument parameters, mixer/routing
+settings, and insert controls save to the score and support Undo. Declared instruments
 show their editable sound parameters; built-in voices expose their supported
 mix and insert controls.
 
@@ -105,8 +106,9 @@ performance into the arrangement.
 
 ## Play with a MIDI keyboard
 
-In Live, choose **Enable MIDI**, then select your keyboard or controller. The
-Mac app connects through CoreMIDI, including when the embedded browser does
+In Live, choose **Enable MIDI**. Use **MIDI setup** to bind a score port to a
+keyboard or controller when the score declares MIDI ports. The Mac app connects
+through CoreMIDI, including when the embedded browser does
 not provide Web MIDI. Connecting or disconnecting an input updates the list;
 unplugging an input releases its held notes. Note and controller input follow
 the selected Live instrument. SysEx is not supported.

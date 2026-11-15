@@ -56,6 +56,7 @@ type workspaceControl struct {
 type workspaceJob struct {
 	method, target, confirmed string
 	confirmedSource           string
+	statusGeneration          uint64
 	values                    map[string]string
 	form                      js.Value
 	controls                  []workspaceControl
@@ -94,24 +95,25 @@ type workspaceTransport struct {
 }
 
 type workspaceUI struct {
-	root, patch    js.Value
-	props          workspaceProps
-	ctx            context.Context
-	cancel         context.CancelFunc
-	closed         atomic.Bool
-	blocked        atomic.Bool
-	busy           atomic.Bool
-	jobs           chan workspaceJob
-	events         []workspaceEvent
-	revision       *signal.Signal[string]
-	sourceRevision string
-	status         *signal.Signal[string]
-	tool           *signal.Signal[string]
-	drafts         map[string]workspaceDraft
-	scrolls        []workspaceScroll
-	editors        map[string]workspaceEditorBaseline
-	placements     *placementEditorUI
-	sources        map[string]*sourceRecovery
+	root, patch      js.Value
+	props            workspaceProps
+	ctx              context.Context
+	cancel           context.CancelFunc
+	closed           atomic.Bool
+	blocked          atomic.Bool
+	busy             atomic.Bool
+	jobs             chan workspaceJob
+	events           []workspaceEvent
+	revision         *signal.Signal[string]
+	sourceRevision   string
+	status           *signal.Signal[string]
+	statusGeneration uint64
+	tool             *signal.Signal[string]
+	drafts           map[string]workspaceDraft
+	scrolls          []workspaceScroll
+	editors          map[string]workspaceEditorBaseline
+	placements       *placementEditorUI
+	sources          map[string]*sourceRecovery
 	// The newest project revision this tab has rendered. Only a different
 	// revision on disk is another editor's change worth refreshing for.
 	projectRevision atomic.Value
@@ -328,6 +330,101 @@ func (u *workspaceUI) owned(node js.Value) bool {
 	return workspacePresent(node) && u.root.Call("contains", node).Bool()
 }
 
+// Delegated listeners also cover panels replaced by a patch.
+func bindClipToolbar(root js.Value) func() {
+	u := &workspaceUI{root: root}
+	document := js.Global().Get("document")
+	u.listen(document, "keydown", u.clipToolbarKeyDown)
+	u.listen(document, "pointerdown", u.clipToolbarPointerDown)
+	u.listen(document, "click", u.clipToolbarClick)
+	u.listen(document, "toggle", u.clipToolbarToggle)
+	return func() {
+		u.closed.Store(true)
+		for _, event := range u.events {
+			event.target.Call("removeEventListener", event.name, event.callback, true)
+			event.callback.Release()
+		}
+	}
+}
+
+func (u *workspaceUI) clipToolbarKeyDown(event js.Value) {
+	if event.Get("key").String() != "Escape" {
+		return
+	}
+	target := event.Get("target")
+	if !u.owned(target) || target.Get("closest").Type() != js.TypeFunction {
+		return
+	}
+	panel := target.Call("closest", `details[name="clip-toolbar"][open]`)
+	if workspacePresent(panel) {
+		panel.Set("open", false)
+		if summary := panel.Call("querySelector", "summary"); workspacePresent(summary) {
+			summary.Call("focus")
+		}
+		workspaceStop(event)
+	}
+}
+
+func (u *workspaceUI) clipToolbarPointerDown(event js.Value) {
+	target := event.Get("target")
+	if workspacePresent(target) && target.Get("closest").Type() == js.TypeFunction {
+		if workspacePresent(target.Call("closest", `.clip-toolbar, [data-gosx-toast-host]`)) || (u.owned(target) && workspacePresent(target.Call("closest", `#detail-panel-clip a[href$="#pattern-variation"]`))) {
+			return
+		}
+	}
+	panels := u.root.Call("querySelectorAll", `details[name="clip-toolbar"][open]`)
+	for i := 0; i < panels.Length(); i++ {
+		panel := panels.Index(i)
+		if !panel.Call("contains", event.Get("target")).Bool() {
+			panel.Set("open", false)
+		}
+	}
+}
+
+func (u *workspaceUI) clipToolbarClick(event js.Value) {
+	target := event.Get("target")
+	if !u.owned(target) || target.Get("closest").Type() != js.TypeFunction || !workspacePresent(target.Call("closest", `#detail-panel-clip a[href$="#pattern-variation"]`)) {
+		return
+	}
+	variation := u.root.Call("querySelector", "#detail-panel-clip #pattern-variation")
+	if !workspacePresent(variation) {
+		return
+	}
+	panel := variation.Call("closest", "details")
+	if !workspacePresent(panel) {
+		return
+	}
+	panel.Set("open", true)
+	if input := variation.Call("querySelector", `input:not([type]), input[type="text"]`); workspacePresent(input) {
+		input.Call("focus")
+	}
+	workspaceStop(event)
+}
+
+func (u *workspaceUI) clipToolbarToggle(event js.Value) {
+	panel := event.Get("target")
+	if !u.owned(panel) || panel.Get("matches").Type() != js.TypeFunction || !panel.Call("matches", `details[name="clip-toolbar"]`).Bool() || panel.Get("open").Bool() {
+		return
+	}
+	forms := panel.Call("querySelectorAll", "form")
+	for i := 0; i < forms.Length(); i++ {
+		form := forms.Index(i)
+		form.Call("reset")
+		if workspaceAttr(form, "data-gosx-form-state") == "error" {
+			form.Call("setAttribute", "data-gosx-form-state", "idle")
+		}
+		if status := form.Call("querySelector", ".form-status"); workspacePresent(status) {
+			status.Set("textContent", "")
+		}
+	}
+	controls := panel.Call("querySelectorAll", "[data-edited], [data-baseline]")
+	for i := 0; i < controls.Length(); i++ {
+		control := controls.Index(i)
+		control.Call("removeAttribute", "data-edited")
+		control.Call("removeAttribute", "data-baseline")
+	}
+}
+
 func workspaceNative(node js.Value) bool {
 	return node.Call("hasAttribute", "data-gosx-native").Bool() || strings.EqualFold(workspaceAttr(node, "data-gosx-managed"), "false") || strings.EqualFold(workspaceAttr(node, "data-gosx-link"), "false") || strings.EqualFold(workspaceAttr(node, "data-gosx-form"), "false")
 }
@@ -370,6 +467,20 @@ func (u *workspaceUI) submit(event js.Value) {
 	submitter := event.Get("submitter")
 	transport := workspaceTransportFree(form, submitter)
 	if u.shell {
+		// Tempo forms use GoSX navigation rather than this queue. Do not send
+		// their old target and source revision while a queued edit is still
+		// changing the score or applying its projection.
+		if workspacePresent(domCall(form, "closest", "[data-arrangement-tempos]")) && u.blocked.Load() {
+			workspaceStop(event)
+			u.status.Set("Refresh saved state before editing. Your drafts are retained.")
+			return
+		}
+		if workspacePresent(domCall(form, "closest", "[data-arrangement-tempos]")) && (u.busy.Load() || len(u.jobs) > 0) {
+			workspaceStop(event)
+			u.statusGeneration++
+			u.status.Set("Studio is updating. Check the tempo step and submit again.")
+			return
+		}
 		if transport {
 			// GoSX's managed form sends it at once; no stale-region hold.
 			return
@@ -389,6 +500,12 @@ func (u *workspaceUI) submit(event js.Value) {
 		// #transport-form never waits for a region read, as before; only its
 		// Stop during a recording is not revision-free (workspaceTransportFree).
 		if region := domCall(form, "closest", "[data-update-region]"); strings.EqualFold(workspaceAttr(form, "method"), "post") && workspaceAttr(form, "id") != "transport-form" && workspacePresent(region) && domHas(region, "data-region-stale") && !domHas(region, "data-region-reload") && !shellHeld(region) {
+			if workspaceActionPath(workspaceAttr(form, "action")) == "/__actions/split-placement" {
+				workspaceStop(event)
+				u.status.Set("The arrangement changed. Check the refreshed placement before splitting it.")
+				u.refreshStale(regionsVisibleStale)
+				return
+			}
 			// A form in a stale region still carries an older revision. Read
 			// the region first; nothing is sent until it is current.
 			workspaceStop(event)
@@ -894,6 +1011,7 @@ func (u *workspaceUI) queue(job workspaceJob) {
 		return
 	}
 	job.confirmedSource = u.sourceRevision
+	job.statusGeneration = u.statusGeneration
 	workspacePending(job, 1)
 	select {
 	case u.jobs <- job:
@@ -1002,12 +1120,12 @@ func (u *workspaceUI) runJob(job workspaceJob) bool {
 	// On /studio a form in a fresh update region holds the last confirmed
 	// revision; one in a stale region keeps its own, and the service refuses it.
 	fresh := u.shell && workspacePresent(job.form) && !workspacePresent(job.form.Call("closest", "[data-region-stale]"))
-	if revision, exists := job.values["revision"]; exists && (revision == job.confirmed || fresh) {
+	if revision, exists := job.values["revision"]; job.target != "/__actions/split-placement" && exists && (revision == job.confirmed || fresh) {
 		// Only advance our own queued gestures. A form already stale when
 		// queued keeps its stale revision for authoritative rejection.
 		job.values["revision"] = u.revision.Get()
 	}
-	if source, exists := job.values["source_revision"]; exists && (source == job.confirmedSource || fresh) {
+	if source, exists := job.values["source_revision"]; job.target != "/__actions/split-placement" && exists && (source == job.confirmedSource || fresh) {
 		job.values["source_revision"] = u.sourceRevision
 	}
 	if job.method == methodPost {
@@ -1030,6 +1148,19 @@ func (u *workspaceUI) runJob(job workspaceJob) bool {
 	}
 	if u.shell && job.method == methodGet {
 		job.target = "/__studio/regions?ids=" + url.QueryEscape(job.regions) + "&location=" + url.QueryEscape(workspaceLocation())
+	}
+	// An unfinished performance can retain the old track name even after
+	// playback stops. Check at dispatch as well as submission, because this
+	// edit may have waited behind another queued action.
+	if u.shell && hasEngineUnsavedWork() {
+		switch job.target {
+		case "/__actions/track-rename":
+			u.settle(job, true)
+			u.status.Set("Finish or discard unsaved performances and recordings before renaming a track.")
+			return true
+		case "/__actions/undo", "/__actions/redo", "/__actions/revert":
+			job.values["protect_track_identities"] = "true"
+		}
 	}
 	u.root.Call("setAttribute", "aria-busy", "true")
 	if !u.shell {
@@ -1136,6 +1267,13 @@ func (u *workspaceUI) runJob(job workspaceJob) bool {
 			outcome = holdOwn
 		}
 		u.idleDelay = shellIdleRefresh
+		// Keep newer refusal guidance, while still naming jobs this read dropped.
+		if job.statusGeneration != u.statusGeneration {
+			if notice != "" {
+				u.status.Set(u.status.Get() + " " + notice)
+			}
+			return true
+		}
 		switch {
 		case notice != "":
 			message = notice
@@ -1305,6 +1443,9 @@ func (u *workspaceUI) request(job workspaceJob) (workspaceProjection, string, er
 		ctx = job.ctx
 	}
 	timeout := 15 * time.Second
+	if job.method == methodPost && job.target == "/__actions/split-placement" {
+		timeout = 135 * time.Second // render comparison and confirmed projection
+	}
 	if job.method == methodPost && (job.target == "/__actions/note-commit" || job.target == "/__actions/arrange" && job.values["action"] == "vary" || job.target == "/__actions/pattern" && job.values["action"] == "duplicate") {
 		timeout = 60 * time.Second // sound checks plus the confirmed workspace projection
 	}

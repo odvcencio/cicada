@@ -389,7 +389,7 @@ song { main*4 }
 
 **Syntax (EBNF):** A `parameter_path` has the form `owner.setting` and is accepted as a scene target; see `parameter_path`, `scene_target`, and `scene_assignment` in the [EBNF appendix](appendix.ebnf). Its first part names the owner. The remaining part names a registered setting and may contain another dot, as in `bass.send.delay`.
 
-**Meaning:** A path addresses a registered setting on a declared track, effect, or bus. Those names share one namespace. Effect paths use the declared effect name, such as `room.feedback`. Track paths use the track name, such as `bass.pan` or `beat.bd_tune`. The send paths `bass.send.delay` and `bass.send.reverb` address the delay and reverb sends. Drum lane controls keep their flat suffixes, such as `bd_tune`.
+**Meaning:** A path addresses a registered setting on a declared track, effect, or bus. Those names share one namespace. Effect paths use the declared effect name, such as `room.feedback`. Track paths use the track name, such as `bass.pan` or `beat.bd_tune`. The send paths `bass.send.delay` and `bass.send.reverb` address the send to the delay or tape return and the send to the first reverb (return slot B). A send to a later reverb (slots C to H, edition 2) has no path yet: a path such as `bass.send.room` is refused with `CICADA-UNSUPPORTED`, and that send's level is set on the track's `send` line. Drum lane controls keep their flat suffixes, such as `bd_tune`.
 
 **Types and units:** The parameter registry sets each path's type, unit, range, default, and whether it can change live. Numeric scene values use the registered unit and range; toggles and enumerations use their registered words. Track voice parameters are listed in the [built-in track parameter catalog](built-in-track-parameters.md); effect values are listed under [Named effects](#named-effects). Scene settings can target only live parameters, with one exception: the [scene tempo](#scene-tempo).
 
@@ -605,13 +605,13 @@ cicada gen --seed 4242 --key a --scale minor --trace -o generated.cicada
 
 **Syntax (EBNF):** `fx <name> <kind> { settings }` declares an effect instance. The edition-1 shorthand `fx <kind> { settings }` keeps the kind as its name. Effect names share the namespace with tracks and buses.
 
-**Meaning:** A track insert accepts an ordered chain of up to eight distinct effect names: drive, EQ, compression, and de-essing. Each track owns independent processor state even when tracks reference the same declaration. Delay and reverb each support one return instance. A named send to a delay or reverb creates that effect return and feeds the music bus. A compressor can run on a track, the music bus, or master. Track and master compressors detect their own input; external `sidechain` remains available on the music bus. The built-in master limiter always stays last.
+**Meaning:** A track insert accepts an ordered chain of up to eight distinct effect names: drive, EQ, compression, and de-essing. Each track owns independent processor state even when tracks reference the same declaration. One delay or tape return is supported; an edition-2 score can declare up to seven reverb returns, the first in return slot B and the others in slots C to H ([reverb returns](../audio/mix-chain.md#reverb-returns)). A named send to a delay or reverb creates that effect return and feeds the music bus. A compressor can run on a track, the music bus, or master. Track and master compressors detect their own input; external `sidechain` remains available on the music bus. The built-in master limiter always stays last.
 
 **Types and units:** Effect parameters keep their registered types, ranges, and defaults. Send routing is described under [Track mixer settings](#track-mixer-settings).
 
 **Defaults:** Unspecified effect settings use the existing parameter registry defaults. A one-name declaration uses that same name as its effect ID and kind.
 
-**Errors:** More than one delay or reverb return, unsupported insert kinds, and track compressor external sidechains report `CICADA-UNSUPPORTED`. More than eight track stages reports `CICADA-LIMIT`; repeating an effect name in one chain reports `CICADA-DUPLICATE`. Unknown names report `CICADA-REFERENCE`; an unknown effect kind reports `CICADA-UNSUPPORTED`.
+**Errors:** More than one delay or tape return, unsupported insert kinds, and track compressor external sidechains report `CICADA-UNSUPPORTED`. A second reverb in edition 1 reports `CICADA-VERSION`. More than eight track stages, or an eighth reverb return, reports `CICADA-LIMIT`; repeating an effect name in one chain reports `CICADA-DUPLICATE`. Unknown names report `CICADA-REFERENCE`; an unknown effect kind reports `CICADA-UNSUPPORTED`.
 
 **Example:** Named effects route through the current delay, reverb, drive, and music compressor processors:
 

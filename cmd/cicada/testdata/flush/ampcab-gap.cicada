@@ -1,0 +1,38 @@
+cicada 2
+title "Flush check: an amp and cabinet, silence, then notes"
+tempo 240
+key a minor
+seed 1
+
+fx amp ampcab {
+  drive = 0.5
+  tone = 0.5
+  output = 0dB
+  cabinet = 1
+}
+
+track gtr acid {
+  insert = amp
+}
+
+pattern riff {
+  1 . 5 . | 1 3 5 .
+}
+
+pattern rest {
+  . . . . | . . . .
+}
+
+scene play {
+  gtr = riff
+}
+
+scene hush {
+  gtr = rest
+}
+
+song {
+  play*2
+  hush*8
+  play*2
+}

@@ -1,0 +1,21 @@
+cicada 2
+title "Flush check: a string machine chord and its long tail"
+tempo 240
+key c major
+seed 1
+
+track strings string_machine {}
+
+pattern chord notes {
+  step = 1/1
+  gate = 100%
+  [c4 e4 g4 b4] - . . . . . . . . . . . . . . . . . . . . . .
+}
+
+scene a {
+  strings = chord
+}
+
+song {
+  a*24
+}
