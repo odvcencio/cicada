@@ -4,6 +4,27 @@ package main
 
 import "syscall/js"
 
+// pressOnWorkspaceStatus reports whether a press landed inside the box of a
+// workspace status message that shows text.
+func pressOnWorkspaceStatus(event js.Value) bool {
+	x, y := event.Get("clientX"), event.Get("clientY")
+	if x.Type() != js.TypeNumber || y.Type() != js.TypeNumber {
+		return false
+	}
+	nodes := js.Global().Get("document").Call("querySelectorAll", ".workspace-feedback [data-workspace-status]")
+	for i := 0; i < nodes.Length(); i++ {
+		node := nodes.Index(i)
+		if node.Get("textContent").String() == "" {
+			continue
+		}
+		box := node.Call("getBoundingClientRect")
+		if box.Get("width").Float() > 0 && x.Float() >= box.Get("left").Float() && x.Float() <= box.Get("right").Float() && y.Float() >= box.Get("top").Float() && y.Float() <= box.Get("bottom").Float() {
+			return true
+		}
+	}
+	return false
+}
+
 func discardDetailsDraft(details js.Value) {
 	forms := details.Call("querySelectorAll", "form")
 	for i := 0; i < forms.Length(); i++ {
@@ -66,6 +87,12 @@ func bindDetailsDiscard(root js.Value) func() {
 		// task, so it keeps the draft. Another panel's summary still closes this
 		// one, through the shared name of the details group.
 		if workspacePresent(target) && target.Get("closest").Type() == js.TypeFunction && workspacePresent(target.Call("closest", "[data-dismiss-scope], [data-gosx-toast-host], .workspace-feedback")) {
+			return nil
+		}
+		// The status message takes no pointer events (the phone navigation sits
+		// under it), so a press on it arrives at what lies beneath. A press
+		// inside the message's box still belongs to the same task.
+		if pressOnWorkspaceStatus(event) {
 			return nil
 		}
 		panels := root.Call("querySelectorAll", selector+"[data-dismiss-outside][open]")

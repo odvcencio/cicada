@@ -219,7 +219,7 @@ td button { width:100%; }
 /* The message never takes a click meant for what lies under it (the phone
    navigation sits there); only the recovery button does. */
 .workspace-feedback { pointer-events:none; }
-.workspace-feedback [data-workspace-status], .workspace-feedback [data-workspace-retry] { pointer-events:auto; }
+.workspace-feedback [data-workspace-retry] { pointer-events:auto; }
 .lane .action-form { display:flex; align-items:center; gap:6px; }
 .error { color:var(--coral); }
 #export .form-status { flex-basis:100%; margin:0; }
