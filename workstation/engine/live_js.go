@@ -147,11 +147,13 @@ func mountLive(host enginewasm.Context) (enginewasm.Handle, error) {
 	go u.poll()
 	go u.checkpointNotes()
 	releaseUnsaved := holdUnsavedWork("live", func() bool { return len(u.takes) > 0 || u.recording || len(u.held) > 0 })
+	heldLiveNotes.Store(u.lease, func() bool { return len(u.held) > 0 })
 	return enginewasm.HandleFunc(func() {
 		if u.closed.Swap(true) {
 			return
 		}
 		releaseUnsaved()
+		heldLiveNotes.Delete(u.lease)
 		u.closeNotes()
 		if u.nativeMIDICancel != nil {
 			u.nativeMIDICancel()
