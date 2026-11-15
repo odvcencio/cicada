@@ -116,7 +116,7 @@ func (s *studioApp) sampler(ctx *server.Context, v workspace, csrf string) gosx.
 		load = append(load, form(hidden("action", "undo"), submit("", "", "Undo pad edit")))
 	}
 	expand := gosx.El("label", gosx.Attrs(gosx.Attr("id", "sampler-expand-control")),
-		gosx.El("input", gosx.Attrs(gosx.Attr("id", "sampler-expand"), gosx.Attr("type", "checkbox"))),
+		gosx.El("input", gosx.Attrs(gosx.Attr("id", "sampler-expand"), gosx.Attr("type", "checkbox"), gosx.BoolAttr("data-studio-view-control"))),
 		gosx.El("span", gosx.Text("Expand pads")))
 	return gosx.El("div", gosx.Attrs(gosx.Attr("id", "sampler-panel")), ui.Panel(ui.PanelProps{ID: "sampler-performance", Title: "Sampler", Description: "Play, chop, and print a performance. Pad monitoring uses browser audio; resampled clips play through Session's native mixer."}, expand, surface), gosx.El("div", gosx.Attrs(gosx.Attr("class", "sampler-editors")), ui.Panel(ui.PanelProps{ID: "sampler-pad-editor", Title: fmt.Sprintf("Pad %02d · chop and voice", selected), Description: "Source files stay intact. End is exclusive; choke 0 allows layering."}, selectedEditor), fxPanel), ui.Panel(ui.PanelProps{ID: "sampler-sources", Title: "Sample sources", Description: "Imports and equal chops fill the first pads. Undo pad edit restores the previous bank during this session."}, gosx.Fragment(load...)))
 }
