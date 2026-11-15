@@ -2,6 +2,7 @@ package applybench
 
 import (
 	"fmt"
+	"runtime"
 	"slices"
 	"time"
 
@@ -37,7 +38,7 @@ type Measurement struct {
 	Median, P95     time.Duration
 	Min, Max        time.Duration
 	// Work is what each measured Apply did. Every measured run must do the
-	// same work; Measure fails when two differ. Warm-ups may differ.
+	// same work as the first warm-up and one another.
 	Work Work
 	// Counted is false in a build without the cicada_counters tag, where
 	// Work holds only the host callbacks.
@@ -65,6 +66,7 @@ func Measure(session *Session, hot HotEdit, config Config) (Measurement, error) 
 	revision := edit.Revision(base)
 	var times []time.Duration
 	var refusals []time.Duration
+	var firstWarmup Work
 	for run := range config.Warmups + config.Runs {
 		hooks := &Hooks{}
 		opts, compiler, err := session.Options(base, hooks)
@@ -72,14 +74,20 @@ func Measure(session *Session, hot HotEdit, config Config) (Measurement, error) 
 			return m, err
 		}
 		env := edit.Envelope{Version: edit.EnvelopeVersion, Revision: revision, Intents: []edit.Intent{hot.Intent}}
+		runtime.GC()
 		before := applycount.Snapshot()
 		start := time.Now()
 		result, err := edit.Apply(base, env, opts)
 		elapsed := time.Since(start)
 		work := Work{Counts: applycount.Snapshot().Sub(before), Compiles: compiler.Compiles, ProjectParses: hooks.ProjectParses, Diagnoses: hooks.Diagnoses}
 		switch {
+		case run == 0 && config.Warmups > 0:
+			firstWarmup = work
 		case run == config.Warmups:
 			m.Work = work
+			if config.Warmups > 0 && work != firstWarmup {
+				return m, fmt.Errorf("%s: first warm-up did different work from measured runs: %+v against %+v; a content-keyed cache would be reported as an edit's cost", hot.Name, firstWarmup, work)
+			}
 		case run > config.Warmups && work != m.Work:
 			return m, fmt.Errorf("%s: measured run %d did different work from the first: %+v against %+v", hot.Name, run-config.Warmups, work, m.Work)
 		}
@@ -170,6 +178,7 @@ func measureStep(session *Session, name string, config Config, step func() error
 	m := Measurement{Edit: name, Runs: config.Runs, Warmups: config.Warmups, Counted: applycount.Enabled}
 	var times []time.Duration
 	for run := range config.Warmups + config.Runs {
+		runtime.GC()
 		before := applycount.Snapshot()
 		start := time.Now()
 		err := step()

@@ -7,7 +7,7 @@
 //   - REF-P, its placement fixture: examples/songs/tidal-glass.cicada under the
 //     benchmark's marker line, 2,596 bytes, four tracks and nine placements.
 //   - REF-L, a generated score with the size and shape of the largest
-//     production (309,498 bytes; see Large).
+//     production (308,844 bytes; see Large).
 //
 // Load returns any of them with the entities its hot edits act on, so the
 // native benchmark, the js/wasm benchmark and later checks read one set of

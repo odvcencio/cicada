@@ -54,6 +54,9 @@ func TestApplyBenchOptionsMatchTheService(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%s %s through the service: %v", name, edit.Name, err)
 			}
+			if applycount.Enabled && serviceWork.SyntaxParses == 0 {
+				t.Fatalf("%s %s: service recorded no syntax parses with counters enabled", name, edit.Name)
+			}
 			benchOptions, compiler, err := session.Options(session.Source, &applybench.Hooks{})
 			if err != nil {
 				t.Fatal(err)

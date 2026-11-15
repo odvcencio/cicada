@@ -121,6 +121,7 @@ bench-agent-loop: build-core
 APPLY_BENCH_ENV ?=
 bench-apply:
 	mkdir -p build
+	go test -tags cicada_counters -count=1 -run '^TestApplyBenchOptionsMatchTheService$$' ./cmd/cicada
 	env CICADA_APPLY_BENCH=1 CICADA_APPLY_BENCH_OUT=$(CURDIR)/build/bench-apply.md $(APPLY_BENCH_ENV) go test -tags cicada_counters -count=1 -timeout=60m -run '^TestApplyBenchmark$$' -v ./internal/benchscore/applybench
 
 bench-apply-wasm:
