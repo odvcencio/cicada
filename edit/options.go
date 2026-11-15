@@ -20,6 +20,15 @@ type RenderCheck interface {
 	Hash(source []byte) (string, error)
 }
 
+// SplitRenderCheck scopes a render check to compare a split with every track audible.
+type SplitRenderCheck interface {
+	RenderCheck
+	ForSplit() RenderCheck
+}
+
+// ErrSplitRenderCheck means a check cannot verify the required split scope.
+var ErrSplitRenderCheck = errors.New("the render check cannot compare a split with every track audible")
+
 // StagedRenderCheck is a RenderCheck that can render the state a batch would
 // commit: files holds the cumulative auxiliary files staged by earlier intents
 // (path -> bytes, for example an upgraded cicada.mod). Hosts' checks implement

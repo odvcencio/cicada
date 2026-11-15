@@ -45,6 +45,7 @@ test('split uses render proof, refuses invalid and stale targets, and has one Un
  assert.equal(fs.readFileSync(owner,'utf8'),arrangement);await nativeContext.close();
  await page.reload();await ready();
  let form=await splitForm('good');
+ const picker=form.getByLabel('Split position');assert.equal(await picker.inputValue(),'');assert.equal(await picker.getAttribute('required'),'');assert.equal(await picker.locator('option:checked').innerText(),'Choose a position');
  if(process.env.CICADA_SPLIT_PROOF_DIR){fs.mkdirSync(process.env.CICADA_SPLIT_PROOF_DIR,{recursive:true});await inspector('good').screenshot({path:path.join(process.env.CICADA_SPLIT_PROOF_DIR,'split-placement.png')});}
  await form.getByLabel('Split position').evaluate(el=>el.add(new Option('invalid','100')));
  const bad=await split(form,100);assert.equal((await bad).status(),422);assert.equal(fs.readFileSync(owner,'utf8'),arrangement);
@@ -72,15 +73,14 @@ test('split uses render proof, refuses invalid and stale targets, and has one Un
  await page.unroute('**/__actions/pattern');
  const retry=page.locator('[data-workspace-retry]');if(await retry.isVisible()){await retry.click();await until(async()=>!(await retry.isVisible()),'refresh after stale split did not settle')}
  await ready();await page.locator('#undo-form button[type=submit]').click();await until(()=>fs.readFileSync(path.join(dir,'main.cicada'),'utf8')===entry,'Undo did not restore queued grid edit');await ready();
- // Restore the refused split input so placement navigation is not blocked by its draft.
- form=await splitForm('good');await form.getByLabel('Split position').selectOption('3840');
  // Follow a managed placement link and submit the newly rendered inspector.
  const riskLink=page.getByRole('link',{name:'Edit placement risk',exact:true});await riskLink.focus();await page.keyboard.press('Enter');
  await until(()=>new URL(page.url()).searchParams.get('placement')==='risk','managed placement navigation did not settle');
  await ready();const riskBox=inspector('risk');if(await riskBox.getAttribute('open')===null)await riskBox.locator('summary').first().click();
  form=await splitForm('risk');const audible=await split(form,23040);assert.equal((await audible).status(),422);
  await until(async()=>/chance steps|restarts/i.test(await page.locator('body').innerText()),'audible refusal not explained');assert.equal(fs.readFileSync(owner,'utf8'),arrangement);
- await select('good');form=await splitForm('good');
+ const goodLink=page.getByRole('link',{name:'Edit placement good',exact:true});await goodLink.focus();await page.keyboard.press('Enter');
+ await until(()=>new URL(page.url()).searchParams.get('placement')==='good','placement command blocked after refusal');await ready();form=await splitForm('good');
  // Replace the source after the browser submits its original target/receipt.
  const external=arrangement.replace('place good drums beat','place good drums chance')+'// external edit\r\n';let intercepted=false;
  await page.route('**/__actions/split-placement',async route=>{if(!intercepted){intercepted=true;fs.writeFileSync(owner,external)}await route.continue()});

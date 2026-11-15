@@ -50,8 +50,24 @@ func TestSplitPlacementUsesShownTargetAndSourceReceipt(t *testing.T) {
 	if !strings.Contains(page, `aria-label="Split position"`) || !strings.Contains(page, `value="3840"`) {
 		t.Fatal("eligible split control missing")
 	}
+	if !strings.Contains(page, "Choose a position") || !strings.Contains(page, "required") {
+		t.Fatal("required split placeholder missing")
+	}
 	form := url.Values{"csrf_token": {tokenFromPage(t, page)}, "revision": {"current"}, "source_revision": {"all-sources"}, "target_key": {placementTargetKey(placement)}, "name": {"verse"}, "at_tick": {"3840"}}
+	form.Del("at_tick")
 	response := post(t, client, server.URL+"/__actions/split-placement", form, true, server.URL)
+	body, _ := io.ReadAll(response.Body)
+	response.Body.Close()
+	if response.StatusCode != 422 || calls != 0 || !strings.Contains(string(body), "Choose a split position") {
+		t.Fatalf("missing position: status=%d body=%s", response.StatusCode, body)
+	}
+	form.Set("at_tick", "")
+	response = post(t, client, server.URL+"/__actions/split-placement", form, true, server.URL)
+	if response.StatusCode != 422 || calls != 0 {
+		t.Fatalf("empty position: status=%d", response.StatusCode)
+	}
+	form.Set("at_tick", "3840")
+	response = post(t, client, server.URL+"/__actions/split-placement", form, true, server.URL)
 	if response.StatusCode >= 400 || calls != 1 || receipt != "all-sources" {
 		t.Fatalf("split: status=%d calls=%d receipt=%q", response.StatusCode, calls, receipt)
 	}
@@ -81,6 +97,13 @@ func TestSplitPlacementUsesShownTargetAndSourceReceipt(t *testing.T) {
 	if response.StatusCode != 422 || calls != 1 {
 		t.Fatalf("off-boundary status=%d calls=%d", response.StatusCode, calls)
 	}
+	score.Patterns[0] = project.Pattern{ID: "pulse", Steps: 16, StepTicks: 160}
+	form.Set("at_tick", "2560")
+	response = post(t, client, server.URL+"/__actions/split-placement", form, true, server.URL)
+	if response.StatusCode != 422 || calls != 1 {
+		t.Fatalf("off-grid boundary status=%d calls=%d", response.StatusCode, calls)
+	}
+	score.Patterns[0] = project.Pattern{ID: "pulse", Kind: "acid", Steps: 16}
 	form.Set("at_tick", "3840")
 	score.Tracks[0].Kind = "audio"
 	response = post(t, client, server.URL+"/__actions/split-placement", form, true, server.URL)
@@ -115,11 +138,11 @@ func TestSplitControlExcludesAudioAndShortOrPerformedPatterns(t *testing.T) {
 
 }
 
-func TestSplitPickerBoundsAndExactOffGridPositions(t *testing.T) {
+func TestSplitPickerBoundsAndGridPositions(t *testing.T) {
 	p := &project.Project{Edition: 2,
 		Tracks:   []project.Track{{ID: "bass", Kind: "acid"}},
 		Patterns: []project.Pattern{{ID: "p", Steps: 1, StepTicks: 160}},
-		Arrange:  &project.Arrangement{Placements: []project.Placement{{ID: "one", Track: "bass", Content: "p", LengthTicks: 160 * 130}}},
+		Arrange:  &project.Arrangement{Placements: []project.Placement{{ID: "one", Track: "bass", Content: "p", LengthTicks: 160 * 390}}},
 	}
 	address, client, _ := testAppWorkspace(t, &workspace{Revision: "current", SourceRevision: "sources", Valid: true, Project: p})
 	page := getPage(t, client, address+"/?panel=session")
@@ -132,15 +155,24 @@ func TestSplitPickerBoundsAndExactOffGridPositions(t *testing.T) {
 		t.Fatal("unclosed split picker")
 	}
 	picker := page[start : start+end]
-	if got := strings.Count(picker, "<option "); got != 128 {
-		t.Fatalf("got %d boundaries, want 128", got)
+	// One disabled placeholder, then one option per on-grid boundary.
+	if got := strings.Count(picker, "<option "); got != 129 {
+		t.Fatalf("got %d options, want the placeholder and 128 boundaries", got)
 	}
-	for _, want := range []string{`value="160">@1.1.1 + 160 ticks`, `value="320">@1.1.2 + 80 ticks`, `value="20480"`} {
+	for _, want := range []string{`value="480">@1.1.3`, `value="960">@1.2.1`, `value="61440"`} {
 		if !strings.Contains(picker, want) {
 			t.Errorf("missing exact boundary %s", want)
 		}
 	}
+	if strings.Contains(picker, `value="160"`) || strings.Contains(picker, `value="320"`) {
+		t.Fatal("picker offered an off-grid boundary")
+	}
 	if !strings.Contains(page, "Showing the first 128 boundaries.") {
 		t.Fatal("missing bounded-list explanation")
+	}
+	p.Arrange.Placements[0].LengthTicks = 400
+	address, client, _ = testAppWorkspace(t, &workspace{Revision: "current", SourceRevision: "sources", Valid: true, Project: p})
+	if page := getPage(t, client, address+"/?panel=session"); strings.Contains(page, `/__actions/split-placement`) {
+		t.Fatal("picker offered with no on-grid boundary")
 	}
 }

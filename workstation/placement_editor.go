@@ -189,10 +189,17 @@ func (s *studioApp) placementEditors(ctx *server.Context, v workspace, csrf stri
 			// Bound rendering for very long placements; each option carries the
 			// exact absolute tick while its label uses the score's meter map.
 			count := (placement.LengthTicks - 1) / length
-			shown := min(count, 128)
 			var options []gosx.Node
-			for n := int64(1); n <= shown; n++ {
+			more := false
+			for n := int64(1); n <= count; n++ {
 				at := placement.AtTick + n*length
+				if at%seq.TicksPerStep != 0 {
+					continue
+				}
+				if len(options) == 128 {
+					more = true
+					break
+				}
 				bar, beat, step, remainder := p.MeterMap().Position(at)
 				label := fmt.Sprintf("@%d.%d.%d", bar, beat, step)
 				if remainder != 0 {
@@ -200,10 +207,15 @@ func (s *studioApp) placementEditors(ctx *server.Context, v workspace, csrf stri
 				}
 				options = append(options, gosx.El("option", gosx.Attrs(gosx.Attr("value", strconv.FormatInt(at, 10))), gosx.Text(label)))
 			}
-			picker := gosx.El("select", gosx.Attrs(gosx.Attr("name", "at_tick"), gosx.Attr("aria-label", "Split position")), gosx.Fragment(options...))
+			if len(options) == 0 {
+				break
+			}
+			placeholder := gosx.El("option", gosx.Attrs(gosx.Attr("value", ""), gosx.BoolAttr("disabled"), gosx.BoolAttr("selected")), gosx.Text("Choose a position"))
+			options = append([]gosx.Node{placeholder}, options...)
+			picker := gosx.El("select", gosx.Attrs(gosx.Attr("name", "at_tick"), gosx.BoolAttr("data-studio-view-control"), gosx.BoolAttr("required"), gosx.Attr("aria-label", "Split position")), gosx.Fragment(options...))
 			form := ui.Form(ui.FormProps{Action: "/__actions/split-placement", CSRF: csrf, Revision: v.Revision, ReturnTo: placementURL(placement.ID), Class: "action-form"}, hidden("source_revision", v.SourceRevision), hidden("name", placement.ID), targetField(placementTargetKey(placement)), field("Split position", picker), submit("", "", "Split placement"))
 			help := "Choose a pattern boundary inside this placement. Studio compares the audio before saving."
-			if count > shown {
+			if more {
 				help += " Showing the first 128 boundaries."
 			}
 			split = gosx.El("details", gosx.Attrs(gosx.Attr("class", "placement-split")), gosx.El("summary", gosx.Text("Split placement")), gosx.El("p", gosx.Text(help)), form)

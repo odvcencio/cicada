@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"m31labs.dev/cicada/edit"
+	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/gosx/action"
 )
 
@@ -20,6 +21,9 @@ func (s *studioApp) splitPlacement(ctx *action.Context) error {
 	}
 	if f["name"] == "" {
 		return action.Validation("Choose a placement.", nil, f)
+	}
+	if f["at_tick"] == "" {
+		return action.Validation("Choose a split position.", nil, f)
 	}
 	at, err := strconv.ParseInt(f["at_tick"], 10, 64)
 	if err != nil || at < 0 {
@@ -80,10 +84,10 @@ func (s *studioApp) validateSplitTarget(ctx *action.Context, at int64) error {
 			}
 			step := int64(pattern.StepTicks)
 			if step == 0 {
-				step = 240
+				step = seq.TicksPerStep
 			}
 			length := int64(pattern.Steps) * step
-			if length <= 0 || at <= place.AtTick || at >= place.AtTick+place.LengthTicks || (at-place.AtTick)%length != 0 {
+			if length <= 0 || at <= place.AtTick || at >= place.AtTick+place.LengthTicks || (at-place.AtTick)%length != 0 || at%seq.TicksPerStep != 0 {
 				return action.Validation("Choose a pattern-length boundary strictly inside the placement.", nil, f)
 			}
 			return nil
