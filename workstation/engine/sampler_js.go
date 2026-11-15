@@ -158,10 +158,6 @@ func mountSampler(host enginewasm.Context) (enginewasm.Handle, error) {
 			if !root.Get("isConnected").Bool() {
 				return
 			}
-			target := e.Get("target")
-			if !target.Call("closest", "input,textarea,select,[contenteditable=true]").IsNull() || e.Get("ctrlKey").Bool() || e.Get("metaKey").Bool() || e.Get("altKey").Bool() {
-				return
-			}
 			key := strings.ToLower(e.Get("key").String())
 			code := e.Get("code").String()
 			if strings.HasPrefix(code, "Digit") {
@@ -169,6 +165,18 @@ func mountSampler(host enginewasm.Context) (enginewasm.Handle, error) {
 			}
 			if strings.HasPrefix(code, "Key") {
 				key = strings.ToLower(strings.TrimPrefix(code, "Key"))
+			}
+			if event == "keyup" && len(key) == 1 {
+				if i := strings.Index(keys, key); i >= 0 && u.keyPads[i+1] {
+					delete(u.keyPads, i+1)
+					u.releasePad(i + 1)
+					e.Call("preventDefault")
+					return
+				}
+			}
+			target := e.Get("target")
+			if (!target.Call("closest", "input,textarea,select,[contenteditable=true]").IsNull() && target.Get("id").String() != "sampler-expand") || e.Get("ctrlKey").Bool() || e.Get("metaKey").Bool() || e.Get("altKey").Bool() {
+				return
 			}
 			if key == "escape" && event == "keydown" {
 				u.stop()
@@ -182,11 +190,6 @@ func mountSampler(host enginewasm.Context) (enginewasm.Handle, error) {
 				return
 			}
 			if event == "keyup" {
-				if u.keyPads[i+1] {
-					delete(u.keyPads, i+1)
-					u.releasePad(i + 1)
-					e.Call("preventDefault")
-				}
 				return
 			}
 			// Letter keys belong to Live unless the Sampler region has focus.

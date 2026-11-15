@@ -313,7 +313,7 @@ footer { padding:20px 28px; color:var(--muted); border-top:1px solid var(--borde
  .sampler-pad small { font-size:10px; }
  .sampler-wave,.sampler-performance,.sampler-event-strip,#cicada-sampler > details { margin-bottom:18px; }
 }
-@container sampler (max-width:380px) {
+@container sampler (max-width:300px) {
  .sampler-pad-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
 
