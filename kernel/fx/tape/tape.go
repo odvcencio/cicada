@@ -74,6 +74,9 @@ func finite(v float64) bool { return v == v && v <= math.MaxFloat64 && v >= -mat
 func unit(v float64) bool { return finite(v) && v >= 0 && v <= 1 }
 
 func (p Params) Validate() error {
+	if !fx.EchoHighpassEnabled && p.HighpassHz != 0 {
+		return Error("portable kernel has no echo high-pass")
+	}
 	if p.Division.String() == "invalid" || !finite(p.TimeMs) || !finite(p.Feedback) || !finite(p.DampHz) ||
 		p.Feedback < 0 || p.Feedback > .95 || p.DampHz < 1_000 || p.DampHz > 16_000 ||
 		!unit(p.Wow) || !unit(p.Flutter) || !unit(p.Saturation) || !fx.ValidEchoHighpass(p.HighpassHz) {
@@ -259,6 +262,9 @@ func (t *Tape) Reset() {
 // normal values (the read delay, 1 + 3*sat, the input), which absorb it. The
 // damping coefficient's target is never zero.
 func (t *Tape) flushControls() {
+	if fx.EchoHighpassEnabled {
+		t.highpass.Flush()
+	}
 	t.feedback, t.sat = subnormal.Flush64(t.feedback), subnormal.Flush64(t.sat)
 	t.wow, t.flutter = subnormal.Flush64(t.wow), subnormal.Flush64(t.flutter)
 }

@@ -18,9 +18,15 @@ const echoHighpassDigest = "7dcbd1a99ea15f859619da7fc517a244d95c9de161f164f19a1a
 
 func TestEchoHighpassDigest(t *testing.T) {
 	if !EchoHighpassEnabled {
-		// Under TinyGo t.Skip fails the test (it has no runtime.Goexit), so
-		// say why and return.
-		t.Log("portable (TinyGo) kernels compile the echo high-pass out: nothing to pin")
+		x, err := NewDelay(48000, 120000)
+		if err != nil {
+			t.Fatal(err)
+		}
+		p := DefaultDelayParams()
+		p.HighpassHz = 300
+		if err := x.SetParams(p); err == nil {
+			t.Fatal("portable kernel accepted highpass")
+		}
 		return
 	}
 	d := bitdigest.New()
@@ -52,6 +58,9 @@ func TestEchoHighpassDigest(t *testing.T) {
 // delay digest pins those bits). A filter turned off fades out within the
 // smoother and then stops, leaving no state behind.
 func TestEchoHighpassOffNeverRuns(t *testing.T) {
+	if !EchoHighpassEnabled {
+		return
+	}
 	x, err := NewDelay(48_000, 120_000)
 	if err != nil {
 		t.Fatal(err)
@@ -91,6 +100,9 @@ func TestEchoHighpassOffNeverRuns(t *testing.T) {
 // the loop's own feedback takes, and the high burst keeps nearly all of its
 // level: the repeats thin out. Off, both fall only by the feedback.
 func TestEchoHighpassThinsEachRepeat(t *testing.T) {
+	if !EchoHighpassEnabled {
+		return
+	}
 	const rate, delayMs, repeats = 48_000, 250, 4
 	for _, c := range []struct {
 		highpass           float64
@@ -137,5 +149,21 @@ func TestEchoHighpassThinsEachRepeat(t *testing.T) {
 			}
 		}
 		t.Logf("highpass %g Hz: dB lost per repeat, 80 Hz %.2f, 2 kHz %.2f", c.highpass, drops[80], drops[2_000])
+	}
+}
+
+func TestEchoHighpassFlushesSilence(t *testing.T) {
+	var h EchoHighpass
+	h.Set(2000, 48000)
+	h.Reset()
+	h.Process(1, -1)
+	for i := 0; i < 100000; i++ {
+		h.Process(0, 0)
+		if i%64 == 0 {
+			h.Flush()
+		}
+	}
+	if h.left != 0 || h.right != 0 {
+		t.Fatalf("silence left state %g, %g", h.left, h.right)
 	}
 }

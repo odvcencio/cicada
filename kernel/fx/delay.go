@@ -79,9 +79,9 @@ type DelayParams struct {
 	PingPong bool // Mono wet input into the left line, then alternating feedback.
 	Width    float64
 	Mix      float64
-	// HighpassHz is the cutoff of a one-pole high-pass inside the feedback
-	// loop, the counterpart of DampHz: 20 Hz to 2 kHz, or 0 for off. Each
-	// repeat passes it once more, so the repeats lose their lows. It is left
+	// HighpassHz filters the send and feedback together at the line input:
+	// 20 Hz to 2 kHz, or 0 for off. The first repeat passes it once,
+	// and each later repeat once more. It is left
 	// out of JSON when off, so a delay without it encodes as before.
 	HighpassHz float64 `json:",omitempty"`
 }
@@ -102,6 +102,9 @@ func DefaultDelayParams() DelayParams {
 }
 
 func (p DelayParams) Validate() error {
+	if !EchoHighpassEnabled && p.HighpassHz != 0 {
+		return validationError("portable kernel has no echo high-pass")
+	}
 	if p.Division >= lastDelayDivision || !finite(p.TimeMs) || !finite(p.Feedback) || !finite(p.DampHz) || !finite(p.Width) || !finite(p.Mix) ||
 		p.Feedback < 0 || p.Feedback > .95 || p.DampHz < 1_000 || p.DampHz > 16_000 || p.Width < 0 || p.Width > 1 || p.Mix < 0 || p.Mix > 1 || !ValidEchoHighpass(p.HighpassHz) {
 		return validationError("delay parameter is invalid or out of range")
@@ -274,6 +277,9 @@ func (d *Delay) Reset() {
 // only through sums with normal values and the float32 conversion, which
 // absorb it. The damping coefficient's target is never zero.
 func (d *Delay) flushControls() {
+	if EchoHighpassEnabled {
+		d.highpass.Flush()
+	}
 	d.feedback, d.ping = subnormal.Flush64(d.feedback), subnormal.Flush64(d.ping)
 	d.width, d.mix = subnormal.Flush64(d.width), subnormal.Flush64(d.mix)
 }

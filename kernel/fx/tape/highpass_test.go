@@ -17,9 +17,15 @@ const tapeHighpassDigest = "3c476567c105062755dbcf5e2934d16c28a0a836aaa6f7e705fd
 
 func TestTapeHighpassDigest(t *testing.T) {
 	if !fx.EchoHighpassEnabled {
-		// Under TinyGo t.Skip fails the test (it has no runtime.Goexit), so
-		// say why and return.
-		t.Log("portable (TinyGo) kernels compile the echo high-pass out: nothing to pin")
+		x, err := New(48000, 120000)
+		if err != nil {
+			t.Fatal(err)
+		}
+		p := DefaultParams()
+		p.HighpassHz = 300
+		if err := x.SetParams(p); err == nil {
+			t.Fatal("portable kernel accepted highpass")
+		}
 		return
 	}
 	d := bitdigest.New()
@@ -57,6 +63,9 @@ func TestTapeHighpassDigest(t *testing.T) {
 // share fx.EchoHighpass, so their output is the same bit for bit at a time
 // that is a whole number of frames.
 func TestHighpassMatchesDelay(t *testing.T) {
+	if !fx.EchoHighpassEnabled {
+		return
+	}
 	for _, rate := range rates {
 		d, err := fx.NewDelay(rate, 120_000)
 		if err != nil {
@@ -94,7 +103,11 @@ func TestRejectsHighpassOutOfRange(t *testing.T) {
 			t.Errorf("highpass %g Hz was accepted", hz)
 		}
 	}
-	for _, hz := range []float64{0, 20, 300, 2_000} {
+	valid := []float64{0}
+	if fx.EchoHighpassEnabled {
+		valid = append(valid, 20, 300, 2000)
+	}
+	for _, hz := range valid {
 		p := DefaultParams()
 		p.HighpassHz = hz
 		if err := p.Validate(); err != nil {

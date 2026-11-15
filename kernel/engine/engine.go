@@ -2157,6 +2157,10 @@ func echoHighpassHz(value float32) float64 {
 }
 
 func (e *Engine) setGlobalParam(id kernel.ParamID, value float32) {
+	if !fx.EchoHighpassEnabled && (id == kernel.ParamFxDelayHighpass || id == kernel.ParamFxTapeHighpass) {
+		e.fault(FaultParam)
+		return
+	}
 	switch id {
 	case kernel.ParamFxDriveGain, kernel.ParamFxDriveTone, kernel.ParamFxDriveMix:
 		for track := 0; track < e.tracks; track++ {

@@ -4,8 +4,8 @@ tempo 74
 key a minor
 seed 1974
 
-// The echo's highpass sits inside its feedback loop, like damp: every repeat
-// passes it once more, so each one loses more of its lows. At 250 Hz the
+// The highpass filters the send and feedback together at the line input: the
+// first repeat passes it once and each later repeat once more. At 250 Hz the
 // repeats thin out over a bar; the sweep to 1.2 kHz leaves only the snap of
 // each repeat, the classic dub throw, and the fall to 120 Hz lets the lows back.
 fx echo tape { time = 3/16 feedback = 0.75 wow = 0.3 flutter = 0.1 saturation = 0.3 damp = 4kHz highpass = 250Hz }

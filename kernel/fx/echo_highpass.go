@@ -4,6 +4,7 @@ import (
 	"math"
 
 	"m31labs.dev/cicada/kernel/dsp/detmath"
+	"m31labs.dev/cicada/kernel/dsp/subnormal"
 )
 
 // EchoHighpass is the one-pole high-pass of the delay and tape echo returns,
@@ -76,4 +77,9 @@ func (h *EchoHighpass) Process(left, right float64) (float64, float64) {
 	h.left += float64((left - h.left) * h.coef)
 	h.right += float64((right - h.right) * h.coef)
 	return left - float64(h.left*h.amount), right - float64(h.right*h.amount)
+}
+
+// Flush clears subnormal low-pass state during the echo control sweep.
+func (h *EchoHighpass) Flush() {
+	h.left, h.right = subnormal.Flush64(h.left), subnormal.Flush64(h.right)
 }

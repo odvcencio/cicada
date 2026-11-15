@@ -36,7 +36,7 @@ func portableFeatureRefusals(p *project.Project) (diagnostics []notation.Diagnos
 		if (effect.Kind == "reverb" || effect.Kind == "" && effect.ID == "reverb") && !project.MasterHasInsert(p, effect.ID) {
 			reverbs = append(reverbs, effect.ID)
 		}
-		if effect.Kind != "delay" {
+		if effect.Kind != "delay" && effect.Kind != "tape" && !(effect.Kind == "" && effect.ID == "delay") {
 			continue
 		}
 		path := effect.ID + ".highpass"

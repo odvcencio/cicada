@@ -376,7 +376,7 @@ burst keeps nearly all of its level.
 An echo without `highpass` never runs the filter: its output is the same bits
 as before the control existed. The filter rounds every product before it adds
 it and takes its coefficient from `kernel/dsp/detmath`, so it gives the same
-bits on amd64, arm64 and WebAssembly. With wow, flutter and saturation at 0, a
+bits on amd64 and arm64. Portable kernels refuse the parameter. With wow, flutter and saturation at 0, a
 `tape` with `highpass` still matches a `delay` with the same settings byte for
 byte at a whole-frame time.
 

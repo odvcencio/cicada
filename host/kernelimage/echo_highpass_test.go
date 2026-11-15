@@ -28,7 +28,9 @@ func TestEncodeRefusesTheEchoHighpass(t *testing.T) {
 	moved.Automation = []cmd.Command{{Op: cmd.OpSetParam, Track: 0xff, Index: uint16(kernel.ParamFxDelayHighpass), Tick: 0}}
 	scene := base
 	scene.Scenes = []engine.Scene{{Settings: []engine.SceneSetting{{Track: 0xff, ID: kernel.ParamFxDelayHighpass, Value: 400}}}}
-	for name, cfg := range map[string]engine.Config{"highpass = 300Hz": withParam, "automate": moved, "scene": scene} {
+	macro := base
+	macro.MacroMappings = []engine.MacroMapping{{Param: uint16(kernel.ParamFxDelayHighpass)}}
+	for name, cfg := range map[string]engine.Config{"macro": macro, "highpass = 300Hz": withParam, "automate": moved, "scene": scene} {
 		if _, err := Encode(cfg); err == nil || !strings.Contains(err.Error(), "portable images have no echo highpass") {
 			t.Errorf("%s: want the echo highpass refusal, got %v", name, err)
 		}
