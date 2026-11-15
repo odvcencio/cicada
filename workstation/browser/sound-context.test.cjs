@@ -41,6 +41,10 @@ test('sound choice follows phrase editing without replacing drafts',{timeout:240
   if(!await page.locator('#studio-code > details').evaluate(node=>node.open)) await page.locator('.shell-pane-toggle[data-pane=code][data-pane-action=show]').click();
   // Code recovery may update its own marker without navigating the page.
   const stableURL=()=>{const u=new URL(page.url());u.searchParams.delete('codeDraft');u.searchParams.sort();return u.href;};
+  // Page requests in flight. A click the shell refuses can still start GoSX's
+  // link prefetch; the hold below must not be armed while one is running.
+  const pageLoads=new Set();page.on('request',request=>{if(request.method()==='GET'&&new URL(request.url()).pathname==='/studio')pageLoads.add(request);});
+  for(const settled of ['requestfinished','requestfailed'])page.on(settled,request=>pageLoads.delete(request));
   const draft=page.locator('#score textarea').first(),beforeDraft=await draft.inputValue(),blockedURL=stableURL();
   await page.evaluate(()=>{window.__blockedSceneNavigations=0;document.addEventListener('gosx:navigate',()=>window.__blockedSceneNavigations++);});
   await draft.fill(beforeDraft+'\n// unsaved scene clip draft\n');
@@ -57,15 +61,18 @@ test('sound choice follows phrase editing without replacing drafts',{timeout:240
   await page.evaluate(()=>document.documentElement.setAttribute('data-gosx-navigation-state','idle'));
   // A later local tab choice wins while the clip request is in flight.
   let release,arrived;const held=new Promise(resolve=>{release=resolve;}),requested=new Promise(resolve=>{arrived=resolve;});
+  // A prefetch still in flight would be reused by the next click, and the
+  // route would never see a request: wait for earlier page requests to settle.
+  for(const deadline=Date.now()+10000;pageLoads.size&&Date.now()<deadline;)await new Promise(resolve=>setTimeout(resolve,50));
+  assert.equal(pageLoads.size,0,'an earlier page request did not settle');
   const hold=async route=>{arrived();await held;await route.continue();};await page.route('**/studio?*',hold);
   await page.evaluate(()=>{window.__sceneClipNavigationComplete=false;document.addEventListener('gosx:navigate',()=>{const q=new URL(location.href).searchParams;if(q.get('pattern')==='played'&&q.get('track')==='upper')window.__sceneClipNavigationComplete=true;});});
   try {
-   // The restored draft stops counting as unsaved only once its recovery
-   // checkpoint settles, so an open can still be refused for a moment. Click
-   // until the request starts, within the same ten seconds.
+   // Click until the request starts, within ten seconds, and report the
+   // refusal shown if it never does.
    {const clip=page.locator('#arrangement a.timeline-clip[title="main / upper"]'),deadline=Date.now()+10000;let started=false;
     while(!started&&Date.now()<deadline){await clip.click({noWaitAfter:true});started=await Promise.race([requested.then(()=>true),new Promise(resolve=>setTimeout(()=>resolve(false),500))]);}
-    assert.equal(started,true,'clip navigation did not start');}
+    assert.equal(started,true,'clip navigation did not start; refusal shown: '+JSON.stringify(await page.locator('[data-scene-open-status]').textContent()));}
    await page.locator('#detail-tab-automation').click({noWaitAfter:true});release();
    await page.waitForFunction(()=>window.__sceneClipNavigationComplete&&document.documentElement.getAttribute('data-gosx-navigation-state')==='idle');
    await page.waitForFunction(()=>document.querySelector('#detail-tab-automation')?.getAttribute('aria-selected')==='true');
