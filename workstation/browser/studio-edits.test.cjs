@@ -211,6 +211,17 @@ async function studio() {
 test('a piano-roll draw paints at once and is confirmed without a navigation', async () => {
   const {page, state, posts, cell, revisionOf, hold, confirmed, settled, noNavigation, original} = await studio();
   const before = await revisionOf('dock-clip');
+  await page.evaluate(before => {
+    window.__regionRevisionGaps = [];
+    const observer = new MutationObserver(() => {
+      const revision = document.querySelector('#update-dock-clip').dataset.regionRevision;
+      if (revision === before) return;
+      window.__regionRevisionGaps.push(...[...document.querySelectorAll('[data-update-region]:not([data-region-stale])')]
+        .filter(node => node.dataset.regionRevision !== revision).map(node => node.dataset.updateRegion));
+    });
+    observer.observe(document.querySelector('#studio-shell'), {subtree: true, attributes: true, attributeFilter: ['data-region-revision', 'data-region-stale']});
+    window.__stopRegionRevisionObserver = () => observer.disconnect();
+  }, before);
   const grid = await page.evaluateHandle(() => document.querySelector('#detail-panel-clip .piano-roll'));
   assert.equal(await page.locator(cell(15)).getAttribute('data-active'), 'false');
   const release = hold();
@@ -243,8 +254,55 @@ test('a piano-roll draw paints at once and is confirmed without a navigation', a
     assert.equal(field.revision, revision, `region ${field.id} is fresh but carries another revision`);
     for (const value of field.inputs) assert.equal(value, revision, `region ${field.id} kept an old revision field`);
   }
+  await page.evaluate(() => window.__stopRegionRevisionObserver());
+  assert.deepEqual(await page.evaluate(() => window.__regionRevisionGaps), [], 'a region was fresh at an older revision during the patch');
   assert.equal(new URL(page.url()).searchParams.get('step'), '15', 'the inspected step follows the drawn cell');
   await noNavigation();
+});
+
+test('a cancelled background read cannot restore an old revision', async () => {
+  const {page, posts, cell, confirmed, settled, caughtUp} = await studio();
+  await caughtUp();
+  let release, heldResponse, finished, claimed = false;
+  const gate = new Promise(resolve => { release = resolve; });
+  const done = new Promise(resolve => { finished = resolve; });
+  const handler = async route => {
+    if (claimed) return route.continue();
+    claimed = true;
+    try {
+      const response = await route.fetch();
+      heldResponse = await response.json();
+      await gate;
+      await route.fulfill({response, body: JSON.stringify(heldResponse)}).catch(() => {});
+    } finally {
+      finished();
+    }
+  };
+  await page.route('**/__studio/regions**', handler);
+  try {
+    let start = posts.length;
+    await page.locator(cell(15)).click();
+    await settled(start + 1);
+    const oldRevision = posts[start].result.data.revision;
+    await confirmed(cell(15), false, oldRevision);
+    await until(() => heldResponse, 'the stale-region read did not produce a response');
+    assert.equal(heldResponse.revision, oldRevision);
+
+    start = posts.length;
+    await page.locator(cell(15)).click();
+    await settled(start + 1);
+    const revision = posts[start].result.data.revision;
+    assert.notEqual(revision, oldRevision);
+    await confirmed(cell(15), true, revision);
+    release();
+    await done;
+    const freshOld = await page.evaluate(old => [...document.querySelectorAll('[data-update-region]:not([data-region-stale])')]
+      .filter(node => node.dataset.regionRevision === old).map(node => node.dataset.updateRegion), oldRevision);
+    assert.deepEqual(freshOld, [], 'the released read left regions fresh at the old revision');
+  } finally {
+    release();
+    await page.unroute('**/__studio/regions**', handler);
+  }
 });
 
 test('the answer to one draw keeps the pending paint of the next', async () => {

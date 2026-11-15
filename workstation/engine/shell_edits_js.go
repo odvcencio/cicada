@@ -351,8 +351,8 @@ func shellEnginesKept(wrapper js.Value, markup string) bool {
 
 // applyRegions applies an edit or read response under rule R1. The region the
 // server lists first is patched first; the regions that need no HTML advance
-// before the rest are patched, one per task, so input keeps flowing. Every
-// region left on an older revision is marked stale.
+// before the rest are patched one per task, so input keeps flowing. Regions
+// on an older revision are marked stale before patching begins.
 func (u *workspaceUI) applyRegions(projection workspaceProjection, job workspaceJob) (err error) {
 	defer func() {
 		if recover() != nil {
@@ -380,6 +380,22 @@ func (u *workspaceUI) applyRegions(projection workspaceProjection, job workspace
 		if wrapper := domRegion(update.ID); workspacePresent(wrapper) && !shellHeld(wrapper) && !shellEnginesKept(wrapper, update.HTML) && shellVisible(wrapper) && len(u.jobs) == 0 && !hasUnsavedWork() {
 			u.reload()
 			return nil
+		}
+	}
+	// Mark old regions before the first patch can yield to the browser.
+	// A read that returns a revision this tab did not write reveals another
+	// change. A region it did not render still shows the song from before
+	// that change, whatever this tab saves next, until it is rendered again.
+	foreign := job.method == methodGet && (projection.Revision != u.own.Revision || projection.SourceRevision != u.own.SourceRevision)
+	wrappers := domCall(u.root, "querySelectorAll", "[data-update-region]")
+	for i := 0; i < wrappers.Length(); i++ {
+		// The pair names the saved state: a save to another project file
+		// moves only the source revision, and forms carry both.
+		if wrapper := wrappers.Index(i); workspaceAttr(wrapper, "data-region-revision") != projection.Revision || workspaceAttr(wrapper, "data-region-source-revision") != projection.SourceRevision {
+			domSet(wrapper, "data-region-stale", "")
+			if foreign {
+				domSet(wrapper, "data-region-foreign", "")
+			}
 		}
 	}
 	scrolls := u.captureScrolls()
@@ -440,21 +456,6 @@ func (u *workspaceUI) applyRegions(projection workspaceProjection, job workspace
 	}
 	if len(projection.Regions) < 2 {
 		u.advanceRegions(projection, job, confirm)
-	}
-	// A read that returns a revision this tab did not write reveals another
-	// change. A region it did not render still shows the song from before
-	// that change, whatever this tab saves next, until it is rendered again.
-	foreign := job.method == methodGet && (projection.Revision != u.own.Revision || projection.SourceRevision != u.own.SourceRevision)
-	wrappers := domCall(u.root, "querySelectorAll", "[data-update-region]")
-	for i := 0; i < wrappers.Length(); i++ {
-		// The pair names the saved state: a save to another project file
-		// moves only the source revision, and forms carry both.
-		if wrapper := wrappers.Index(i); workspaceAttr(wrapper, "data-region-revision") != projection.Revision || workspaceAttr(wrapper, "data-region-source-revision") != projection.SourceRevision {
-			domSet(wrapper, "data-region-stale", "")
-			if foreign {
-				domSet(wrapper, "data-region-foreign", "")
-			}
-		}
 	}
 	u.syncHistoryLock()
 	workspaceRestoreScrolls(scrolls, x, y)
