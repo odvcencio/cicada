@@ -331,23 +331,17 @@ test('placement destinations reveal the browser on desktop and phone', {timeout:
       if (await inspector.getAttribute('open') === null) await inspector.locator('summary').click();
       const link = page.locator('[data-placement-inspector="far-in"]').getByRole('link', {name:'Sample into pads'});
       await link.click();
-      await page.locator('#browser-sampler[open]').waitFor();
+      await page.locator('#browser-sampler').waitFor();
       assert.equal(await page.locator('#studio-shell').getAttribute('data-phone-region'), 'browser');
       assert.equal(await page.locator('#browser-sampler').isVisible(), true);
-      assert.equal(await page.locator('#browser-sampler summary').first().evaluate(el => { const r = el.getBoundingClientRect(); return r.bottom > 0 && r.top < innerHeight; }), true, 'destination is in the viewport');
-      await page.reload();
-      await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
-      await page.locator('#browser-sampler[open]').waitFor();
-      assert.equal(await page.locator('#browser-sampler').isVisible(), true);
-      await page.locator('#browser-sampler > summary').click();
-      await page.reload();
-      await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
-      assert.equal(await page.locator('#browser-sampler').getAttribute('open'), null, 'explicit close survives reload');
+      assert.equal(await page.locator('#library-tab-samples').first().evaluate(el => { const r = el.getBoundingClientRect(); return r.bottom > 0 && r.top < innerHeight; }), true, 'destination is in the viewport');
+      await page.locator('#library-tab-sounds').click();
+      assert.equal(await page.locator('#browser-sampler').isVisible(), false, 'switching tabs hides Sampler');
       await page.goto(new URL('/studio?reveal=takes&clip=audio1&region=browser', base).href);
       await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
-      await page.locator('#browser-takes[open]').waitFor();
+      await page.locator('#browser-takes').waitFor();
       assert.equal(await page.locator('#browser-takes').isVisible(), true);
-      assert.equal(await page.locator('#browser-takes > summary').evaluate(el => { const r = el.getBoundingClientRect(); return r.bottom > 0 && r.top < innerHeight; }), true, 'Takes is in the viewport');
+      assert.equal(await page.locator('#library-tab-takes').evaluate(el => { const r = el.getBoundingClientRect(); return r.bottom > 0 && r.top < innerHeight; }), true, 'Takes is in the viewport');
       if (viewport.width >= 500) {
         await page.locator('[data-pane="library"][data-pane-action="hide"]').click();
         await page.reload();
@@ -384,8 +378,7 @@ test('placement destinations reveal the browser on desktop and phone', {timeout:
           await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
           if (await page.locator('#studio-browser > details').getAttribute('open') === null)
             await page.locator('[data-pane="library"][data-pane-action="show"]').click();
-          if (mode === 'close-section' && await page.locator('#browser-sampler').getAttribute('open') === null)
-            await page.locator('#browser-sampler > summary').click();
+          if (mode === 'close-section') await page.locator('#library-tab-samples').click();
           const selected = page.locator('[data-placement-inspector="far-in"]');
           if (await selected.getAttribute('open') === null) await selected.locator('summary').click();
           const link = selected.getByRole('link', {name:'Sample into pads'});
@@ -401,17 +394,17 @@ test('placement destinations reveal the browser on desktop and phone', {timeout:
           else await link.click();
           await requested;
           if (mode === 'close-library') await page.locator('[data-pane="library"][data-pane-action="hide"]').click();
-          if (mode === 'close-section') await page.locator('#browser-sampler > summary').click();
+          if (mode === 'close-section') await page.locator('#library-tab-sounds').click();
           if (mode === 'keyboard-new-focus') await page.locator('#transport-form button').first().focus();
           release();
           await page.waitForFunction(() => window.__destinationNavigated);
           await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
           if (mode === 'close-library') assert.equal(await page.locator('#studio-browser > details').getAttribute('open'), null, mode);
-          if (mode === 'close-section') assert.equal(await page.locator('#browser-sampler').getAttribute('open'), null, mode);
-          if (mode === 'keyboard') await until(() => page.locator('#browser-sampler > summary').evaluate(el => el === document.activeElement), 'keyboard destination was not focused');
+          if (mode === 'close-section') assert.equal(await page.locator('#browser-sampler').isVisible(), false, mode);
+          if (mode === 'keyboard') await until(() => page.locator('#library-tab-samples').evaluate(el => el === document.activeElement), 'keyboard destination was not focused');
           if (mode === 'pointer' || mode === 'keyboard-new-focus') {
             await page.waitForTimeout(100);
-            assert.equal(await page.locator('#browser-sampler > summary').evaluate(el => el === document.activeElement), false, `${mode} must not focus the destination`);
+            assert.equal(await page.locator('#library-tab-samples').evaluate(el => el === document.activeElement), false, `${mode} must not focus the destination`);
           }
           await page.unroute('**/studio?*');
         }

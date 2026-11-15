@@ -45,7 +45,7 @@ func (s *studioApp) panel(ctx *server.Context, v workspace, csrf, panel string) 
 	case "takes":
 		return s.takes(ctx, v, csrf)
 	case "sampler":
-		return s.sampler(ctx, v, csrf)
+		return gosx.Fragment(s.sampler(ctx, v, csrf), s.samplePacks(ctx, v, csrf))
 	case "history":
 		return s.history(ctx, v, csrf)
 	case "export":

@@ -255,14 +255,14 @@ func TestShellDeclaresSignalsAndPersistsLayout(t *testing.T) {
 
 func TestShellTabsFollowTheARIATabPattern(t *testing.T) {
 	body := shellBody(t, "?tab=session&dock=device")
-	for _, list := range []string{"Views", "Detail"} {
+	for _, list := range []string{"Views", "Detail", "Library"} {
 		if !regexp.MustCompile(`<nav[^>]*role="tablist"[^>]*aria-label="` + list + `"|<nav[^>]*aria-label="` + list + `"[^>]*role="tablist"`).MatchString(body) {
 			t.Errorf("%s tab list lacks role=tablist and a label", list)
 		}
 	}
 	tabs := regexp.MustCompile(`<a[^>]*role="tab"[^>]*>`).FindAllString(body, -1)
-	if len(tabs) != 6 {
-		t.Fatalf("got %d tabs, want 6", len(tabs))
+	if len(tabs) != 9 {
+		t.Fatalf("got %d tabs, want 9 (three Views, three Detail, three Library)", len(tabs))
 	}
 	attr := func(tag, name string) string {
 		match := regexp.MustCompile(`\s` + name + `="([^"]*)"`).FindStringSubmatch(tag)
@@ -292,11 +292,11 @@ func TestShellTabsFollowTheARIATabPattern(t *testing.T) {
 		if isSelected != strings.Contains(tag, `aria-current="page"`) {
 			t.Errorf("tab %s: aria-selected and aria-current disagree", id)
 		}
-		if !strings.Contains(attr(tag, "href"), "tab=") && !strings.Contains(attr(tag, "href"), "dock=") {
+		if !strings.HasPrefix(id, "library-tab-") && !strings.Contains(attr(tag, "href"), "tab=") && !strings.Contains(attr(tag, "href"), "dock=") {
 			t.Errorf("tab %s lost its no-JavaScript link: %s", id, tag)
 		}
 	}
-	if selected != 2 {
+	if selected != 3 {
 		t.Errorf("want one selected tab per list, got %d selected", selected)
 	}
 	// Every panel renders so in-place switching has content.
@@ -337,7 +337,7 @@ func TestShellPanelFormsReturnToTheShell(t *testing.T) {
 		}
 		return response.Header.Get("Location")
 	}
-	if got := send(address+"/studio?tab=session&dock=device", "/?panel=patterns&pattern=main&step=3"); got != "/studio?dock=device&pattern=main&step=3&tab=session" {
+	if got := send(address+"/studio?tab=session&dock=device&library=samples", "/?panel=patterns&pattern=main&step=3"); got != "/studio?dock=device&library=samples&pattern=main&step=3&tab=session" {
 		t.Errorf("shell form returned to %q", got)
 	}
 	if got := send(address+"/studio", "/?panel=code&file=a.cicada"); got != "/studio?file=a.cicada" {
@@ -482,9 +482,9 @@ func TestShellLinksAndNavigationKeepTheEditingSelection(t *testing.T) {
 
 func TestShellUploadsReturnToTheShell(t *testing.T) {
 	address, client, _ := testApp(t)
-	page := address + "/studio?tab=session&pad=3"
+	page := address + "/studio?tab=session&library=samples&pad=3"
 	csrf := tokenFromPage(t, getPage(t, client, page))
-	for route, want := range map[string]string{"/__sampler/import": "/studio?pad=1&tab=session", "/__instrument/import": "/studio?tab=session"} {
+	for route, want := range map[string]string{"/__sampler/import": "/studio?library=samples&pad=1&tab=session", "/__instrument/import": "/studio?library=samples&tab=session"} {
 		field := map[string]string{"/__sampler/import": "audio", "/__instrument/import": "wav"}[route]
 		var body strings.Builder
 		form := multipart.NewWriter(&body)
@@ -508,6 +508,13 @@ func TestShellUploadsReturnToTheShell(t *testing.T) {
 			got := response.Header.Get("Location")
 			if wantLocation != "" && got != wantLocation {
 				t.Errorf("%s from the shell redirected to %q, want %q (status %d)", route, got, wantLocation, response.StatusCode)
+			}
+			if route == "/__sampler/import" && wantLocation != "" && got == wantLocation {
+				returned := getPage(t, client, address+got)
+				tab := regexp.MustCompile(`<a\b[^>]*id="library-tab-samples"[^>]*>`).FindString(returned)
+				if !strings.Contains(tab, `aria-selected="true"`) {
+					t.Errorf("sampler return did not select Samples: %s", tab)
+				}
 			}
 			if wantLocation == "" && !strings.HasPrefix(got, "/?panel=") {
 				t.Errorf("%s from the panel app redirected to %q", route, got)
@@ -636,7 +643,7 @@ func TestShellGetFormsStayInTheShell(t *testing.T) {
 		"Update audition":   gosx.El("form", gosx.Attrs(gosx.Attr("method", "get"), gosx.Attr("action", "/"), gosx.Attr("class", "actions")), hidden("panel", "takes"), hidden("take", "t1"), field("Root MIDI note", numberInput("root", "60", "0", "127")), submit("", "", "Update audition")),
 	}
 	address, client, _ := testApp(t)
-	current, _ := url.Parse("/studio?tab=session&dock=device&file=b.cicada&pattern=p")
+	current, _ := url.Parse("/studio?tab=session&dock=device&library=takes&file=b.cicada&pattern=p")
 	for name, form := range forms {
 		rendered := gosx.RenderHTML(shellLinks(current, form))
 		if strings.Contains(rendered, `action="/"`) || strings.Contains(rendered, `name="panel"`) {
@@ -654,7 +661,7 @@ func TestShellGetFormsStayInTheShell(t *testing.T) {
 				query.Set(n[1], v[1])
 			}
 		}
-		for key, want := range map[string]string{"tab": "session", "dock": "device", "file": "b.cicada"} {
+		for key, want := range map[string]string{"tab": "session", "dock": "device", "library": "takes", "file": "b.cicada"} {
 			if query.Get(key) != want {
 				t.Errorf("%s: hidden %s=%q, want %q", name, key, query.Get(key), want)
 			}
@@ -791,5 +798,25 @@ func TestShellResampleReceiptStaysSmallForALargeScore(t *testing.T) {
 	var receipt workspaceProjection
 	if err := json.Unmarshal(result.Data, &receipt); err != nil || receipt.HTML != "" || receipt.Revision != "current" || receipt.Location != "/studio?tab=session" {
 		t.Errorf("receipt: %+v err=%v", receipt, err)
+	}
+}
+
+func TestLibraryTabsAndReveal(t *testing.T) {
+	for _, tc := range []struct{ query, selected string }{{"", "sounds"}, {"?library=samples", "samples"}, {"?library=takes", "takes"}, {"?library=invalid", "sounds"}, {"?library=takes&reveal=sampler", "samples"}, {"?library=samples&reveal=takes", "takes"}} {
+		body := shellBody(t, tc.query)
+		for _, id := range []string{"sounds", "samples", "takes"} {
+			tab := regexp.MustCompile(`(?s)<a\b[^>]*id="library-tab-` + id + `"[^>]*>`).FindString(body)
+			panel := regexp.MustCompile(`(?s)<section\b[^>]*id="library-panel-` + id + `"[^>]*>`).FindString(body)
+			if tab == "" || panel == "" {
+				t.Errorf("%s: missing tab or panel %s", tc.query, id)
+				continue
+			}
+			if strings.Contains(tab, `aria-selected="true"`) != (id == tc.selected) || strings.Contains(panel, " hidden") != (id != tc.selected) {
+				t.Errorf("%s: tab=%s panel=%s", tc.query, tab, panel)
+			}
+		}
+		if !strings.Contains(body, `data-gosx-tabs-signal="$layout.libraryTab"`) {
+			t.Error("missing library tab signal")
+		}
 	}
 }

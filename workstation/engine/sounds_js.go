@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall/js"
@@ -61,6 +62,41 @@ func mountSounds(host enginewasm.Context) (enginewasm.Handle, error) {
 		cancel()
 		return nil, fmt.Errorf("sound browser is missing")
 	}
+	u.on(u.root, "input", func(e js.Value) {
+		input := e.Get("target")
+		if !input.Call("matches", "[data-sound-search]").Bool() {
+			return
+		}
+		query := strings.ToLower(input.Get("value").String())
+		rows := u.root.Call("querySelectorAll", "[data-instrument-patch]")
+		visible := 0
+		for i := 0; i < rows.Length(); i++ {
+			row := rows.Index(i)
+			match := strings.Contains(strings.ToLower(workspaceAttr(row, "data-sound-search-text")), query)
+			row.Set("hidden", !match)
+			if match {
+				visible++
+			}
+		}
+		u.root.Call("querySelector", "[data-sound-empty]").Set("hidden", visible != 0)
+	})
+	u.on(u.root, "click", func(e js.Value) {
+		row := e.Get("target").Call("closest", "[data-instrument-patch]")
+		if !workspacePresent(row) || !u.root.Call("contains", row).Bool() {
+			return
+		}
+		id := workspaceAttr(row, "data-instrument-patch")
+		rows := u.root.Call("querySelectorAll", "[data-instrument-patch]")
+		for i := 0; i < rows.Length(); i++ {
+			item := rows.Index(i)
+			item.Call("setAttribute", "aria-pressed", strconv.FormatBool(workspaceAttr(item, "data-instrument-patch") == id))
+		}
+		details := u.root.Call("querySelectorAll", "[data-sound-detail]")
+		for i := 0; i < details.Length(); i++ {
+			detail := details.Index(i)
+			detail.Set("hidden", workspaceAttr(detail, "data-sound-detail") != id)
+		}
+	})
 	u.on(u.root, "click", func(e js.Value) {
 		button := e.Get("target").Call("closest", "[data-sound-preview], [data-sound-stop]")
 		if !workspacePresent(button) || !u.root.Call("contains", button).Bool() {
@@ -96,7 +132,7 @@ func mountSounds(host enginewasm.Context) (enginewasm.Handle, error) {
 	})
 	u.on(u.root, "keydown", func(e js.Value) {
 		if key := e.Get("key").String(); key == " " || key == "Enter" {
-			if workspacePresent(e.Get("target").Call("closest", "[data-sound-preview], [data-sound-stop]")) {
+			if workspacePresent(e.Get("target").Call("closest", "[data-sound-preview], [data-sound-stop], [data-instrument-patch]")) {
 				e.Call("stopPropagation")
 			}
 		}
@@ -117,7 +153,7 @@ func mountSounds(host enginewasm.Context) (enginewasm.Handle, error) {
 			u.syncPatternSound(choice.Get("value").String(), false)
 		}
 	}
-	message := "Listen to a sound, then add it to your song."
+	message := ""
 	if u.props.Pattern != "" {
 		message = "Preview leaves your song position unchanged."
 	}
@@ -158,7 +194,7 @@ func (u *soundsUI) render(message string) {
 	for i := 0; i < buttons.Length(); i++ {
 		button := buttons.Index(i)
 		selected := u.selected == workspaceAttr(button, "data-sound-preview")
-		label, text := "Listen to "+workspaceAttr(button, "data-sound-name"), "Listen"
+		label, text := "Listen to "+workspaceAttr(button, "data-sound-name"), "Audition"
 		if u.props.Pattern != "" {
 			label, text = "Loop "+workspaceAttr(button, "data-sound-name"), "Loop part"
 		}
