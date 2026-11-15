@@ -1,0 +1,39 @@
+cicada 2
+title "Flush check: a sustain pedal pressed and released"
+tempo 120
+key c major
+seed 1
+
+track grand piano {
+  sustain = 0
+}
+
+pattern chord notes steps=4 {
+  gate = 50%
+  [c3 e3 g3 c4] . . .
+}
+
+pattern hush notes steps=4 {
+  . . . .
+}
+
+scene pedal {
+  grand = chord
+  grand.sustain = 1
+}
+
+scene release {
+  grand = hush
+  grand.sustain = 0
+}
+
+scene again {
+  grand = chord
+  grand.sustain = 0
+}
+
+song {
+  pedal*1
+  release*3
+  again*1
+}

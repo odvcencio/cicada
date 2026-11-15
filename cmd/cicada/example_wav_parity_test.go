@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -14,6 +15,10 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"m31labs.dev/cicada/host/kernelimage"
+	"m31labs.dev/cicada/host/schedule"
+	"m31labs.dev/cicada/project"
 )
 
 // TestExampleWAVParity checks the determinism contract at the level of the
@@ -28,6 +33,12 @@ import (
 // full sweep also fails when a score that cicada check accepts does not render
 // plainly: check must refuse what render refuses (TestCheckedExamplesRender
 // checks the first bar of each on every pull request).
+//
+// Every score under examples/ also records its compiled engine configuration
+// and its portable kernel image ("score config" and "score image"; see
+// compileHashes): the browser and the service exchange them, so they are
+// under the same contract as the audio. They take seconds, so pull requests
+// compare all of them, not only the subset.
 //
 // In CI the amd64 parity job writes the hashes (CICADA_WAV_PARITY_OUT) and
 // uploads them; the arm64 parity job compares its own renders with them
@@ -56,7 +67,10 @@ func TestExampleWAVParity(t *testing.T) {
 	if os.Getenv("CICADA_WAV_PARITY_ALL") == "1" {
 		scores = exampleScores(t, root)
 	}
-	got := renderWAVHashes(t, root, scores)
+	got := renderWAVHashes(t, root, append(scoreCases(scores), wavFlushCases...))
+	for key, hash := range compileHashes(t, root, exampleScores(t, root)) {
+		got[key] = hash
+	}
 	if t.Failed() {
 		return
 	}
@@ -65,6 +79,15 @@ func TestExampleWAVParity(t *testing.T) {
 		// leaves to it: a score that check accepts must render.
 		for _, problem := range checkedRenderFailures(root, scores, got) {
 			t.Error(problem)
+		}
+	}
+	// Two renders that fail alike compare as identical; a flush case must
+	// write a file in every mode, so it cannot pass that way.
+	for _, c := range wavFlushCases {
+		for _, mode := range wavParityModes {
+			if h := got[c.name+" "+mode.name]; h.sum == "none" {
+				t.Errorf("%s %s wrote no file (exit %d); a flush case must render", c.name, mode.name, h.status)
+			}
 		}
 	}
 	if out != "" {
@@ -120,6 +143,86 @@ var wavParitySubset = []string{
 	"examples/modeled-kit/reggae-one-drop-after-room.cicada",
 	"examples/modeled-kit/rock-after-room.cicada",
 	"examples/modeled-kit/soca-after-room.cicada",
+}
+
+// wavFlushCases drive state and smoothed controls into the subnormal numbers
+// that kernel/dsp/subnormal flushes, with each processor that flushes in the
+// signal path at non-default settings and sound after the stall, so a flush
+// that changes the output changes a file. Every run of TestExampleWAVParity
+// renders them, so the arm64 job compares them with amd64, and make
+// test-flush-identity compares them, with the parity subset, with and
+// without the flush (the build tag cicada_noflush). Each case must write a
+// file in every mode.
+//
+//   - comp-breakdown: a sidechain compressor (makeup 0 dB, 10 ms release)
+//     whose gain reduction releases to zero while the bass plays on. Flushing
+//     the reduction or the makeup changed this file (fastmath.Exp2 is exactly
+//     1 only at 0), which is why the compressor does not flush them.
+//   - acid-controls: resonance, envelope modulation and accent glide to zero
+//     while the notes go on; flushing envelope modulation or accent changed
+//     this file the same way.
+//   - deesser-gap: a de-esser releases under quiet hats (its reduction must
+//     not be flushed either), then a silent gap stalls its detector, then
+//     hats again.
+//   - piano-pedal: a sustain pedal pressed and released, which without the
+//     flush leaves the smoothed pedal at 1.4e-43 under 88 resonators, then a
+//     chord after the stall.
+//   - keys-tails: electric piano, poly keys and string machine tails through
+//     ten bars of rest, then the chord again.
+//   - reverb-hard-left: a hard-left track alone on the reverb send after
+//     bar 1, so the reverb's right input is an exact zero while the left
+//     plays and its right diffusers decay on their own; then the reverb mix
+//     glides to zero while the track plays on.
+//   - delay-controls, tape-controls: feedback, width, ping-pong, wow,
+//     flutter and saturation glide to zero while notes play through them.
+//   - drive-gap: a dark drive's tone filters decay in silence, notes return,
+//     then its mix glides to zero while they play.
+//   - chorus-gap and ampcab-gap: silence, then notes, through a chorus (at
+//     96 kHz, where its input lowpass stalls) and an amp and cabinet (whose
+//     DC blocker and tone filter stall). Scores cannot change a chorus's or
+//     an amp's controls live, so their control flushes are covered only by
+//     the processors' own tests.
+//   - drum-pan: a kick panned hard left, then turned off, while the snare
+//     plays.
+//   - string-tail-from-bar-5: bars 5 to 24 of a string machine chord that
+//     ends in bar 2: a range that holds only the tail (peak 1.7e-6), which
+//     normalization raises by about 2^19. The loudness modes add nothing
+//     here: the tail is below their -70 LUFS gate, so they exit 1 and write
+//     the plain render's bytes.
+//
+// The sample voice's gain sweep has no case: sampler packs are not part of
+// these renders, and its flush changes only the sign of a zero.
+var wavFlushCases = []wavCase{
+	{name: "flush:comp-breakdown", score: "cmd/cicada/testdata/flush/comp-breakdown.cicada"},
+	{name: "flush:acid-controls", score: "cmd/cicada/testdata/flush/acid-controls.cicada"},
+	{name: "flush:deesser-gap", score: "cmd/cicada/testdata/flush/deesser-gap.cicada"},
+	{name: "flush:piano-pedal", score: "cmd/cicada/testdata/flush/piano-pedal.cicada"},
+	{name: "flush:keys-tails", score: "cmd/cicada/testdata/flush/keys-tails.cicada"},
+	{name: "flush:reverb-hard-left", score: "cmd/cicada/testdata/flush/reverb-hard-left.cicada"},
+	{name: "flush:delay-controls", score: "cmd/cicada/testdata/flush/delay-controls.cicada"},
+	{name: "flush:tape-controls", score: "cmd/cicada/testdata/flush/tape-controls.cicada"},
+	{name: "flush:drive-gap", score: "cmd/cicada/testdata/flush/drive-gap.cicada"},
+	{name: "flush:chorus-gap-96k", score: "cmd/cicada/testdata/flush/chorus-gap.cicada", args: []string{"--rate", "96000"}},
+	{name: "flush:ampcab-gap", score: "cmd/cicada/testdata/flush/ampcab-gap.cicada"},
+	{name: "flush:drum-pan", score: "cmd/cicada/testdata/flush/drum-pan.cicada"},
+	{name: "flush:string-tail-from-bar-5", score: "cmd/cicada/testdata/flush/string-tail.cicada", args: []string{"--from", "5"}},
+}
+
+// wavCase is one score to render in every mode of wavParityModes. name is the
+// first field of its hash key: the score's path, or for a case with extra
+// render arguments a name without spaces. args go before the mode's.
+type wavCase struct {
+	name, score string
+	args        []string
+}
+
+// scoreCases renders each score as it is, keyed by its path.
+func scoreCases(scores []string) []wavCase {
+	cases := make([]wavCase, len(scores))
+	for i, score := range scores {
+		cases[i] = wavCase{name: score, score: score}
+	}
+	return cases
 }
 
 // knownWAVDifference is a render that is known to differ between amd64 and
@@ -182,20 +285,20 @@ func exampleScores(t *testing.T, root string) []string {
 	return scores
 }
 
-// renderWAVHashes renders every score in every mode with the real main, in
-// parallel child processes, and returns the results keyed by "score mode".
-func renderWAVHashes(t *testing.T, root string, scores []string) map[string]wavHash {
+// renderWAVHashes renders every case in every mode with the real main, in
+// parallel child processes, and returns the results keyed by "name mode".
+func renderWAVHashes(t *testing.T, root string, cases []wavCase) map[string]wavHash {
 	t.Helper()
 	var mu sync.Mutex
 	got := map[string]wavHash{}
 	t.Run("render", func(t *testing.T) {
-		for _, score := range scores {
+		for _, c := range cases {
 			for _, mode := range wavParityModes {
-				key := score + " " + mode.name
+				key := c.name + " " + mode.name
 				t.Run(strings.ReplaceAll(key, "/", "_"), func(t *testing.T) {
 					t.Parallel()
 					wav := filepath.Join(t.TempDir(), "out.wav")
-					args := append([]string{"render", score, "-o", wav}, mode.args...)
+					args := append(append([]string{"render", c.score, "-o", wav}, c.args...), mode.args...)
 					_, status := runMain(t, root, args...)
 					result := wavHash{sum: "none", status: status}
 					if data, err := os.ReadFile(wav); err == nil {
@@ -211,6 +314,50 @@ func renderWAVHashes(t *testing.T, root string, scores []string) map[string]wavH
 			}
 		}
 	})
+	return got
+}
+
+// compileHashes returns, keyed "score config" and "score image", the SHA-256
+// of each score's compiled engine configuration (as JSON, the way
+// project.CompileEngine builds it at 48 kHz) and of its portable kernel image
+// (schedule.CompileResident, then kernelimage.Encode, the way `cicada check
+// --profile browser` builds it). Scores load with loadProject, as the cicada
+// command loads them. A step that fails records "none" with the step as its
+// status (1 load, 2 configuration, 3 image compile, 4 image encode), so a
+// score that fails differently on two machines differs too. Until #329 the
+// send levels in dB came from math.Pow, and the configurations of
+// anywhere-you-are and tidal-glass, and tidal-glass's image, differed between
+// amd64 and arm64 in their last bits while every WAV matched.
+func compileHashes(t *testing.T, root string, scores []string) map[string]wavHash {
+	t.Helper()
+	got := map[string]wavHash{}
+	sum := func(data []byte) string {
+		s := sha256.Sum256(data)
+		return hex.EncodeToString(s[:])
+	}
+	for _, score := range scores {
+		config, image := wavHash{sum: "none"}, wavHash{sum: "none"}
+		path := filepath.Join(root, filepath.FromSlash(score))
+		if semantic, err := loadProject(path); err != nil {
+			config.status, image.status = 1, 1
+		} else {
+			if cfg, err := project.CompileEngine(semantic, 48_000, 512); err != nil {
+				config.status = 2
+			} else if data, err := json.Marshal(cfg); err != nil {
+				t.Fatalf("%s: %v", score, err)
+			} else {
+				config.sum = sum(data)
+			}
+			if portable, err := schedule.CompileResident(semantic, filepath.Dir(path), 48_000, 128); err != nil {
+				image.status = 3
+			} else if data, err := kernelimage.Encode(portable); err != nil {
+				image.status = 4
+			} else {
+				image.sum = sum(data)
+			}
+		}
+		got[score+" config"], got[score+" image"] = config, image
+	}
 	return got
 }
 

@@ -1,0 +1,46 @@
+cicada 2
+title "Flush check: a de-esser releasing under quiet hats, a silent gap, then hats again"
+tempo 240
+key c major
+seed 1
+
+fx sib deesser {
+  frequency = 6000Hz
+  threshold = -40dB
+  ratio = 8
+  range = 12dB
+  release = 10ms
+}
+
+track hats drums {
+  insert = sib
+}
+
+pattern on drums {
+  ch: x.x.x.x.x.x.x.x.
+}
+
+pattern off drums {
+  ch: ................
+}
+
+scene loud {
+  hats = on
+}
+
+scene quiet {
+  hats = on
+  hats.ch_level = -50dB
+}
+
+scene gap {
+  hats = off
+  hats.ch_level = -50dB
+}
+
+song {
+  loud*1
+  quiet*12
+  gap*8
+  quiet*2
+}

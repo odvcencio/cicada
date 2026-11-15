@@ -10,6 +10,7 @@ import (
 	"m31labs.dev/cicada/host/instrumentpack"
 	"m31labs.dev/cicada/host/sampleasset"
 	"m31labs.dev/cicada/host/schedule"
+	"m31labs.dev/cicada/host/schedule/rules"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 	"m31labs.dev/cicada/render"
@@ -65,7 +66,7 @@ func checkBeyondValidator(path string, inspection scoreInspection, limit int64) 
 // compile of a score without audio.
 func engineDiagnostic(err error) notation.Diagnostic {
 	d := notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: notation.Position{Line: 1, Column: 1}}
-	var budget *schedule.ResidentBudgetError
+	var budget *rules.ResidentBudgetError
 	var memory *instrumentpack.ResidentPCMError
 	switch {
 	case errors.As(err, &budget):

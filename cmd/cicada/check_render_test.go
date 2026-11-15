@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"m31labs.dev/cicada/host/schedule"
+	"m31labs.dev/cicada/host/schedule/rules"
 	"m31labs.dev/cicada/internal/testwav"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/render"
@@ -124,7 +124,7 @@ song { m }
 
 // engineDiagnostic files the engine compile's refusals under their codes.
 func TestEngineDiagnosticCodes(t *testing.T) {
-	budget := engineDiagnostic(fmt.Errorf("compile: %w", &schedule.ResidentBudgetError{Name: "asset a", Bytes: 40 << 20, Used: 30 << 20}))
+	budget := engineDiagnostic(fmt.Errorf("compile: %w", &rules.ResidentBudgetError{Name: "asset a", Bytes: 40 << 20, Used: 30 << 20}))
 	if budget.Code != "CICADA-LIMIT" || budget.Found != "70.0 MiB" || budget.Position != (notation.Position{Line: 1, Column: 1}) {
 		t.Fatalf("budget: %+v", budget)
 	}

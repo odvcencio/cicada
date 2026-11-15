@@ -220,6 +220,7 @@ test('factory sound previews own their keys and keep the Browser scrollable', {t
         await listen.press('Escape');
         await page.waitForFunction(() => document.querySelector('[data-sound-preview="warm-pad"]').getAttribute('aria-pressed') === 'false');
       }
+      await sounds.locator('[data-instrument-patch="soft-bell"]').click();
       const last = sounds.locator('[data-sound-preview="soft-bell"]');
       await last.focus();
       await page.evaluate(() => new Promise(requestAnimationFrame));
@@ -235,7 +236,7 @@ test('factory sound previews own their keys and keep the Browser scrollable', {t
       assert.ok(bounds.buttonVisible && (bounds.innerScroll > 0 || !bounds.canScroll || bounds.buttonVisible), JSON.stringify(bounds));
       assert.equal(bounds.outerScroll, 0, 'focus scrolls the sound list and preserves the Browser header');
       assert.equal(bounds.overflow, false, 'sounds fit the viewport');
-      await page.locator('#browser-instruments > summary').scrollIntoViewIfNeeded();
+      await page.locator('#library-tab-sounds').scrollIntoViewIfNeeded();
       if (process.env.CICADA_SHELL_PROOF_DIR) {
         await fs.promises.mkdir(process.env.CICADA_SHELL_PROOF_DIR, {recursive:true});
         await page.screenshot({path:path.join(process.env.CICADA_SHELL_PROOF_DIR, name + '.png')});
@@ -362,6 +363,7 @@ test('a refresh request keeps unsaved Code lens text and shows a notice', async 
 // changing it back leaves nothing unsaved, so a refresh request still reloads.
 test('changing a select and changing it back is clean', async () => {
   const {page, requests, errors} = await openShell('?tab=session');
+  await page.locator('[data-live-midi-setup] summary').click();
   const select = page.locator('[data-live-target]');
   const values = await select.locator('option').evaluateAll(options => options.map(option => option.value));
   assert.ok(values.length >= 2, 'the learn-target select has options to change between');
@@ -403,7 +405,7 @@ test('the closed Sampler does not take the Live keyboard', async () => {
   await focusWorkspace(page);
   await page.keyboard.press('a');
   assert.deepEqual(await page.evaluate(() => window.__keys), ['a'], 'with the Sampler section closed, a reaches Live');
-  await page.locator('#browser-sampler > summary').click();
+  await page.locator('#library-tab-samples').click();
   await page.keyboard.press('a');
   assert.deepEqual(await page.evaluate(() => window.__keys), ['a'], 'with the Sampler section open and focused, the Sampler owns the key');
   await page.close();
@@ -464,7 +466,7 @@ test('a sampler resample from the shell refreshes Arrange and the Code lens', {t
   wav.writeUInt16LE(8, 32); wav.writeUInt16LE(32, 34); wav.write('data', 36); wav.writeUInt32LE(frames * 8, 40);
   for (let i = 0; i < frames; i++) { wav.writeFloatLE(.35 * Math.sin(i * 2 * Math.PI * 220 / 48000), 44 + i * 8); wav.writeFloatLE(.2 * Math.sin(i * 2 * Math.PI * 330 / 48000), 48 + i * 8); }
   const openSampler = async () => {
-    if (!(await page.locator('#browser-sampler').evaluate(section => section.open))) await page.locator('#browser-sampler > summary').click();
+    await page.locator('#library-tab-samples').click();
   };
   await openSampler();
   await page.locator('input[type=file][name=audio]').setInputFiles({name: 'Shell regression.wav', mimeType: 'audio/wav', buffer: wav});
@@ -793,3 +795,24 @@ test('part loops preserve paused playback and drafts with keyboard control', {ti
 });
 
 test.after(async () => { if (shared) await shared.browser.close(); }, {timeout: 15000});
+
+test('Library filters and selects sounds without writing the score', async () => {
+  const {page} = await openShell('');
+  try {
+    const writes = [];
+    page.on('request', request => { if (request.method() === 'POST') writes.push(request.url()); });
+    const root = page.locator('#cicada-sounds[data-sounds-ready=true]');
+    await root.waitFor();
+    await root.getByRole('searchbox', {name:'Search sounds'}).fill('sIlK');
+    assert.equal(await root.locator('[data-instrument-patch]:visible').count(), 1);
+    await root.locator('[data-instrument-patch="silk-pluck"]').press('Enter');
+    assert.equal(await root.locator('[data-sound-detail]:not([hidden])').count(), 1);
+    assert.equal(await root.locator('[data-instrument-patch="silk-pluck"]').getAttribute('aria-pressed'), 'true');
+    await root.getByRole('searchbox', {name:'Search sounds'}).fill('no-such-sound');
+    assert.equal(await root.getByText('No sounds match').isVisible(), true);
+    await page.locator('#library-tab-samples').click();
+    await page.locator('#library-tab-takes').click();
+    await page.locator('#library-tab-sounds').click();
+    assert.deepEqual(writes, []);
+  } finally { await page.close(); }
+});

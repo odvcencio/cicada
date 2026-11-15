@@ -269,7 +269,6 @@ func TestP2EngineUnsupportedMixerFormsNameTheirConstruct(t *testing.T) {
 	}{
 		{"unknown effect kind", "fx echo echo {}\n", "", "effect kind echo"},
 		{"second delay", "fx room delay {}\nfx other delay {}\n", "", "delay"},
-		{"second reverb", "fx hall reverb {}\nfx room reverb {}\n", "", "reverb"},
 		{"custom bus", "bus ambience {}\n", "", "user-declared bus ambience"},
 		{"bus send", "fx room delay {}\nbus music { send room = 0.2 }\n", "", "music bus send"},
 		{"non-fixed music level", "bus music { level = -2dB }\n", "", "music bus level"},
@@ -297,6 +296,29 @@ func TestP2EngineUnsupportedMixerFormsNameTheirConstruct(t *testing.T) {
 			}
 			t.Fatalf("want CICADA-UNSUPPORTED naming %q, got %+v", tc.want, diagnostics)
 		})
+	}
+}
+
+// A second reverb is a return of its own in edition 2 (slots C to H). Edition
+// 1 addresses returns by kind (send_b), so there it reports CICADA-VERSION at
+// the second declaration instead of "not implemented" at line 1.
+func TestSecondReverbNeedsEditionTwo(t *testing.T) {
+	_, diagnostics := Parse([]byte("cicada 1\nfx hall reverb {}\nfx room reverb {}\ntrack bass acid { }\npattern p acid steps=1 { 1 }\nscene main { bass=p }\nsong { main }\n"))
+	found := false
+	for _, d := range diagnostics {
+		if d.Code == "CICADA-UNSUPPORTED" && strings.Contains(d.Message, "reverb") {
+			t.Fatalf("edition 1 still calls a second reverb unsupported: %+v", d)
+		}
+		found = found || d.Code == "CICADA-VERSION" && strings.Contains(d.Message, "second reverb") && d.Position.Line == 3
+	}
+	if !found {
+		t.Fatalf("want CICADA-VERSION at line 3, got %+v", diagnostics)
+	}
+	_, diagnostics = Parse([]byte("cicada 2\nfx hall reverb {}\nfx room reverb {}\ntrack bass acid { send room = 0.2 }\npattern p { c3 }\nscene main { bass = p }\nsong { main }\n"))
+	for _, d := range diagnostics {
+		if d.Severity == "error" {
+			t.Fatalf("edition 2 refused a second reverb: %+v", d)
+		}
 	}
 }
 
@@ -672,6 +694,55 @@ func TestSyntaxErrorInsideADeclarationNamesItsLine(t *testing.T) {
 			}
 			if diagnostics[0].Position.Line != tc.line {
 				t.Fatalf("syntax error on line %d, want line %d: %+v", diagnostics[0].Position.Line, tc.line, diagnostics[0])
+			}
+		})
+	}
+}
+
+// A scene that sets a later reverb's send is refused at its path, not sent to
+// send.reverb (the first reverb's send).
+func TestSceneSendToLaterReverbIsRefused(t *testing.T) {
+	_, diagnostics := Parse([]byte("cicada 2\nfx hall reverb {}\nfx room reverb {}\ntrack bass acid { send room = 0.2 }\npattern p { c3 }\nscene main { bass = p bass.send.room = 0.4 }\nsong { main }\n"))
+	for _, d := range diagnostics {
+		if d.Code == "CICADA-UNSUPPORTED" && strings.Contains(d.Message, "send.reverb is the send to hall") {
+			return
+		}
+	}
+	t.Fatalf("want CICADA-UNSUPPORTED naming hall as send.reverb, got %+v", diagnostics)
+}
+
+// A return may not take a built-in send path's name unless it is the return
+// that path addresses: keys.send.reverb is the send to the first reverb and
+// keys.send.delay the send to the delay or tape return. Other names, such as
+// echo, level or pan, are not send paths and stay free.
+func TestReturnNamesThatCollideWithSendPathsAreRefused(t *testing.T) {
+	tail := "track keys acid {}\npattern p { c3 }\nscene main { keys = p }\nsong { main }\n"
+	for _, c := range []struct {
+		name, effects string
+		line          int // 0: accepted
+	}{
+		{"later reverb named reverb", "fx hall reverb {}\nfx reverb reverb {}\n", 3},
+		{"later reverb named delay", "fx hall reverb {}\nfx delay reverb {}\n", 3},
+		{"first reverb named delay", "fx delay reverb {}\n", 2},
+		{"delay named reverb", "fx reverb delay {}\n", 2},
+		{"tape named reverb", "fx reverb tape {}\n", 2},
+		{"first reverb named reverb", "fx reverb reverb {}\nfx room reverb {}\n", 0},
+		{"delay named delay", "fx delay delay {}\n", 0},
+		{"later reverbs named echo, level and pan", "fx hall reverb {}\nfx echo reverb {}\nfx level reverb {}\nfx pan reverb {}\n", 0},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			_, ds := Parse([]byte("cicada 2\n" + c.effects + tail))
+			var found *Diagnostic
+			for i := range ds {
+				if ds[i].Code == "CICADA-DUPLICATE" && strings.Contains(ds[i].Message, "cannot be named") {
+					found = &ds[i]
+				}
+			}
+			switch {
+			case c.line == 0 && found != nil:
+				t.Fatalf("refused: %+v", *found)
+			case c.line != 0 && (found == nil || found.Position.Line != c.line):
+				t.Fatalf("want CICADA-DUPLICATE at line %d, got %+v", c.line, ds)
 			}
 		})
 	}

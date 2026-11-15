@@ -1,11 +1,13 @@
 /*
- * Mixer channel strips: live meters, mute and solo, pan.
+ * Mixer channel strips: live meters, mute and solo, pan, the aligned strip
+ * face, the tool strip, and opening a channel in Device.
  *
  * ./build/cicada studio /path/to/disposable.cicada --audio null --listen 127.0.0.1:8190
  * CICADA_STUDIO_URL=http://127.0.0.1:8190 node --test workstation/browser/mixer-strips.test.cjs
  *
  * Use a disposable score from continuity.test.cjs --write-fixture on a fresh
- * Studio process. The suite mutes, pans and restores one track. It answers
+ * Studio process. The suite mutes, pans and restores one track, and sets and
+ * undoes a bus level, the master level and a track's output in Device. It answers
  * /api/meters with a fixed frame, so it needs no audio. CICADA_MIXER_PROOF_DIR
  * optionally keeps screenshots. CICADA_PLAYWRIGHT_MODULE and CICADA_CHROME_PATH
  * select Playwright and Chrome, as in shell.test.cjs.
@@ -315,6 +317,287 @@ test('the phone-width Mixer scrolls its strips sideways without widening the pag
     });
     assert.ok(sizes.page <= sizes.window, `page width ${sizes.page} exceeds the window ${sizes.window}`);
     assert.ok(sizes.strips > sizes.shown, 'the strips scroll sideways inside their own container');
+    // The master stays at the right edge while the other strips scroll, and
+    // at the end of the scroll it does not cover the last of them.
+    const pinned = await page.evaluate(async () => {
+      const strips = document.querySelector('#view-panel-mixer .strips');
+      const master = strips.querySelector('.strip[data-mixer-strip=master]');
+      const others = [...strips.querySelectorAll('.strip:not([data-mixer-strip=master])')];
+      const box = node => node.getBoundingClientRect();
+      const start = {master: box(master).right, edge: box(strips).right, covered: box(others.at(-1)).right > box(master).left};
+      strips.scrollLeft = strips.scrollWidth;
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      return {start, scrolled: strips.scrollLeft, end: {master: box(master).right, masterLeft: box(master).left, last: box(others.at(-1)).right, edge: box(strips).right}};
+    });
+    assert.ok(Math.abs(pinned.start.master - pinned.start.edge) <= 1, `the master sits at the right edge before scrolling: ${JSON.stringify(pinned.start)}`);
+    assert.ok(pinned.start.covered, 'the fixture has more strips than fit beside the master');
+    assert.ok(pinned.scrolled > 0, 'the strips scrolled');
+    assert.ok(Math.abs(pinned.end.master - pinned.end.edge) <= 1, 'the master stays at the right edge after scrolling');
+    assert.ok(pinned.end.last <= pinned.end.masterLeft + 1, `scrolled to the end, the master does not cover the last strip: ${JSON.stringify(pinned.end)}`);
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), 'scrolling the strips does not widen the page');
+    // On a phone Device is in the Edit region, so a strip's name goes there.
+    await page.getByRole('link', {name: 'Open music in Device', exact: true}).click();
+    await page.locator('#studio-shell[data-phone-region=detail]').waitFor();
+    await page.locator('#device-editor .device-groups[data-device-channel="bus:music"]').waitFor();
+    assert.ok(await page.locator('#detail-panel-device').isVisible(), 'Device shows the bus in the Edit region');
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), 'Device does not widen the page');
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+test('each strip shows only direct controls, in rows that line up, with the master last', {timeout: 60_000}, async () => {
+  const {page, errors, close} = await openMixer();
+  try {
+    const face = await page.evaluate(() => {
+      const panel = document.querySelector('#view-panel-mixer');
+      const strips = [...panel.querySelectorAll('.strip')];
+      const rows = ['.strip-name', '.strip-kind', '.strip-inserts', '.strip-sends', '.strip-toggles', '.strip-pan', '.strip-channel'];
+      const box = node => node.getBoundingClientRect();
+      return {
+        kinds: strips.map(strip => [strip.dataset.mixerStrip, strip.querySelector('.strip-kind').textContent]),
+        names: strips.map(strip => strip.querySelector('.strip-name a')?.getAttribute('aria-label') || ''),
+        // What left the face: Set forms, the out select, effect fields and chains.
+        leftovers: panel.querySelectorAll('.strips .mixer-control, .strips .effect-chain, .strips select, .strips input[type=number], .strips input[type=text]').length,
+        refusal: panel.innerHTML.includes('CICADA-UNSUPPORTED') || panel.innerText.includes('not implemented'),
+        rows: rows.map(row => strips.map(strip => { const cell = strip.querySelector(':scope > ' + row); return cell ? [Math.round(box(cell).top), Math.round(box(cell).height)] : null; })),
+        edges: strips.map(strip => [Math.round(box(strip).left), Math.round(box(strip).right)]),
+        fits: panel.querySelector('.strips').scrollWidth <= panel.querySelector('.strips').clientWidth,
+        selected: strips.filter(strip => strip.dataset.mixerSelected === 'true').map(strip => strip.dataset.mixerStrip),
+      };
+    });
+    assert.equal(face.leftovers, 0, 'no exact-value form, select or chain editor is on a strip face');
+    assert.equal(face.refusal, false, 'the Mixer view prints no raw refusal');
+    assert.deepEqual(face.kinds[0], ['track', 'acid'], 'a track names its instrument kind');
+    assert.ok(face.kinds.some(([kind, label]) => kind === 'bus' && label === 'Bus'), 'a bus says it is a bus');
+    assert.deepEqual(face.kinds.at(-1), ['master', 'Master'], 'the master is the last strip');
+    for (const name of face.names) assert.match(name, /^Open .+ in Device$/, 'each strip name opens its channel in Device');
+    for (const cells of face.rows) {
+      assert.ok(cells.every(Boolean), 'every strip has every row');
+      assert.equal(new Set(cells.map(([top]) => top)).size, 1, `a row starts at one height on every strip: ${JSON.stringify(cells)}`);
+      assert.equal(new Set(cells.map(([, height]) => height)).size, 1, `a row is as tall on every strip: ${JSON.stringify(cells)}`);
+    }
+    // With room for every strip the pinned master sits after the last one, not over it.
+    assert.ok(face.fits, 'the fixture strips fit at 1440 px');
+    for (let i = 1; i < face.edges.length; i++) assert.ok(face.edges[i][0] >= face.edges[i - 1][1], `strip ${i} overlaps the one before: ${JSON.stringify(face.edges)}`);
+    assert.deepEqual(face.selected, ['track'], 'Device shows the first track by default, and its strip is marked');
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+test('Show and Meter change the view in the tab without a request, and a save keeps the choice', {timeout: 90_000}, async () => {
+  const {page, errors, close} = await openMixer();
+  try {
+    const shown = () => page.evaluate(() => [...document.querySelectorAll('#view-panel-mixer .strip')].filter(strip => strip.getClientRects().length).map(strip => strip.dataset.mixerStrip));
+    const all = await shown();
+    assert.ok(all.includes('track') && all.includes('bus') && all.at(-1) === 'master', `the fixture shows tracks, buses and the master: ${all}`);
+    // Requests that would read or change the page; the engines' status polls are not counted.
+    const requests = [];
+    page.on('request', request => {
+      const url = new URL(request.url());
+      if (request.method() !== 'GET' || !url.pathname.startsWith('/api/')) requests.push(`${request.method()} ${url.pathname}`);
+    });
+    const show = page.locator('#view-panel-mixer [data-mixer-show]');
+    await show.selectOption('tracks');
+    assert.deepEqual([...new Set(await shown())], ['track', 'master'], 'Tracks hides buses and returns and keeps the master');
+    await show.selectOption('buses');
+    assert.ok((await shown()).every(kind => kind !== 'track') && (await shown()).includes('bus') && (await shown()).at(-1) === 'master', 'Buses and returns hides the tracks and keeps the master');
+    // Meter picks the bars: peak only, RMS only, or both.
+    const bars = () => page.evaluate(() => {
+      const meter = document.querySelector('#view-panel-mixer .strip[data-mixer-strip=bus] .strip-meter');
+      return Object.fromEntries(['peak', 'rms', 'hold', 'clip'].map(bar => [bar, getComputedStyle(meter.querySelector('.strip-meter__' + bar)).display !== 'none']));
+    });
+    const meterMode = page.locator('#view-panel-mixer [data-mixer-meter]');
+    assert.deepEqual(await bars(), {peak: true, rms: true, hold: true, clip: true});
+    await meterMode.selectOption('peak');
+    assert.deepEqual(await bars(), {peak: true, rms: false, hold: true, clip: true});
+    await meterMode.selectOption('rms');
+    assert.deepEqual(await bars(), {peak: false, rms: true, hold: false, clip: true});
+    assert.deepEqual(requests, [], 'the view controls send nothing');
+    assert.equal(await page.locator('#studio-shell [data-edited]').count(), 0, 'a view choice is not unsaved work');
+
+    // A save from a strip updates the page in place; the choices stay.
+    const mute = page.locator('#view-panel-mixer .strip[data-mixer-strip=bus] button[data-toggle=mute]').first();
+    const post = () => page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/__actions/mixer');
+    let pending = post();
+    await mute.click();
+    assert.equal((await formValues(await pending)).value, 'true');
+    await until(async () => (await mute.getAttribute('aria-pressed')) === 'true', 'the bus mute is saved');
+    assert.equal(await show.inputValue(), 'buses', 'the Show choice survives a save');
+    assert.equal(await meterMode.inputValue(), 'rms', 'the Meter choice survives a save');
+    assert.ok((await shown()).every(kind => kind !== 'track'), 'the tracks stay hidden after a save');
+    pending = post();
+    await mute.click();
+    assert.equal((await formValues(await pending)).value, 'false');
+    await until(async () => (await mute.getAttribute('aria-pressed')) === 'false', 'the bus mute is restored');
+
+    await meterMode.selectOption('both');
+    await show.selectOption('all');
+    assert.deepEqual(await shown(), all, 'All channels restores every strip');
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+test('Reset peaks clears the hold tick and the clip lamp at once', {timeout: 90_000}, async () => {
+  const {page, errors, state, close} = await openMixer();
+  try {
+    const meter = page.locator('#view-panel-mixer .strip[data-mixer-strip=track]').first().locator('.strip-meter');
+    state.ids = [(await meter.getAttribute('data-meter')).replace(/^track:/, '')];
+    const css = name => meter.evaluate((node, prop) => node.style.getPropertyValue(prop), name);
+    // Without a reset the lamp stays lit for three seconds after a clip and the
+    // tick holds for one. Press Reset peaks at the first frame that shows the
+    // level fall, and time the clear inside the page. If the page stalled long
+    // enough for the holds to run out by themselves, clip again and retry.
+    let cleared;
+    for (let attempt = 0; attempt < 5 && !(cleared?.after < 700); attempt++) {
+      state.peak = 0;
+      await until(async () => (await meter.getAttribute('data-clip')) === 'true' && parseFloat(await css('--hold')) > 0.9, 'the meter clips and holds the peak');
+      state.peak = -30;
+      cleared = await page.evaluate(() => new Promise(resolve => {
+        const meterEl = document.querySelector('#view-panel-mixer .strip[data-mixer-strip=track] .strip-meter');
+        const end = Date.now() + 10_000;
+        let fell = 0;
+        const timer = setInterval(() => {
+          const peak = parseFloat(meterEl.style.getPropertyValue('--peak'));
+          if (!fell && Math.abs(peak - 30 / 66) < 0.01) {
+            fell = performance.now();
+            document.querySelector('#view-panel-mixer [data-mixer-reset-peaks]').click();
+          }
+          if (fell && meterEl.getAttribute('data-clip') === 'false' || Date.now() > end) {
+            clearInterval(timer);
+            resolve({clip: meterEl.getAttribute('data-clip'), hold: parseFloat(meterEl.style.getPropertyValue('--hold')), label: meterEl.getAttribute('aria-label'), after: fell ? performance.now() - fell : Infinity});
+          }
+        }, 10);
+      }));
+    }
+    assert.ok(cleared.after < 700, `Reset peaks should clear the lamp well inside its three seconds, took ${cleared.after} ms`);
+    assert.equal(cleared.clip, 'false');
+    assert.ok(Math.abs(cleared.hold - 30 / 66) < 0.01, `the hold tick drops to the level now, was ${cleared.hold}`);
+    assert.ok(!/clipping/.test(cleared.label), `the label drops the clip: ${cleared.label}`);
+    // A channel that still clips lights again on the next frame.
+    state.peak = 0;
+    await until(async () => (await meter.getAttribute('data-clip')) === 'true', 'the lamp lights again');
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+test('a strip name opens the bus, the master and a track in Device, where exact values save and undo', {timeout: 120_000}, async () => {
+  const {page, errors, close} = await openMixer();
+  try {
+    const source = async () => (await (await page.request.get(new URL('/api/state', process.env.CICADA_STUDIO_URL).href)).json()).source;
+    const original = await source();
+    const post = () => page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/__actions/mixer');
+    const device = channel => page.locator(`#device-editor .device-groups[data-device-channel="${channel}"]`);
+    const control = path => page.locator('#device-editor form').filter({has: page.locator(`input[name=path][value="${path}"]`)});
+    const marks = () => page.evaluate(() => ({
+      strips: [...document.querySelectorAll('#view-panel-mixer .strip[data-mixer-selected=true]')].map(strip => strip.dataset.mixerChannel),
+      links: [...document.querySelectorAll('#view-panel-mixer .strip a[aria-current=true]')].map(link => link.dataset.mixerSelect),
+    }));
+    // A save or an Undo updates the page in place; its forms then carry the
+    // new revision. Wait for that before the next edit, or it would be stale.
+    const revision = () => page.locator('#undo-form input[name=revision]').inputValue();
+    const settled = before => until(async () => (await revision()) !== before, 'the page shows the saved revision');
+    const undo = async message => {
+      const before = await revision();
+      await page.locator('#undo-form button').click();
+      await until(async () => (await source()) === original, message);
+      await settled(before);
+    };
+    // The dock shows Clip until a strip is chosen.
+    assert.equal(await page.locator('#detail-tab-device').getAttribute('aria-selected'), 'false');
+
+    // A bus.
+    const busName = page.getByRole('link', {name: 'Open music in Device', exact: true});
+    await busName.focus();
+    await page.keyboard.press('Enter');
+    await page.locator('#detail-tab-device[aria-selected="true"]').waitFor();
+    await device('bus:music').waitFor();
+    assert.ok(await page.locator('#detail-panel-device').isVisible(), 'Device shows after choosing a strip');
+    assert.deepEqual(await marks(), {strips: ['bus:music'], links: ['bus:music']}, 'only the bus strip is marked as selected');
+    assert.match(await page.locator('#detail-tabs [data-dock-selection=track]').innerText(), /music\s*·\s*Bus/, 'the dock header names the bus');
+    // Routing and pan on a bus: not available, with the reason in plain words.
+    const pan = page.locator('#device-editor .mixer-unavailable').filter({hasText: /^\s*pan/});
+    assert.match(await pan.innerText(), /pan\s+Not available\s+Bus music pan is not implemented\./);
+    assert.equal(await pan.getAttribute('data-reason'), 'CICADA-UNSUPPORTED: bus music pan is not implemented');
+    assert.match(await page.locator('#device-editor .mixer-unavailable').filter({hasText: /^\s*out/}).innerText(), /out\s+Not available\s+Bus music output routing is not implemented\./);
+    assert.ok(!(await page.locator('#device-editor').innerText()).includes('CICADA-UNSUPPORTED'), 'Device does not print the refusal code');
+    // Exact level: the bus takes "-3dB" or "off". Its fader on the strip is fixed.
+    assert.ok(await page.locator('#view-panel-mixer .strip[data-mixer-channel="bus:music"] .strip-fader input[type=range]').isDisabled(), 'a level the service takes only as listed values has a fixed fader');
+    let before = await revision();
+    let pending = post();
+    await control('music.level').locator('[name=value]').selectOption('off');
+    await control('music.level').getByRole('button', {name: 'Set', exact: true}).click();
+    let values = await formValues(await pending);
+    assert.equal(values.path, 'music.level');
+    assert.equal(values.value, 'off');
+    assert.equal(values.valueType, 'text', 'the bus level posts the value as the score writes it');
+    await until(async () => /bus music \{[^}]*level = off/.test(await source()), 'the bus level is saved to the score');
+    await settled(before);
+    assert.equal(await control('music.level').locator('[name=value]').inputValue(), 'off', 'Device shows the saved bus level');
+    assert.ok(await device('bus:music').isVisible(), 'Device stays on the bus after its own save');
+    assert.deepEqual(await marks(), {strips: ['bus:music'], links: ['bus:music']});
+    await undo('one Undo restores the bus level');
+
+    // A direct control on another strip saves and leaves Device on the bus.
+    const trackMute = page.locator('#view-panel-mixer .strip[data-mixer-strip=track] button[data-toggle=mute]').first();
+    before = await revision();
+    pending = post();
+    await trackMute.click();
+    await pending;
+    await until(async () => (await trackMute.getAttribute('aria-pressed')) === 'true', 'the track mute is saved');
+    await settled(before);
+    assert.ok(await device('bus:music').isVisible(), 'a strip gesture does not move Device to another channel');
+    assert.deepEqual(await marks(), {strips: ['bus:music'], links: ['bus:music']});
+    await undo('one Undo restores the track mute');
+    await until(async () => (await trackMute.getAttribute('aria-pressed')) === 'false', 'the track mute is released');
+
+    // The master: an exact level in dB.
+    await page.getByRole('link', {name: 'Open Master in Device', exact: true}).click();
+    await device('master:master').waitFor();
+    // The strip keeps its full reference; its link uses the master's short address.
+    assert.deepEqual(await marks(), {strips: ['master:master'], links: ['master']});
+    assert.equal(await control('master.level').locator('[name=value]').getAttribute('type'), 'number');
+    assert.equal(await control('master.level').locator('.field span').innerText(), 'level (dB)');
+    assert.match(await page.locator('#device-editor .mixer-unavailable').filter({hasText: /^\s*out/}).innerText(), /Not available/);
+    before = await revision();
+    pending = post();
+    await control('master.level').locator('[name=value]').fill('-2.5');
+    await control('master.level').getByRole('button', {name: 'Set', exact: true}).click();
+    values = await formValues(await pending);
+    assert.equal(values.path, 'master.level');
+    assert.equal(values.value, '-2.5');
+    await until(async () => (await page.locator('#view-panel-mixer .strip[data-mixer-strip=master] .strip-readout').innerText()).startsWith('-2.5'), 'the master fader readout follows the exact level');
+    assert.notEqual(await source(), original);
+    await settled(before);
+    await undo('one Undo restores the master level');
+
+    // A track: its output routing.
+    const trackName = page.locator('#view-panel-mixer .strip[data-mixer-strip=track] .strip-name a').first();
+    const track = await trackName.getAttribute('data-mixer-select');
+    await trackName.click();
+    await device(track).waitFor();
+    assert.equal(await device(track).getAttribute('data-device-track'), track);
+    for (const path of [`${track}.level`, `${track}.pan`, `${track}.out`]) assert.equal(await control(path).count(), 1, `Device holds the ${path} field`);
+    // A track's exact level is a text field, so it also takes "off".
+    assert.match(await control(`${track}.level`).locator('.field span').innerText(), /off or -60 to 6/);
+    assert.equal(await control(`${track}.level`).locator('[name=value]').getAttribute('type'), null);
+    before = await revision();
+    pending = post();
+    await control(`${track}.out`).locator('[name=value]').selectOption('sfx');
+    await control(`${track}.out`).getByRole('button', {name: 'Set', exact: true}).click();
+    values = await formValues(await pending);
+    assert.equal(values.path, `${track}.out`);
+    assert.equal(values.value, 'sfx');
+    await until(async () => /out = sfx/.test(await source()), 'the track output is saved to the score');
+    await settled(before);
+    await undo('one Undo restores the track output');
     assert.deepEqual(errors, []);
   } finally {
     await close();

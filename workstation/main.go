@@ -62,6 +62,9 @@ func run(args []string) error {
 	}
 	finished := make(chan error, 1)
 	go func() { finished <- server.Serve(listener) }()
+	// Hosts parse the printed address and accept only "/" or the one-use
+	// "/__local/<token>" path (desktop/session.go, editors/vscode/extension.js,
+	// desktop/smoke.py), then open /studio themselves.
 	startupPath := "/"
 	if local, ok := handler.(interface{ StartupPath() string }); ok {
 		startupPath = local.StartupPath()
