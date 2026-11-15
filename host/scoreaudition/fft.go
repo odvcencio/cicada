@@ -29,7 +29,7 @@ func newPlan(n int) *fftPlan {
 		}
 		p.rev[i] = r
 		// Symmetric Hann window.
-		p.window[i] = 0.5 - 0.5*math.Cos(2*math.Pi*float64(i)/float64(n-1))
+		p.window[i] = 0.5 - float64(0.5*math.Cos(2*math.Pi*float64(i)/float64(n-1)))
 	}
 	return p
 }
@@ -48,8 +48,8 @@ func (p *fftPlan) transform(re, im []float64) {
 			for k := 0; k < half; k++ {
 				wr, wi := p.cos[k*step], p.sin[k*step]
 				a, b := start+k, start+k+half
-				tr := re[b]*wr - im[b]*wi
-				ti := re[b]*wi + im[b]*wr
+				tr := float64(re[b]*wr) - float64(im[b]*wi)
+				ti := float64(re[b]*wi) + float64(im[b]*wr)
 				re[b], im[b] = re[a]-tr, im[a]-ti
 				re[a], im[a] = re[a]+tr, im[a]+ti
 			}
@@ -83,8 +83,47 @@ func magFrames(x stereo, p *fftPlan, count int, start func(int) int, fn func(i i
 			m := (n - k) % n
 			l := math.Hypot(re[k]+re[m], im[k]-im[m]) / 2
 			r := math.Hypot(im[k]+im[m], re[k]-re[m]) / 2
-			mag[k] = math.Sqrt((l*l + r*r) / 2)
+			mag[k] = math.Sqrt((float64(l*l) + float64(r*r)) / 2)
 		}
 		fn(i, mag)
+	}
+}
+
+// powFrames is magFrames giving each bin's power, (|L|^2+|R|^2)/2, the square
+// of magFrames' magnitude, without its square roots.
+func powFrames(x stereo, p *fftPlan, count int, start func(int) int, fn func(i int, pow []float64)) {
+	newPowBuffers(p.n).frames(x, p, count, start, fn)
+}
+
+// powBuffers is the scratch of powFrames. A caller that transforms bar by bar
+// keeps one and reuses it, so it allocates once instead of once per bar.
+type powBuffers struct{ re, im, pow []float64 }
+
+func newPowBuffers(n int) *powBuffers {
+	return &powBuffers{re: make([]float64, n), im: make([]float64, n), pow: make([]float64, n/2+1)}
+}
+
+// frames is powFrames with these buffers; fn must not keep pow.
+func (buf *powBuffers) frames(x stereo, p *fftPlan, count int, start func(int) int, fn func(i int, pow []float64)) {
+	n := p.n
+	re, im, pow := buf.re, buf.im, buf.pow
+	for i := 0; i < count; i++ {
+		s := start(i)
+		for k := 0; k < n; k++ {
+			j := s + k
+			if j >= 0 && j < len(x.L) {
+				re[k], im[k] = float64(x.L[j])*p.window[k], float64(x.R[j])*p.window[k]
+			} else {
+				re[k], im[k] = 0, 0
+			}
+		}
+		p.transform(re, im)
+		for k := 0; k <= n/2; k++ {
+			m := (n - k) % n
+			a, b := re[k]+re[m], im[k]-im[m]
+			c, d := im[k]+im[m], re[k]-re[m]
+			pow[k] = (float64(a*a) + float64(b*b) + float64(c*c) + float64(d*d)) / 8
+		}
+		fn(i, pow)
 	}
 }
