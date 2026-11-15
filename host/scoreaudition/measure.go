@@ -154,10 +154,10 @@ func (a *Analysis) measureMix(in mixInput) error {
 		rp := repeat[ti]
 		tr.NoteBars, tr.SameAsPreviousBar, tr.SameAsFourBarsBefore, tr.LongestSameRun = rp.noteBars, rp.previous, rp.fourBefore, rp.longestRun
 	}
-	r.Activity = &ActivityReport{SoundingThresholdDB: soundingBelowDB, TailGraceS: tailGraceS, SilenceBelowDBFS: silenceBelowDBFS,
+	r.Activity = &ActivityReport{SoundingBelowPeakDB: soundingBelowDB, TailGraceS: tailGraceS, SilenceBelowDBFS: silenceBelowDBFS,
 		SilenceMinS: silenceMinS, Silences: findSilences(in.mix, rate, in.clock, in.meter, in.base)}
 
-	// Band ownership, from the per-sixteenth transforms of each stem.
+	// Band ownership, from the windowed transforms of each stem.
 	if !in.noBands {
 		a.measureBands(in, use)
 	}
@@ -365,18 +365,18 @@ func (a *Analysis) measureBands(in mixInput, use []bool) {
 	for si, sp := range in.sections {
 		sec := &r.Sections[si]
 		sec.Bands = make([]SectionBand, numBands)
-		sec.BandOwners, sec.BandCollisionBars = make([]*string, numBands), make([]int, numBands)
+		sec.BandOwners, sec.BandCollisionBarCount = make([]*string, numBands), make([]int, numBands)
 		span := spanMean(secEnergy[si], secFrames[si])
 		for k := 0; k < numBands; k++ {
 			sb := SectionBand{BandOwner: owner(k, secEnergy[si][k], in.ids, use, secFrames[si], chromaFFT, loudest[k], span, top)}
 			for b := range r.Bars {
 				start := in.meter.BarStart(firstBar + int64(b))
 				if start >= sp.lo && start < sp.hi && r.Bars[b].Bands[k].Collision {
-					sb.CollisionBars++
+					sb.CollisionBarCount++
 				}
 			}
 			sec.Bands[k] = sb
-			sec.BandCollisionBars[k] = sb.CollisionBars
+			sec.BandCollisionBarCount[k] = sb.CollisionBarCount
 			if !sb.Quiet {
 				name := sb.Owner
 				sec.BandOwners[k] = &name
@@ -386,22 +386,22 @@ func (a *Analysis) measureBands(in mixInput, use []bool) {
 	totalFrames := math.Max(1, float64(in.mix.Len())/bandHop)
 	for ti := range r.Tracks {
 		tr := &r.Tracks[ti]
-		tr.BandsDB = make([]float64, numBands)
-		tr.BarBandsDB = make([][]float64, bars)
-		tr.SectionBandsDB = make([][]float64, len(in.sections))
+		tr.BandsDBFS = make([]float64, numBands)
+		tr.BarBandsDBFS = make([][]float64, bars)
+		tr.SectionBandsDBFS = make([][]float64, len(in.sections))
 		for k := 0; k < numBands; k++ {
-			tr.BandsDB[k] = round(bandLevelDB(whole[ti][k], totalFrames, chromaFFT), 1)
+			tr.BandsDBFS[k] = round(bandLevelDBFS(whole[ti][k], totalFrames, chromaFFT), 1)
 		}
-		for b := range tr.BarBandsDB {
-			tr.BarBandsDB[b] = make([]float64, numBands)
+		for b := range tr.BarBandsDBFS {
+			tr.BarBandsDBFS[b] = make([]float64, numBands)
 			for k := 0; k < numBands; k++ {
-				tr.BarBandsDB[b][k] = round(bandLevelDB(energy[b][k][ti], barFrames[b], chromaFFT), 1)
+				tr.BarBandsDBFS[b][k] = round(bandLevelDBFS(energy[b][k][ti], barFrames[b], chromaFFT), 1)
 			}
 		}
-		for si := range tr.SectionBandsDB {
-			tr.SectionBandsDB[si] = make([]float64, numBands)
+		for si := range tr.SectionBandsDBFS {
+			tr.SectionBandsDBFS[si] = make([]float64, numBands)
 			for k := 0; k < numBands; k++ {
-				tr.SectionBandsDB[si][k] = round(bandLevelDB(secEnergy[si][k][ti], secFrames[si], chromaFFT), 1)
+				tr.SectionBandsDBFS[si][k] = round(bandLevelDBFS(secEnergy[si][k][ti], secFrames[si], chromaFFT), 1)
 			}
 		}
 	}

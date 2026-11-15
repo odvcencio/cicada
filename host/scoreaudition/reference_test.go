@@ -84,7 +84,7 @@ func TestBandLevelFullScaleSine(t *testing.T) {
 				total += p
 			}
 		}
-		if got := bandLevelDB(total, layout.weight[0], chromaFFT); math.Abs(got+3.01) > 0.1 {
+		if got := bandLevelDBFS(total, layout.weight[0], chromaFFT); math.Abs(got+3.01) > 0.1 {
 			t.Errorf("%g Hz full-scale sine: bands sum to %.2f dB, want -3.01", freq, got)
 		}
 	}
@@ -221,7 +221,7 @@ func TestPeakPartsSignedShares(t *testing.T) {
 			t.Errorf("%s: parts %+v rest %.1f, want sub %.2f%%, hit %.2f%%", c.name, parts, rest, c.sub, 100-c.sub)
 		}
 	}
-	// Parts past the fifth and parts under 1% go into the rest, with whatever
+	// Parts past the fifth and parts under 2% go into the rest, with whatever
 	// the listed stems do not hold (here 0.5% of a total of 1): 4 + 0.5 + 0.5.
 	values := []stemSample{{"a", "track", 0.5}, {"b", "track", 0.2}, {"c", "track", 0.1}, {"d", "return", 0.1}, {"e", "track", 0.05}, {"f", "track", 0.04}, {"g", "track", 0.005}}
 	parts, rest := attributePeak(1, values)
@@ -243,7 +243,7 @@ func TestDetailFields(t *testing.T) {
 	r := a.Report
 	bars := len(r.Bars)
 	tr := r.Tracks[0]
-	if len(tr.BarBandsDB) != bars || len(tr.BarBandsDB[0]) != numBands || len(tr.SectionBandsDB) != len(r.Sections) ||
+	if len(tr.BarBandsDBFS) != bars || len(tr.BarBandsDBFS[0]) != numBands || len(tr.SectionBandsDBFS) != len(r.Sections) ||
 		len(r.Bars[0].Bands) != numBands || len(tr.Sounding) != bars || len(r.Loudness.ShortTermPerBeatLUFS) != 4*bars {
 		t.Fatalf("detail shapes: %d bars, track %+v", bars, tr)
 	}
@@ -252,8 +252,8 @@ func TestDetailFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{`"bar_bands_db"`, `"section_bands_db"`, `"bar_level_db"`, `"sounding":`, `"short_term_per_beat_lufs"`,
-		`"bands":[{"band"`, `"bands_db"`, `"band_collision_bars"`} {
+	for _, key := range []string{`"bar_bands_dbfs"`, `"section_bands_dbfs"`, `"bar_level_db"`, `"sounding":`, `"short_term_per_beat_lufs"`,
+		`"bands":[{"band"`, `"bands_dbfs"`, `"band_collision_bar_count"`} {
 		if bytes.Contains(data, []byte(key)) {
 			t.Errorf("summary JSON has %s", key)
 		}

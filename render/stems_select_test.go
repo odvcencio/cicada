@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	"testing"
 
 	"m31labs.dev/cicada/notation"
+	"m31labs.dev/cicada/project"
 )
 
 // TestStemsTracksAndBits renders a chosen track as 24-bit PCM and checks
@@ -98,5 +100,48 @@ func TestStemsTracksAndBits(t *testing.T) {
 	var unknown *UnknownTrackError
 	if !errors.As(err, &unknown) || unknown.Name != "nope" || len(unknown.Valid) != len(score.Tracks) {
 		t.Fatalf("unknown track: %v", err)
+	}
+}
+
+// Identical silence exposes any stem channels that reuse a dither stream.
+func TestStemsDitherStreamsAreDistinct(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "stems")
+	p := &project.Project{Tracks: []project.Track{{ID: "a"}, {ID: "b"}}}
+	s, err := newStemOutput(dir, p, Report{SampleRate: 48000, Frames: 1024, Bars: 1}, Options{Bits: 16}, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.abort()
+	for i := 0; i < 1024; i++ {
+		s.appendMixFrame(int64(i))
+		s.appendMaster(0, 0)
+	}
+	if err := s.finish(120000); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	streams := map[string]string{}
+	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), ".wav") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for ch := 0; ch < 2; ch++ {
+			bits := make([]byte, 1024)
+			for i := range bits {
+				bits[i] = data[44+i*4+ch*2] & 1
+			}
+			name := fmt.Sprintf("%s channel %d", entry.Name(), ch)
+			if prev, ok := streams[string(bits)]; ok {
+				t.Errorf("%s shares dither with %s", name, prev)
+			}
+			streams[string(bits)] = name
+		}
 	}
 }

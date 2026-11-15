@@ -7,6 +7,7 @@ import (
 	"io"
 	"m31labs.dev/cicada/host/sampleasset"
 	"math"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -114,6 +115,7 @@ type Report struct {
 	PreLimiterOvers           int64
 	CeilingSamples            int64
 	ClippedSamples            int64
+	StemClippedCounts         map[string]int64
 	TailFrames                int64
 	MasterGainDB              float64
 	MaxLimiterGainReductionDB float64
@@ -1075,6 +1077,12 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 		return report, err
 	}
 	if stems != nil {
+		report.StemClippedCounts = make(map[string]int64)
+		for _, f := range stems.files {
+			if !f.skip && f.encoder != nil {
+				report.StemClippedCounts[filepath.Base(f.file.Name())] = f.counts.ClippedSamples
+			}
+		}
 		if err := stems.finish(uint32(score.TempoMilli)); err != nil {
 			return report, err
 		}

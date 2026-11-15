@@ -204,7 +204,7 @@ func newStemOutput(dir string, p *project.Project, report Report, opts Options, 
 			// Each stem draws its own dither from the score seed and its
 			// position in the set, so the files are reproducible.
 			var encoder wavEncoder
-			encoder, err = newWAVEncoder(bits, dither, seed^uint64(0x57E40000+i), 1)
+			encoder, err = newWAVEncoder(bits, dither, seed^uint64(0x57E40000+2*i), 1)
 			if err != nil {
 				stems.files = append(stems.files, stem)
 				return nil, err

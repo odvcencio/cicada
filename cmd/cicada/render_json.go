@@ -51,6 +51,7 @@ type renderOutputJSON struct {
 	Channels        int     `json:"channels"`
 	Frames          int64   `json:"frames"`
 	DurationSeconds float64 `json:"duration_seconds"`
+	ClippedCount    *int64  `json:"clipped_count,omitempty"`
 }
 
 // renderLevelsJSON are the peak facts of a render without a loudness target.
@@ -273,6 +274,9 @@ func renderJSONCommand(command, path, output string, opts render.Options, target
 			described, err := describeWAV(filepath.Join(output, name), "stem:"+strings.TrimSuffix(name, ".wav"))
 			if err != nil {
 				return finish(err)
+			}
+			if count, ok := report.StemClippedCounts[name]; ok {
+				described.ClippedCount = &count
 			}
 			document.Outputs = append(document.Outputs, described)
 		}

@@ -29,7 +29,7 @@ func newPlan(n int) *fftPlan {
 		}
 		p.rev[i] = r
 		// Symmetric Hann window.
-		p.window[i] = 0.5 - 0.5*math.Cos(2*math.Pi*float64(i)/float64(n-1))
+		p.window[i] = 0.5 - float64(0.5*math.Cos(2*math.Pi*float64(i)/float64(n-1)))
 	}
 	return p
 }
@@ -48,8 +48,8 @@ func (p *fftPlan) transform(re, im []float64) {
 			for k := 0; k < half; k++ {
 				wr, wi := p.cos[k*step], p.sin[k*step]
 				a, b := start+k, start+k+half
-				tr := re[b]*wr - im[b]*wi
-				ti := re[b]*wi + im[b]*wr
+				tr := float64(re[b]*wr) - float64(im[b]*wi)
+				ti := float64(re[b]*wi) + float64(im[b]*wr)
 				re[b], im[b] = re[a]-tr, im[a]-ti
 				re[a], im[a] = re[a]+tr, im[a]+ti
 			}
@@ -83,7 +83,7 @@ func magFrames(x stereo, p *fftPlan, count int, start func(int) int, fn func(i i
 			m := (n - k) % n
 			l := math.Hypot(re[k]+re[m], im[k]-im[m]) / 2
 			r := math.Hypot(im[k]+im[m], re[k]-re[m]) / 2
-			mag[k] = math.Sqrt((l*l + r*r) / 2)
+			mag[k] = math.Sqrt((float64(l*l) + float64(r*r)) / 2)
 		}
 		fn(i, mag)
 	}
@@ -122,7 +122,7 @@ func (buf *powBuffers) frames(x stereo, p *fftPlan, count int, start func(int) i
 			m := (n - k) % n
 			a, b := re[k]+re[m], im[k]-im[m]
 			c, d := im[k]+im[m], re[k]-re[m]
-			pow[k] = (a*a + b*b + c*c + d*d) / 8
+			pow[k] = (float64(a*a) + float64(b*b) + float64(c*c) + float64(d*d)) / 8
 		}
 		fn(i, pow)
 	}

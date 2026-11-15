@@ -9,7 +9,9 @@ import (
 	"strings"
 	"testing"
 
+	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
+	"m31labs.dev/cicada/project"
 	"m31labs.dev/cicada/render"
 )
 
@@ -189,8 +191,8 @@ func TestLowBandOwnersAlternate(t *testing.T) {
 	if c.Bars == nil || len(*c.Bars) != 2 || (*c.Bars)[0] != 4 || (*c.Bars)[1] != 8 || len(c.Pairs) != 1 || c.Pairs[0].Tracks != [2]string{"one", "two"} || c.Pairs[0].BarCount != 2 {
 		t.Errorf("low collisions %+v, want bars 4 and 8, pair one+two", c)
 	}
-	if got := a.Report.Sections[0].Bands[low].CollisionBars; got != 2 || a.Report.Sections[0].BandCollisionBars[low] != 2 {
-		t.Errorf("section collision bars %d (compact %v), want 2", got, a.Report.Sections[0].BandCollisionBars)
+	if got := a.Report.Sections[0].Bands[low].CollisionBarCount; got != 2 || a.Report.Sections[0].BandCollisionBarCount[low] != 2 {
+		t.Errorf("section collision bars %d (compact %v), want 2", got, a.Report.Sections[0].BandCollisionBarCount)
 	}
 	// One section: band_owners names the section's owners in band order.
 	if o := a.Report.Sections[0].BandOwners[low]; o == nil || *o != a.Report.Sections[0].Bands[low].Owner {
@@ -199,8 +201,8 @@ func TestLowBandOwnersAlternate(t *testing.T) {
 	// A sine's band level is its RMS level: compare with the stem's RMS over
 	// the bars where it plays (both within 0.5 dB).
 	one := track(t, a, "one")
-	if d := one.BandsDB[low] - one.RMSdBFS; math.Abs(d) > 0.5 {
-		t.Errorf("one: low band %.1f dB, stem RMS %.1f dBFS", one.BandsDB[low], one.RMSdBFS)
+	if d := one.BandsDBFS[low] - one.RMSdBFS; math.Abs(d) > 0.5 {
+		t.Errorf("one: low band %.1f dB, stem RMS %.1f dBFS", one.BandsDBFS[low], one.RMSdBFS)
 	}
 	// Activity: one sounds in bars 1, 3, 4, 5, 7, 8; two in 2, 4, 6, 8.
 	for b, on := range one.Sounding {
@@ -242,7 +244,7 @@ func TestLowBandOwnersAlternate(t *testing.T) {
 	sub := bandIndex(t, "sub")
 	for _, bar := range a.Report.Bars {
 		for k, o := range bar.Bands {
-			if k == sub && bar.Bands[low].LevelDB-o.LevelDB < 25 || k != low && k != sub && !o.Quiet {
+			if k == sub && bar.Bands[low].LevelDBFS-o.LevelDBFS < 25 || k != low && k != sub && !o.Quiet {
 				t.Errorf("bar %d: band %s %+v is not quiet", bar.Bar, o.Band, o)
 			}
 		}
@@ -261,6 +263,9 @@ func TestSectionSixLUQuieter(t *testing.T) {
 	diff := *r.Sections[0].IntegratedLUFS - *r.Sections[1].IntegratedLUFS
 	if math.Abs(diff-6.02) > 0.2 {
 		t.Errorf("loud minus soft %.2f LU, want 6.02", diff)
+	}
+	if r.Loudness.LoudestSectionIndex == nil || *r.Loudness.LoudestSectionIndex != 0 {
+		t.Errorf("loudest index %v", r.Loudness.LoudestSectionIndex)
 	}
 	if r.Loudness.LoudestSection != "loud" || r.Loudness.QuietestSection != "soft" || r.Sections[1].VsLoudestLU == nil || math.Abs(*r.Sections[1].VsLoudestLU+6.02) > 0.2 {
 		t.Errorf("loudness %+v, soft vs loudest %v", r.Loudness, r.Sections[1].VsLoudestLU)
@@ -297,6 +302,9 @@ func TestSilenceAndPeak(t *testing.T) {
 	if len(r.Peaks) != 3 {
 		t.Fatalf("%d peaks, want 3", len(r.Peaks))
 	}
+	if r.Bars[0].SamplePeakDBFS == nil || math.Abs(*r.Bars[0].SamplePeakDBFS-r.Peaks[0].SamplePeakDBFS) > 0.2 {
+		t.Errorf("bar peak %v, peak %+v", r.Bars[0].SamplePeakDBFS, r.Peaks[0])
+	}
 	p := r.Peaks[0]
 	// The hit starts at tick 1920 (bar 1 beat 3) and peaks within a few ms.
 	if p.At.Text != "1.3.1" || p.At.Tick < 1920 || p.At.Tick > 1920+60 || len(p.PreMasterParts) == 0 || p.PreMasterParts[0].ID != "hit" || p.PreMasterParts[0].SignedSharePct < 90 {
@@ -311,12 +319,12 @@ func TestSilenceAndPeak(t *testing.T) {
 		t.Errorf("peak parts add to %.1f%% of %.4f", sum, p.PreMasterSample)
 	}
 	// The knock's attack and decay put energy in every band of bar 1; the sub
-	// band holds nothing else, so the knock owns it. Its level says how little
+	// band holds nothing else, so the knock owns it. This records today's behavior. Its level says how little
 	// it is: more than 25 dB under the knock's own mid band.
 	sub, mid := bandIndex(t, "sub"), bandIndex(t, "mid")
 	bar1 := r.Bars[0].Bands
 	t.Logf("bar 1 sub %+v; mid %+v", bar1[sub], bar1[mid])
-	if bar1[sub].Owner != "hit" || bar1[mid].LevelDB-bar1[sub].LevelDB < 25 {
+	if bar1[sub].Owner != "hit" || bar1[mid].LevelDBFS-bar1[sub].LevelDBFS < 25 {
 		t.Errorf("bar 1 sub %+v, mid %+v: want the knock's spill, over 25 dB under its mid band", bar1[sub], bar1[mid])
 	}
 	if p.TruePeakDBTP < p.SamplePeakDBFS || p.TruePeakDBTP-p.SamplePeakDBFS > 1 {
@@ -334,6 +342,13 @@ func TestTrackSelection(t *testing.T) {
 	r := a.Report
 	if len(r.Tracks) != 2 || r.Tracks[0].ID != "one" || r.Tracks[1].ID != "two" || strings.Join(r.SelectedTracks, ",") != "one,two" {
 		t.Fatalf("tracks %v, selected %v", len(r.Tracks), r.SelectedTracks)
+	}
+	share := 0.0
+	for _, tr := range r.Tracks {
+		share += tr.EnergySharePct
+	}
+	if math.Abs(share-100) > 0.2 {
+		t.Errorf("selected energy shares total %g", share)
 	}
 	for _, b := range r.Bars {
 		for _, id := range *b.Sounding {
@@ -482,7 +497,7 @@ func TestNoBands(t *testing.T) {
 	with := analyzeWith(t, levels, Options{})
 	without := analyzeWith(t, levels, Options{NoBands: true})
 	r := without.Report
-	if r.Bands != nil || r.Bars[0].Bands != nil || r.Sections[0].Bands != nil || r.Tracks[0].BandsDB != nil {
+	if r.Bands != nil || r.Bars[0].Bands != nil || r.Sections[0].Bands != nil || r.Tracks[0].BandsDBFS != nil {
 		t.Fatalf("band fields remain: %+v", r.Bands)
 	}
 	data, err := json.Marshal(r)
@@ -491,5 +506,32 @@ func TestNoBands(t *testing.T) {
 	}
 	if *with.Report.Loudness.IntegratedLUFS != *r.Loudness.IntegratedLUFS || (*with.Report.Bars[1].Sounding)[0] != (*r.Bars[1].Sounding)[0] {
 		t.Error("other measures changed")
+	}
+}
+
+func TestMeasurementThresholds(t *testing.T) {
+	for _, tc := range []struct {
+		share     float64
+		collision bool
+	}{{24, false}, {26, true}} {
+		o := owner(0, []float64{100 - tc.share, tc.share}, []string{"a", "b"}, []bool{true, true}, 1, chromaFFT, 100, 100, 100)
+		if o.Collision != tc.collision {
+			t.Errorf("share %g: %+v", tc.share, o)
+		}
+	}
+	_, on := sounding([]float64{0, -29, -31}, []float64{0, -29, -31})
+	if !on[1] || on[2] {
+		t.Errorf("sounding: %v", on)
+	}
+	meter := seq.MeterMap{}
+	clock, err := project.NewTempoMap(meter, 48000, 120000, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ samples, want int }{{11520, 0}, {12480, 1}} {
+		x := stereo{L: make([]float32, tc.samples), R: make([]float32, tc.samples)}
+		if got := len(findSilences(x, 48000, clock, meter, 0)); got != tc.want {
+			t.Errorf("%d samples: %d silences, want %d", tc.samples, got, tc.want)
+		}
 	}
 }

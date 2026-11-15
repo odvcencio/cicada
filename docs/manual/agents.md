@@ -683,6 +683,8 @@ The same batch with the pattern's settings instead applies and writes:
 
 ## render --json
 
+`cicada stems ... --json` includes `clipped_count` on each integer PCM output, counting clipped samples.
+
 `cicada render ... --json` describes what it rendered: each file in `outputs`
 as its WAV header gives it (`sample_rate`, `bit_depth`, `encoding` `pcm` or
 `float`, `channels`, `frames` and `duration_seconds`), and the bar range
@@ -1063,7 +1065,7 @@ them:
     "quiet_below_range_db": 40
   },
   "activity": {
-    "sounding_threshold_db": -30,
+    "sounding_below_peak_db": 30,
     "tail_grace_s": 0.5,
     "silence_below_dbfs": -60,
     "silence_min_s": 0.25,

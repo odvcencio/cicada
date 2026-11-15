@@ -166,7 +166,7 @@ image input is scaled to about 1,568 pixels). When the range does not fit,
 `spectrogram.png` and `chroma.png` show it averaged in time, and the range is
 also cut into pages of 32, 16, 8, 4, 2 or 1 whole bars at full resolution,
 named by their bars (`spectrogram-bars-001-008.png`). A short excerpt that
-fits writes the same four files as before. The JSON `pictures` list names
+fits writes the three original pictures and `energy.png` without extra pages. The JSON `pictures` list names
 every file with its bar range.
 
 ## Worked example
@@ -216,8 +216,9 @@ above, `decay20` is about 50 to 60 ms for the guitar and organ, and the kit's
 `--tracks bass,kick` renders the whole song (every track plays) but reads
 only the named stems. The fields that describe tracks then cover only those
 tracks: `tracks[]`, each section's `tracks`, the energy and band shares,
-`level_vs_loudest_db`, the swing groups, and the chords and keys. The mix
-measures (`mix_rms_dbfs`, `audibility_db`, loudness, silences, peak levels)
+`level_vs_loudest_db`, the swing groups, the chords and keys, `audibility_db`,
+`masked`, `masked_bars` and `match`. The mix
+measures (`mix_rms_dbfs`, loudness, silences, peak levels)
 are those of the whole mix; a peak's parts list the chosen tracks and the
 returns, and `pre_master_rest_pct` holds the others. `selected_tracks` lists
 the chosen tracks. `cicada stems --tracks` writes the chosen stems and
@@ -264,14 +265,14 @@ floored at -120; null means the method cannot give a value.
 | `selected_tracks` | array | Tracks chosen with `--tracks`, in score order. Absent without it. |
 | `loudness` | object | The mix over the range: `integrated_lufs`, `loudness_range_lu` (null under 3 s), `true_peak_dbtp`, `sample_peak_dbfs`, `max_short_term_lufs`, `max_momentary_lufs`; `loudest_section`, `quietest_section` and their `_index` (from 0 in `sections[]`: names can repeat); `section_spread_lu`; and `short_term_per_bar_lufs`, the 3 s window that ends at each bar line (null in the first 3 s). Absent at a rate the meter does not support. |
 | `bands` | object | Absent with `--no-bands`. `names`, `edges_hz`, the rules (`collision_share_pct` 25, `quiet_below_band_db` 30, `quiet_below_span_db` 30, `quiet_below_range_db` 40), and `collisions[]`: per band, `band` and `pairs` (`tracks`, two in score order, and `bar_count`), most frequent first. |
-| `activity` | object | `sounding_threshold_db` (-30), `tail_grace_s` (0.5), `silence_below_dbfs` (-60), `silence_min_s` (0.25), and `silences[]`: `start` and `end` positions and `length_s`. |
+| `activity` | object | `sounding_below_peak_db` (30), `tail_grace_s` (0.5), `silence_below_dbfs` (-60), `silence_min_s` (0.25), and `silences[]`: `start` and `end` positions and `length_s`. |
 | `peaks[]` | array | Highest true peaks first (3 by default): `rank`, `at` (position of the mix's largest sample in the peak), `true_peak_dbtp`, `sample_peak_dbfs`, `channel`; `pre_master_sample`, the signed sum there of every track and effect return before the master chain (full scale 1); `pre_master_parts[]` (`id`, `kind` `track` or `return`, `sample`, `signed_share_pct`: `sample` over `pre_master_sample` in percent, negative when it lowers the peak), at least 2% each, at most five; and `pre_master_rest_pct`, which includes extra returns without individual stems, so the parts and rest add up to 100. |
 | `pictures[]` | array | Every file written to `-o`, in write order: `file`, `kind` (`spectrogram`, `chroma`, `rhythm`, `energy`), `from_bar` and `to_bar` (one-based, inclusive; absent for `rhythm`), `width` and `height` in pixels, and `scaled` (true when the time axis was averaged to fit). Omitted without `-o`. |
 
 `--detail` adds the detail behind those summaries: `bars[].sample_peak_dbfs`,
-`sounding` and `bands`; `tracks[].bands_db`, `bar_level_db`, `sounding`,
-`bar_bands_db` and `section_bands_db`; `sections[].true_peak_dbtp`,
-`band_collision_bars` and `bands`; `bands.collisions[].bars`; and
+`sounding` and `bands`; `tracks[].bands_dbfs`, `bar_level_db`, `sounding`,
+`bar_bands_dbfs` and `section_bands_dbfs`; `sections[].true_peak_dbtp`,
+`band_collision_bar_count` and `bands`; `bands.collisions[].bars`; and
 `loudness.short_term_per_beat_lufs`. [Audition measures](audition-measures.md#detail-fields)
 describes each.
 

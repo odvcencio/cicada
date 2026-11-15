@@ -11,8 +11,8 @@ import (
 
 const (
 	// soundingBelowDB: a track sounds in a bar when its RMS there is at least
-	// this many dB re its own loudest bar (and above -80 dBFS).
-	soundingBelowDB = -30.0
+	// this many dB below its own loudest bar (and above -80 dBFS).
+	soundingBelowDB = 30.0
 	// tailGraceS: for a track that plays notes, a bar with no note start is
 	// measured after this much, so a release tail from the bar before does not
 	// count as sounding.
@@ -26,7 +26,7 @@ const (
 // ActivityReport states the activity rules and lists the mix's silences.
 // Each track's per-bar levels and sounding flags are in tracks[].
 type ActivityReport struct {
-	SoundingThresholdDB float64   `json:"sounding_threshold_db"`
+	SoundingBelowPeakDB float64   `json:"sounding_below_peak_db"`
 	TailGraceS          float64   `json:"tail_grace_s"`
 	SilenceBelowDBFS    float64   `json:"silence_below_dbfs"`
 	SilenceMinS         float64   `json:"silence_min_s"`
@@ -67,7 +67,7 @@ func sounding(full, test []float64) (relative []float64, on []bool) {
 		if ref > -120 && full[b] > -120 {
 			relative[b] = round(math.Max(-120, full[b]-ref), 1)
 		}
-		on[b] = test[b] >= silentDB && test[b]-ref >= soundingBelowDB
+		on[b] = test[b] >= silentDB && test[b]-ref >= -soundingBelowDB
 	}
 	return relative, on
 }

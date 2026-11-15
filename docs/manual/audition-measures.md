@@ -91,7 +91,7 @@ note start has the same offset in the bar, the same pitches, the same velocity
 
 **Mix silences.** Stretches of at least 0.25 s where the mix stays under
 -60 dBFS RMS in 10 ms blocks, with their start and end as `bar.beat.sixteenth`.
-A drop to short hits lists the gaps between them.
+The end is exclusive and can name the bar after the range. A drop to short hits lists the gaps between them.
 
 **Peaks.** The highest true-peak moments of the mix, highest first, at least
 50 ms apart, with their `bar.beat.sixteenth` and time, and what set each one.
@@ -101,12 +101,14 @@ without individual stems are included in the rest. Each part is the stem's own s
 parts add up to 100%: `kick +72%, bass +31%, return-a -3%` means the bass
 added to the kick's peak and the reverb return took a little away. A held bass
 under a hit gets its real part of the peak, not more because it carries more
-energy. Parts of at least 1% are listed, at most five, largest first; `rest`
+energy. Parts of at least 2% are listed, at most five, largest first; `rest`
 is the remainder. The report finds the blocks of 10 ms with the highest sample
 peaks, measures the true peak of the eight best per listed peak, and ranks
 those. When a limiter or a loudness target falls short, these are the hits to
 look at. The master chain can reshape the signal after these parts are read
 (see [Limits](#limits)).
+
+Sections with null integrated loudness are excluded from `quietest_section`; a silent section is never the quietest, and `section_spread_lu` can therefore understate the full spread.
 
 ## Detail fields
 
@@ -116,16 +118,16 @@ look at. The master chain can reshape the signal after these parts are read
 | --- | --- | --- |
 | `bars[].sample_peak_dbfs` | number | Highest sample of the mix in the bar. |
 | `bars[].sounding` | array | Tracks that sound in the bar, in score order. |
-| `bars[].bands[]` | array | Absent with `--no-bands`. Seven entries in band order: `band`, `level_db` (the analyzed tracks summed, dB re a full-scale RMS, so a full-scale sine reads -3), `quiet`, `owner` and `share_pct`, `second` and `second_share_pct`, `collision`. `owner` and `second` are absent when the band is quiet. |
-| `tracks[].bands_db` | array | The track's level in each band over the range, dB re a full-scale RMS, in band order. |
+| `bars[].bands[]` | array | Absent with `--no-bands`. Seven entries in band order: `band`, `level_dbfs` (the analyzed tracks summed, dB re a full-scale RMS, so a full-scale sine reads -3), `quiet`, `owner` and `share_pct`, `second` and `second_share_pct`, `collision`. `owner` and `second` are absent when the band is quiet. |
+| `tracks[].bands_dbfs` | array | The track's level in each band over the range, dB re a full-scale RMS, in band order. |
 | `tracks[].bar_level_db` | array | The stem's RMS in each bar, dB re its loudest bar (-120 when silent). |
 | `tracks[].sounding` | array | One boolean per bar: the track sounds there. |
-| `tracks[].bar_bands_db` | array | The track's band levels per bar: one array of seven per bar. |
-| `tracks[].section_bands_db` | array | The same per section, in `sections[]` order. |
+| `tracks[].bar_bands_dbfs` | array | The track's band levels per bar: one array of seven per bar. |
+| `tracks[].section_bands_dbfs` | array | The same per section, in `sections[]` order. |
 | `sections[].true_peak_dbtp` | number | True peak of the section. |
-| `sections[].band_collision_bars` | array | For each band, the bars whose first tick is in the section and whose band collides. |
-| `sections[].bands[]` | array | As `bars[].bands[]` over the section's frames, plus `collision_bars`. |
-| `bands.collisions[].bars` | array | The one-based bars where the band collides; absent for a band with none. |
+| `sections[].band_collision_bar_count` | array | For each band, the count of bars whose first tick is in the section and whose band collides. |
+| `sections[].bands[]` | array | As `bars[].bands[]` over the section's frames, plus `collision_bar_count`, the number of colliding bars. |
+| `bands.collisions[].bars` | array | The one-based bars where the band collides; an empty array for a band with none. |
 | `loudness.short_term_per_beat_lufs` | array | One value per beat of the song's meter (a quarter note in 4/4): the 3 s window that ends where the beat ends; null while under 3 s of the range precede it. |
 
 ## Worked example: a drop-out and a low-end collision

@@ -166,11 +166,11 @@ type TrackReport struct {
 	// the range (dB re a full-scale RMS, in band order), the stem's RMS in
 	// each bar re its loudest bar (-120 when silent), whether it sounds in
 	// each bar, and its band levels per bar and per section.
-	BandsDB        []float64   `json:"bands_db,omitempty"`
-	BarLevelDB     []float64   `json:"bar_level_db,omitempty"`
-	Sounding       []bool      `json:"sounding,omitempty"`
-	BarBandsDB     [][]float64 `json:"bar_bands_db,omitempty"`
-	SectionBandsDB [][]float64 `json:"section_bands_db,omitempty"`
+	BandsDBFS        []float64   `json:"bands_dbfs,omitempty"`
+	BarLevelDB       []float64   `json:"bar_level_db,omitempty"`
+	Sounding         []bool      `json:"sounding,omitempty"`
+	BarBandsDBFS     [][]float64 `json:"bar_bands_dbfs,omitempty"`
+	SectionBandsDBFS [][]float64 `json:"section_bands_dbfs,omitempty"`
 }
 
 // BarSpan is a run of bars, one-based and inclusive.
@@ -203,9 +203,9 @@ type SectionReport struct {
 	// Detail (DropDetail removes them): the section's true peak; and, absent
 	// with Options.NoBands, per band the bars whose first tick is in the
 	// section and whose band collides, and the full ownership of each band.
-	TruePeakDBTP      *float64      `json:"true_peak_dbtp,omitempty"`
-	BandCollisionBars []int         `json:"band_collision_bars,omitempty"`
-	Bands             []SectionBand `json:"bands,omitempty"`
+	TruePeakDBTP          *float64      `json:"true_peak_dbtp,omitempty"`
+	BandCollisionBarCount []int         `json:"band_collision_bar_count,omitempty"`
+	Bands                 []SectionBand `json:"bands,omitempty"`
 }
 
 // Analysis holds the report and the data behind the images.
@@ -815,7 +815,7 @@ func rmsDB(s stereo) float64 {
 	}
 	var sum float64
 	for i := range s.L {
-		sum += float64(s.L[i])*float64(s.L[i]) + float64(s.R[i])*float64(s.R[i])
+		sum += float64(float64(s.L[i])*float64(s.L[i])) + float64(float64(s.R[i])*float64(s.R[i]))
 	}
 	return db(math.Sqrt(sum / float64(2*s.Len())))
 }

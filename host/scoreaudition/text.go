@@ -195,7 +195,7 @@ func (r *Report) writeBands(w io.Writer) {
 				if o.Collision {
 					mark = "*"
 				}
-				cell = fmt.Sprintf("%s %.0f%s %.0f", shortID(o.Owner, 8), o.SharePct, mark, o.LevelDB)
+				cell = fmt.Sprintf("%s %.0f%s %.0f", shortID(o.Owner, 8), o.SharePct, mark, o.LevelDBFS)
 			}
 			fmt.Fprintf(w, "  %-17s", cell)
 		}
@@ -205,7 +205,7 @@ func (r *Report) writeBands(w io.Writer) {
 	for _, s := range r.Sections {
 		var counts []string
 		for _, sb := range s.Bands {
-			counts = append(counts, fmt.Sprintf("%d", sb.CollisionBars))
+			counts = append(counts, fmt.Sprintf("%d", sb.CollisionBarCount))
 		}
 		fmt.Fprintf(w, "    %-14s %-7s %s\n", s.Name, fmt.Sprintf("%d-%d", s.FromBar, s.ToBar), strings.Join(counts, " "))
 	}
@@ -226,7 +226,7 @@ func (r *Report) writeActivity(w io.Writer) {
 		return
 	}
 	a := r.Activity
-	fmt.Fprintf(w, "\nactivity per bar (█ within 3 dB of the track's loudest bar, one step per 3 dB, · not sounding: under %g dB or silent; a bar with no note start is measured after its first %g s) and repeats (bars whose played notes equal the bar before, =4: four bars before):\n", a.SoundingThresholdDB, a.TailGraceS)
+	fmt.Fprintf(w, "\nactivity per bar (█ within 3 dB of the track's loudest bar, one step per 3 dB, · not sounding: under %g dB or silent; a bar with no note start is measured after its first %g s) and repeats (bars whose played notes equal the bar before, =4: four bars before):\n", -a.SoundingBelowPeakDB, a.TailGraceS)
 	fmt.Fprintf(w, "  %-12s %5s %5s %5s %4s  bars %d-%d\n", "track", "notes", "=prev", "=4", "run", r.Score.FromBar, r.Score.FromBar+r.Score.Bars-1)
 	for _, t := range r.Tracks {
 		var row strings.Builder

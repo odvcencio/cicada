@@ -27,8 +27,8 @@ const (
 	// of the same bar or section: window leakage and attack clicks.
 	quietSpanDB = 30.0
 	// quietRangeDB: nor a band more than this far under the loudest band of
-	// any bar, such as the next bar's first hit seen by a frame of a
-	// drop-out bar (a frame reaches up to 85 ms past its sixteenth).
+	// any bar, so faint energy in a drop-out bar has no owner. Frames read
+	// only samples from their own bar.
 	quietRangeDB = 40.0
 )
 
@@ -69,7 +69,7 @@ type PairCount struct {
 // runner-up. Owner is empty when the band is quiet.
 type BandOwner struct {
 	Band           string  `json:"band"`
-	LevelDB        float64 `json:"level_db"`
+	LevelDBFS      float64 `json:"level_dbfs"`
 	Quiet          bool    `json:"quiet"`
 	Owner          string  `json:"owner,omitempty"`
 	SharePct       float64 `json:"share_pct"`
@@ -78,11 +78,11 @@ type BandOwner struct {
 	Collision      bool    `json:"collision"`
 }
 
-// SectionBand is a band over a whole section. CollisionBars counts the bars
+// SectionBand is a band over a whole section. CollisionBarCount counts the bars
 // whose first tick is in the section and whose band collides.
 type SectionBand struct {
 	BandOwner
-	CollisionBars int `json:"collision_bars"`
+	CollisionBarCount int `json:"collision_bar_count"`
 }
 
 // bandHop spaces the band frames a quarter window apart: squared Hann
@@ -161,10 +161,10 @@ func binBands(n, rate int) []int8 {
 	return out
 }
 
-// bandLevelDB turns a sum of frames' band power (|X|^2 summed over the bins of
+// bandLevelDBFS turns a sum of frames' band power (|X|^2 summed over the bins of
 // a Hann-windowed n-point frame) into dB re a full-scale RMS: a frame's power
 // sum is 3n^2/16 times the mean square of the windowed signal.
-func bandLevelDB(sum, frames float64, n int) float64 {
+func bandLevelDBFS(sum, frames float64, n int) float64 {
 	if frames <= 0 || sum <= 0 {
 		return -120
 	}
@@ -183,7 +183,7 @@ func owner(band int, energy []float64, ids []string, use []bool, frames float64,
 			total += e
 		}
 	}
-	o.LevelDB = round(bandLevelDB(total, frames, n), 1)
+	o.LevelDBFS = round(bandLevelDBFS(total, frames, n), 1)
 	mean := total / math.Max(frames, 1)
 	if total <= 0 || loudest <= 0 || span <= 0 || top <= 0 || frames <= 0 || 10*detmath.Log10(mean/loudest) < -quietBandDB ||
 		10*detmath.Log10(mean/span) < -quietSpanDB || 10*detmath.Log10(mean/top) < -quietRangeDB {
