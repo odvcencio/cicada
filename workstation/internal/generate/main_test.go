@@ -53,7 +53,7 @@ func Second() Node {
 	if err := generateUI(root); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"first_gsx.go", "second_gsx.go", "islands.go", "style_asset.go"} {
+	for _, name := range []string{"first_gsx.go", "second_gsx.go", "islands.go", "style_asset.go", "style.css"} {
 		if _, err := os.Stat(filepath.Join(root, "ui", name)); err != nil {
 			t.Fatal(err)
 		}
@@ -65,8 +65,14 @@ func Second() Node {
 	if !strings.Contains(string(programs), `"Second"`) {
 		t.Fatal("second file's island program is absent")
 	}
-	css, _ := os.ReadFile(filepath.Join(root, "ui/style_asset.go"))
-	if !strings.Contains(string(css), "color: green") || !strings.Contains(string(css), "color: red") {
-		t.Fatal("stylesheets were not combined")
+	css, _ := os.ReadFile(filepath.Join(root, "ui/style.css"))
+	if string(css) != "p { color: red; }\nbutton { color: green; }" {
+		t.Fatalf("stylesheets were not combined in file-name order: %q", css)
+	}
+	// The Go file only embeds the stylesheet: it must not carry the rules, or
+	// every stylesheet change would rewrite one long line and conflict.
+	asset, _ := os.ReadFile(filepath.Join(root, "ui/style_asset.go"))
+	if !strings.Contains(string(asset), "//go:embed style.css") || strings.Contains(string(asset), "color:") {
+		t.Fatalf("style_asset.go should embed style.css and hold no rules: %s", asset)
 	}
 }

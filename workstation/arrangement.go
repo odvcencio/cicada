@@ -22,10 +22,12 @@ func (s *studioApp) arrangement(ctx *server.Context, v workspace, csrf, selected
 		return s.placementArrangement(ctx, v, csrf, selected)
 	}
 	openPattern := ""
+	openTrack := ""
 	selectedBlock := -1
 	if ctx != nil {
 		query := ctx.Request.URL.Query()
 		openPattern = query.Get("pattern")
+		openTrack = query.Get("track")
 		index, err := strconv.Atoi(query.Get("songBlock"))
 		if err == nil && index >= 0 && index < len(p.Song) && query.Get("songKey") == songBlockKey(p.Song, index) {
 			selectedBlock = index
@@ -119,8 +121,14 @@ func (s *studioApp) arrangement(ctx *server.Context, v workspace, csrf, selected
 				if track.Kind == "audio" && p.Edition == 2 {
 					href = "/?panel=takes&clip=" + url.QueryEscape(inherited)
 				} else {
+					scene := ""
+					if !keep {
+						scene = entry.Scene
+					}
+					href = patternContextURL(href, track.ID, scene) + "&dock=clip&region=detail"
+					attrs = append(attrs, gosx.BoolAttr("data-scene-pattern-open"))
 					content = append(content, clipPreview(p, inherited, p.MeterMap().BarsTicks(0, int64(entry.Bars))))
-					if inherited == openPattern {
+					if inherited == openPattern && (openTrack == "" || openTrack == track.ID) {
 						attrs = append(attrs, gosx.BoolAttr("data-arrange-pattern-open"))
 					}
 				}
@@ -142,7 +150,7 @@ func (s *studioApp) arrangement(ctx *server.Context, v workspace, csrf, selected
 	}
 	appendBlock := s.form(v, csrf, "session", "song", hidden("action", "append"), field("Scene", selectInput("scene", "", sceneNames)), field("Bars", wholeInput("bars", 4, 1, 999)), submit("", "", "Add to arrangement"))
 	settings := s.form(v, csrf, "session", "project", field("Title", textInput("title", p.Title)), field("Tempo (BPM)", numberInput("tempo", strconv.FormatFloat(float64(p.TempoMilli)/1000, 'f', -1, 64), "20", "300")), field("Key", selectInput("root", phraseKeys[p.Key.Root], phraseKeys)), field("Scale", selectInput("scale", p.Key.Scale, phraseScales)), submit("", "", "Save project settings"))
-	return ui.Panel(ui.PanelProps{ID: "arrangement", Title: "Arrangement", Description: length}, gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll timeline"), gosx.Attr("aria-label", "Song timeline")), gosx.Fragment(rows...)), s.sessionListening(v, csrf, selected, p.MeterMap().BarStart(int64(bar-1))), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Click a scene name to play from that block, or Edit to change the block. After a song edit, choose Edit again to continue. Click a clip to edit its pattern. ↳ carries the previous pattern.")), selectionNotice, gosx.El("div", gosx.Attrs(gosx.Attr("class", "arrangement-blocks")), gosx.Fragment(blocks...)), gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), appendBlock), gosx.El("details", gosx.Attrs(gosx.Attr("class", "pattern-management")), gosx.El("summary", gosx.Text("Project settings")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), settings), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Changing the key retunes scale-degree notes. Explicit letter pitches retain their pitch."))))
+	return ui.Panel(ui.PanelProps{ID: "arrangement", Title: "Arrangement", Description: length}, gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll timeline"), gosx.Attr("aria-label", "Song timeline")), gosx.Fragment(rows...)), gosx.El("p", gosx.Attrs(gosx.BoolAttr("data-scene-open-status"), gosx.Attr("role", "status"), gosx.Attr("aria-live", "polite"), gosx.Attr("class", "scene-open-status"))), s.sessionListening(v, csrf, selected, p.MeterMap().BarStart(int64(bar-1))), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Click a scene name to play from that block, or Edit to change the block. After a song edit, choose Edit again to continue. Click a clip to edit its pattern. ↳ carries the previous pattern.")), selectionNotice, gosx.El("div", gosx.Attrs(gosx.Attr("class", "arrangement-blocks")), gosx.Fragment(blocks...)), gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), appendBlock), gosx.El("details", gosx.Attrs(gosx.Attr("class", "pattern-management")), gosx.El("summary", gosx.Text("Project settings")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), settings), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Changing the key retunes scale-degree notes. Explicit letter pitches retain their pitch."))))
 }
 
 // trackColors is the size of the Arrange track palette; tracks take its colors
