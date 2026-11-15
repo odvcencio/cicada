@@ -337,7 +337,7 @@ func TestMixerStripOpensBusMasterReturnAndEffectInDevice(t *testing.T) {
 		t.Error("Device prints the raw refusal code")
 	}
 	// The dock header names the bus and the Mixer marks its strip.
-	if !strings.Contains(body, `data-dock-selection="track"><span>music · Bus</span>`) {
+	if !strings.Contains(body, `data-dock-selection="track" title="music · Bus"><span>music · Bus</span>`) {
 		t.Error("the dock header should name the bus")
 	}
 	if strip := mixerStripHTML(t, body, "bus:music"); !strings.Contains(strip, `data-mixer-selected="true"`) || strings.Count(body, `data-mixer-selected="true"`) != 1 {
@@ -367,7 +367,7 @@ func TestMixerStripOpensBusMasterReturnAndEffectInDevice(t *testing.T) {
 	body, device = open("master:master")
 	has("the master", device, `data-device-channel="master:master"`, "<h2>Master</h2>", `name="path" value="master.level"`, "level (dB) · off or -60 to 6", `name="valueType" value="text"`,
 		`name="path" value="master.mute"`, `<option value="master:master" selected>Master</option>`)
-	if !strings.Contains(body, `data-dock-selection="track"><span>Master</span>`) {
+	if !strings.Contains(body, `data-dock-selection="track" title="Master"><span>Master</span>`) {
 		t.Error("the dock header should name the master")
 	}
 
