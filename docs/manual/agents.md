@@ -775,7 +775,7 @@ to check whether reuse caused a difference you see.
         "render": "replayed"
       }
     ],
-    "gain_stage": "post_chain"
+    "gain_stage": "master_input"
   }
 }
 ```
