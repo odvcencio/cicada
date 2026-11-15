@@ -194,7 +194,7 @@ func bindShellNavigation(host enginewasm.Context, root js.Value) (func(), error)
 			href := workspaceAttr(jump, "href")
 			if workspacePresent(domCall(jump, "closest", "[data-reveal-vocals]")) {
 				event.Call("preventDefault")
-				go revealVocalWorkspace(context.Background(), host, root)
+				go revealVocalWorkspace(context.Background(), host, root, event.Get("detail").Int() == 0)
 			} else if href == "#arrangement" {
 				pane := root.Call("querySelector", href)
 				if workspacePresent(pane) {
@@ -362,6 +362,9 @@ func syncShellLocation(root, url js.Value) {
 		if link.Call("hasAttribute", "data-mixer-select").Bool() {
 			target.Get("searchParams").Call("set", "tab", "mixer")
 			target.Get("searchParams").Call("set", "dock", "device")
+		}
+		if link.Call("hasAttribute", "data-reveal-vocals").Bool() {
+			target.Get("searchParams").Call("set", "dock", "takes")
 		}
 		// A scene clip opens its pattern in the Clip dock, whichever dock or
 		// phone region is showing now.

@@ -96,8 +96,11 @@ func vocalTrack(v workspace, requested string) string {
 }
 
 func (s *studioApp) vocals(ctx *server.Context, v workspace, csrf string) gosx.Node {
-	if v.Project == nil || v.Project.Edition != 2 {
+	if v.Project == nil {
 		return gosx.Fragment()
+	}
+	if v.Project.Edition != 2 {
+		return ui.Panel(ui.PanelProps{ID: "vocals", Title: "Record vocals"}, gosx.El("p", gosx.Text("Vocal recording needs an edition 2 score. "), gosx.El("a", gosx.Attrs(gosx.Attr("href", "/?panel=mixer")), gosx.Text("Upgrade through Mixer")), gosx.Text(" before adding an audio track.")))
 	}
 	var state struct {
 		control.CaptureState

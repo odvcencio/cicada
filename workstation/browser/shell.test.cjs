@@ -659,7 +659,10 @@ test('Mac record shortcut starts and finishes the chosen vocal take', async () =
     await page.locator('#detail-tab-takes[aria-selected="true"]').waitFor();
   }
   await page.locator('.vocal-record select[name=track] option[value=keyboard-vocal]').waitFor({state: 'attached'});
-  await page.locator('.vocal-record select[name=track]').selectOption('keyboard-vocal');
+  // Set up the chosen track without creating an unrelated unsaved form draft.
+  await page.locator('.vocal-record select[name=track]').evaluate(node => { node.value = 'keyboard-vocal'; });
+  await page.locator('#detail-tab-clip').click();
+  await page.locator('#detail-tab-clip[aria-selected="true"]').waitFor();
   let active = '';
   await page.route('**/api/capture', route => route.fulfill({contentType: 'application/json', body: JSON.stringify({activeCapture: active, capture: active ? {recording: true} : null})}));
   await page.route('**/__actions/take', route => route.fulfill({status: 409, contentType: 'application/json', body: '{"ok":false,"message":"Keyboard dispatch checked."}'}));
@@ -673,8 +676,21 @@ test('Mac record shortcut starts and finishes the chosen vocal take', async () =
     await page.keyboard.press('Meta+Shift+r');
     const data = await actionValues(await sent);
     assert.equal(data.action, action);
-    if (action === 'record') assert.equal(data.track, 'keyboard-vocal');
+    if (action === 'record') {
+      assert.equal(data.track, 'keyboard-vocal');
+      await page.locator('#detail-tab-takes[aria-selected="true"]').waitFor();
+    }
   }
+  // Model the take returned by the server in the next document after capture ends.
+  await page.route('**/studio**', async route => {
+    if (!route.request().isNavigationRequest()) return route.continue();
+    const response = await route.fetch();
+    const body = (await response.text()).replace('Choose the best phrases</h3>', 'Choose the best phrases</h3><p data-test-take>keyboard-active</p>');
+    await route.fulfill({response, body});
+  });
+  active = '';
+  await page.locator('#detail-panel-takes [data-test-take]').waitFor();
+  assert.equal(await page.locator('#detail-panel-takes [data-test-take]').textContent(), 'keyboard-active');
   await page.close();
 });
 

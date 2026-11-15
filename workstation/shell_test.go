@@ -117,6 +117,10 @@ func TestShellArrangeStartsWithTimelineAndLinksToVocals(t *testing.T) {
 		}
 		panel = next
 	}
+	link := regexp.MustCompile(`<a[^>]*data-reveal-vocals=""[^>]*>Record &amp; comp vocals</a>`).FindString(body)
+	if link == "" || !regexp.MustCompile(`href="[^"]*dock=takes(?:&amp;|"|&)`).MatchString(link) {
+		t.Errorf("vocal link must reveal the Takes dock: %s", link)
+	}
 	selected := getPage(t, client, address+"/studio?dock=takes")
 	if !regexp.MustCompile(`<a[^>]*id="detail-tab-takes"[^>]*aria-current="page"`).MatchString(selected) {
 		t.Fatal("Takes tab was not selected")

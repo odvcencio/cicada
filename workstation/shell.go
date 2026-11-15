@@ -283,16 +283,12 @@ func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, boo
 		ArrangeShown: tab == "arrange", SessionShown: tab == "session", MixerShown: tab == "mixer",
 	}, centerPanel("arrange"), centerPanel("session"), centerPanel("mixer"))
 
-	// Keep this markup in sync with DetailDock until its generated Go is refreshed.
-	tabs := []gosx.Node{}
-	for _, item := range []struct{ id, label string }{{"clip", "Clip"}, {"device", "Device"}, {"automation", "Automation"}, {"takes", "Takes"}} {
-		tabs = append(tabs, ui.Tab(ui.TabProps{ID: "detail-tab-" + item.id, Value: item.id, Href: shellLink(current, "dock", item.id), Panel: "detail-panel-" + item.id, Selected: dock == item.id}, gosx.Text(item.label)))
-	}
-	detail := gosx.El("section", gosx.Attrs(gosx.Attr("id", "studio-detail"), gosx.Attr("class", "gsx-dock__bottom shell-region"), gosx.Attr("aria-label", "Detail dock")),
-		ui.SplitHandleY(ui.SplitHandleProps{Signal: "$layout.dockHeight", Label: "Resize Detail dock", Min: "120", Max: "640", Value: strconv.Itoa(shellDockHeight)}),
-		gosx.El("div", gosx.Attrs(gosx.Attr("id", "detail-tabs"), gosx.BoolAttr("data-gosx-tabs"), gosx.Attr("data-gosx-tabs-signal", "$dock"), gosx.Attr("class", "shell-tabs")),
-			gosx.El("nav", gosx.Attrs(gosx.Attr("class", "gsx-tabs__list"), gosx.Attr("role", "tablist"), gosx.Attr("aria-orientation", "horizontal"), gosx.Attr("aria-label", "Detail")), gosx.Fragment(tabs...)),
-			p.region("dock-header"), ui.ShellScroll(dockPanel("clip"), dockPanel("device"), dockPanel("automation"), dockPanel("takes"))))
+	detail := ui.DetailDock(ui.DetailDockProps{
+		ClipHref: shellLink(current, "dock", "clip"), DeviceHref: shellLink(current, "dock", "device"),
+		AutomationHref: shellLink(current, "dock", "automation"), TakesHref: shellLink(current, "dock", "takes"),
+		ClipShown: dock == "clip", DeviceShown: dock == "device", AutomationShown: dock == "automation", TakesShown: dock == "takes",
+		Height: strconv.Itoa(shellDockHeight),
+	}, p.region("dock-header"), ui.ShellScroll(dockPanel("clip"), dockPanel("device"), dockPanel("automation"), dockPanel("takes")))
 	code := ui.CodeLens(ui.CodeLensProps{Open: codeOpen, Width: strconv.Itoa(shellCodeWidth)}, p.region("code"))
 	status := ui.StatusBar(p.region("status"))
 

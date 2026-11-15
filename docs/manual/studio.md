@@ -268,9 +268,9 @@ open the matching curve. Automation belongs to the track even if its amp
 declaration is shared; changing the declaration itself affects its users.
 These curves normally change the track's playback, while input monitoring uses
 separate settings. To hear the movement on the input while recording, select
-the destination track's amp parameter and choose **Link Perform to the live
-input amp**, then choose **Prepare linked recording** before starting the
-audio take. Use **Record take** in Session and move **Perform**; the linked pass begins
+the destination track's amp parameter in the Automation tab and choose **Link Perform to the live
+input amp**, then choose **Prepare linked recording**. Open the Takes tab,
+choose **Record take**, and move **Perform** in Automation; the linked pass begins
 with recording. The monitor temporarily follows the track amp and cabinet and
 its other saved amp curves; other track effects are
 heard only on playback. The monitor's previous settings return after

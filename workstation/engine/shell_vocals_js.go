@@ -12,7 +12,9 @@ import (
 
 // Reveal the existing recording forms without navigating or replacing drafts.
 // Record still submits their ordinary guarded action when recording is allowed.
-func revealVocalWorkspace(ctx context.Context, host enginewasm.Context, root js.Value) bool {
+func revealVocalWorkspace(ctx context.Context, host enginewasm.Context, root js.Value, keyboard bool) bool {
+	document := js.Global().Get("document")
+	focus := document.Get("activeElement")
 	vocals := root.Call("querySelector", "#vocals")
 	arrange := root.Call("querySelector", "#detail-panel-takes")
 	if !workspacePresent(vocals) || !workspacePresent(arrange) {
@@ -43,5 +45,10 @@ func revealVocalWorkspace(ctx context.Context, host enginewasm.Context, root js.
 	url.Set("hash", "")
 	syncShellLocation(root, url)
 	vocals.Call("scrollIntoView", map[string]any{"block": "start", "behavior": "auto"})
+	if keyboard && (document.Get("activeElement").Equal(focus) || document.Get("activeElement").Equal(document.Get("body"))) {
+		if tab := root.Call("querySelector", "#detail-tab-takes"); workspacePresent(tab) {
+			tab.Call("focus", map[string]any{"preventScroll": true})
+		}
+	}
 	return true
 }

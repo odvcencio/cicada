@@ -122,7 +122,10 @@ test('Studio views, Record entry and Mac placement commands retain drafts and Un
   const recordingRevealed = async (entry='vocal navigation') => {
     await page.locator('#detail-panel-takes').waitFor({state:'visible'});
     assert.equal(new URL(page.url()).searchParams.get('dock'), 'takes');
-    assert.equal(await page.locator('#vocals').isVisible(), true);
+    assert.equal(await page.locator('#vocals .panel-heading').evaluate(node=>{
+      const bounds=node.getBoundingClientRect(), pane=document.querySelector('#studio-detail .shell-scroll').getBoundingClientRect();
+      return bounds.top>=pane.top-1 && bounds.bottom<=Math.min(pane.bottom,innerHeight)+1;
+    }), true, entry+' heading must be within the visible dock');
     await page.waitForTimeout(100);
     assert.equal(await page.locator('#vocals [data-capture-control=record]').isDisabled(),true,'fixture without an audio track must keep Record take disabled');
     assert.equal(await block('one').getAttribute('data-placement-selected'),'true','revealing recording changed the selected placement');
