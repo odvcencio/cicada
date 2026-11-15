@@ -231,7 +231,7 @@ func (s *studioApp) deviceSound(v workspace, csrf, id string) []gosx.Node {
 	if len(controls) == 0 {
 		text := "Instrument controls and routing are saved on this track. Add instruments in the Browser."
 		if track.Kind == "audio" {
-			text = "Recorded audio track. Record and comp takes in Arrange; shape the vocal with its insert chain here."
+			text = "Recorded audio track. Record and comp takes in the Takes tab; shape the vocal with its insert chain here."
 		}
 		controls = append(controls, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text(text)))
 	}
