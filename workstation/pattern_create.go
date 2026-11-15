@@ -104,8 +104,12 @@ func (s *studioApp) patternCreationForTracks(ctx *server.Context, v workspace, c
 		starters = append(starters, gosx.El("option", gosx.Attrs(gosx.Attr("value", choice.value), gosx.Attr("selected", choice.value == values["starter"])), gosx.Text(choice.label)))
 	}
 	fields = append(fields, field("Pattern name", textInput("newName", values["newName"])), field("Start with", gosx.El("select", gosx.Attrs(gosx.Attr("name", "starter")), gosx.Fragment(starters...))), field("Steps", numberInput("length", values["length"], "1", "64")))
+	cancel := *ctx.Request.URL
+	cancelQuery := cancel.Query()
+	cancelQuery.Del("createScene")
+	cancel.RawQuery = cancelQuery.Encode()
 	if sceneContext != "" {
-		fields = append(fields, hidden("scene", sceneContext), gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("aria-describedby", "scene-create-scope")), gosx.Text("Create pattern")), gosx.El("p", gosx.Attrs(gosx.Attr("id", "scene-create-scope"), gosx.Attr("data-scene-create-scope", "")), gosx.Text("Creating replaces this track's binding in scene "+sceneContext+", including Stop. It affects every occurrence of that scene, following carried sections, and live scene launches.")))
+		fields = append(fields, hidden("scene", sceneContext), gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("aria-describedby", "scene-create-scope")), gosx.Text("Create pattern")), gosx.El("a", gosx.Attrs(gosx.Attr("href", cancel.RequestURI()), gosx.BoolAttr("data-scene-create-cancel")), gosx.Text("Cancel")), gosx.El("p", gosx.Attrs(gosx.Attr("id", "scene-create-scope"), gosx.Attr("data-scene-create-scope", "")), gosx.Text("Creating replaces this track's binding in scene "+sceneContext+", including Stop. It affects every occurrence of that scene, following carried sections, and live scene launches.")))
 	} else {
 		fields = append(fields, field("Assign to scene", gosx.El("select", gosx.Attrs(gosx.Attr("name", "scene")), gosx.Fragment(scenes...))), submit("", "", "Create pattern"))
 	}

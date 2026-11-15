@@ -32,7 +32,7 @@ func TestSilentSceneCreationKeepsItsTrackAndScene(t *testing.T) {
 		}
 	}
 	page = getPage(t, client, address+"/studio?dock=clip&createScene=1&track=lead&scene=quiet")
-	for _, want := range []string{`<strong>New pattern</strong>`, `lead · quiet`, `data-gosx-key="create-pattern-lead"`, `name="track" value="lead"`, `name="scene" value="quiet"`, `name="source_revision" value="all-sources"`, `value="empty" selected`, `aria-describedby="scene-create-scope"`, `data-scene-create-scope`, "including Stop", "every occurrence", "following carried sections", "live scene launches"} {
+	for _, want := range []string{`<strong>New pattern</strong>`, `lead · quiet`, `data-gosx-key="create-pattern-lead"`, `name="track" value="lead"`, `name="scene" value="quiet"`, `name="source_revision" value="all-sources"`, `value="empty" selected`, `aria-describedby="scene-create-scope"`, `data-scene-create-scope`, `data-scene-create-cancel`, "including Stop", "every occurrence", "following carried sections", "live scene launches"} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("scene creation missing %q", want)
 		}
@@ -48,6 +48,24 @@ func TestSilentSceneCreationKeepsItsTrackAndScene(t *testing.T) {
 	}
 	if stale := getPage(t, client, address+"/studio?dock=clip&createScene=1&track=lead&scene=air"); !strings.Contains(stale, "This scene is no longer silent on that track") {
 		t.Fatal("a mixed-state scene was offered creation by direct URL")
+	}
+}
+
+func TestSilentScenesTreatAChainedTrackAsSounding(t *testing.T) {
+	p := &project.Project{Title: "Chained", TempoMilli: 120000,
+		Tracks: []project.Track{{ID: "lead", Kind: "acid", Chain: []string{"pulse"}}},
+		Scenes: []project.Scene{{ID: "main"}, {ID: "quiet", Bindings: map[string]string{"lead": "off"}}},
+		Song:   []project.SongEntry{{Scene: "main", Bars: 1}, {Scene: "quiet", Bars: 1}, {Scene: "main", Bars: 1}}}
+	silent := silentSongScenes(p, "lead")
+	if silent["main"] {
+		t.Fatal("a scene where the track's chain is sounding was judged silent")
+	}
+	if !silent["quiet"] {
+		t.Fatal("a scene that stops the chained track was not judged silent")
+	}
+	p.Tracks[0].Chain = nil
+	if silent := silentSongScenes(p, "lead"); !silent["main"] || !silent["quiet"] {
+		t.Fatalf("without a chain both scenes are silent, got %v", silent)
 	}
 }
 

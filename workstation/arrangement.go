@@ -108,7 +108,7 @@ func (s *studioApp) arrangement(ctx *server.Context, v workspace, csrf, selected
 				cells = append(cells, gosx.El("a", append(attrs, gosx.Attr("href", href)), gosx.Fragment(content...)))
 			} else if silentScenes[entry.Scene] {
 				q := url.Values{"panel": {"patterns"}, "createScene": {"1"}, "track": {track.ID}, "scene": {entry.Scene}, "dock": {"clip"}, "region": {"detail"}}
-				attrs = append(attrs, gosx.BoolAttr("data-scene-pattern-open"), gosx.Attr("data-scene-create", entry.Scene), gosx.Attr("aria-label", "Create a pattern for "+track.ID+" in scene "+entry.Scene), gosx.Attr("href", "/?"+q.Encode()))
+				attrs = append(attrs, gosx.BoolAttr("data-scene-pattern-open"), gosx.Attr("data-scene-create", entry.Scene), gosx.Attr("aria-label", "Silent. Create a pattern for "+track.ID+" in scene "+entry.Scene), gosx.Attr("href", "/?"+q.Encode()+"#patterns"))
 				cells = append(cells, gosx.El("a", attrs, gosx.El("span", gosx.Attrs(gosx.Attr("class", "clip-name")), gosx.Text("+ Create pattern"))))
 			} else {
 				cells = append(cells, gosx.El("span", attrs, gosx.Fragment(content...)))
@@ -134,9 +134,11 @@ func silentSongScenes(p *project.Project, trackID string) map[string]bool {
 		return nil
 	}
 	eligible := false
+	chained := false
 	for _, track := range p.Tracks {
 		if track.ID == trackID && patternKindForTrack(p, track) != "" {
 			eligible = true
+			chained = len(track.Chain) > 0
 			break
 		}
 	}
@@ -148,7 +150,11 @@ func silentSongScenes(p *project.Project, trackID string) map[string]bool {
 		scenes[scene.ID] = scene
 	}
 	silent := make(map[string]bool)
+	// A chain plays from the song start until a scene binds the track.
 	playing := "off"
+	if chained {
+		playing = "chain"
+	}
 	for _, entry := range p.Song {
 		scene, ok := scenes[entry.Scene]
 		if !ok {
