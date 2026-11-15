@@ -27,7 +27,7 @@ func (s *studioApp) arrangement(ctx *server.Context, v workspace, csrf, selected
 		query := ctx.Request.URL.Query()
 		openPattern = query.Get("pattern")
 		index, err := strconv.Atoi(query.Get("songBlock"))
-		if err == nil && index >= 0 && index < len(p.Song) && v.Revision != "" && query.Get("songRevision") == v.Revision && query.Get("songKey") == songBlockKey(p.Song, index) {
+		if err == nil && index >= 0 && index < len(p.Song) && query.Get("songKey") == songBlockKey(p.Song, index) {
 			selectedBlock = index
 		}
 	}
@@ -51,14 +51,15 @@ func (s *studioApp) arrangement(ctx *server.Context, v workspace, csrf, selected
 		i, block := strconv.Itoa(index), targetField(songBlockKey(p.Song, index))
 		label := fmt.Sprintf("%s · bars %d–%d", entry.Scene, bar, bar+int(entry.Bars)-1)
 		play := s.form(v, csrf, "session", "transport", hidden("entry", i), submit("action", "playFrom", entry.Scene))
-		selection := url.Values{"panel": {"session"}, "songBlock": {i}, "songKey": {songBlockKey(p.Song, index)}, "songRevision": {v.Revision}}
+		selection := url.Values{"panel": {"session"}, "songBlock": {i}, "songKey": {songBlockKey(p.Song, index)}}
 		selectionPath := "/"
 		if ctx != nil && ctx.Request.URL.Path == "/studio" {
 			selection = ctx.Request.URL.Query()
 			selection.Del("panel")
+			selection.Del("reveal")
+			selection.Del("songRevision")
 			selection.Set("songBlock", i)
 			selection.Set("songKey", songBlockKey(p.Song, index))
-			selection.Set("songRevision", v.Revision)
 			selectionPath = "/studio"
 		}
 		editLabel := "Edit " + label

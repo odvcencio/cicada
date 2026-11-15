@@ -75,6 +75,7 @@ test('scene headers open guarded block controls and Undo restores the song', {ti
   assert.equal(await edit.evaluate(el => { const r=el.getBoundingClientRect(), p=el.closest('.timeline-heading').getBoundingClientRect(); return r.width>0 && r.left>=p.left && r.right<=p.right; }),true,'Edit must fit in a one-bar header');
   assert.equal(await edit.locator('..').locator('small').evaluate(el => el.getBoundingClientRect().height <= parseFloat(getComputedStyle(el).fontSize) * 1.5),true,'block number must remain on one line');
   const oldURL = await edit.getAttribute('href');
+  assert.equal(new URL(oldURL,base).searchParams.has('songRevision'),false);
   const beforeSelectionURL = page.url();
   if (process.env.CICADA_SCENE_PROOF_DIR) { fs.mkdirSync(process.env.CICADA_SCENE_PROOF_DIR,{recursive:true}); await page.locator('.timeline-heading').nth(1).screenshot({path:path.join(process.env.CICADA_SCENE_PROOF_DIR,'scene-header.png')}); }
   await edit.focus();
@@ -100,17 +101,18 @@ test('scene headers open guarded block controls and Undo restores the song', {ti
   assert.equal(notes.some(note => note.on === 'false' && note.note === '60'),false,'selection must not release the held note');
   await page.evaluate(() => __sendSceneMIDI(0x80,60,0));
   await until(() => notes.some(note => note.on === 'false' && note.note === '60'), 'MIDI note-off did not reach the same Live engine');
-  await selected.getByRole('button',{name:'Duplicate block',exact:true}).click();
-  await until(async () => (await state()).revision !== before.revision, 'duplicate was not saved');
+  await selected.getByRole('button',{name:'Move earlier',exact:true}).click();
+  await until(async () => (await state()).revision !== before.revision, 'move was not saved');
   await ready();
   assert.equal(writes.length,1);
   assert.notEqual((await state()).source,before.source);
   assert.equal(await page.locator('[data-song-selected]').count(),0);
   await page.getByText('After a song edit, choose Edit again to continue.', {exact:false}).waitFor();
-  // A copied URL from an older revision cannot target a new occupant of the slot.
+  // A copied URL cannot target a different block now occupying the slot.
   await page.goto(new URL(oldURL,base).href);
   await ready();
   assert.equal(await page.locator('[data-song-selected]').count(),0);
+  await page.locator('#arrangement [role=status]').filter({hasText:/^The song changed\./}).waitFor();
   await page.locator('#undo-form button[type=submit]').click();
   await until(async () => (await state()).source === before.source, 'Undo did not restore the score');
   await ready();

@@ -77,6 +77,10 @@
 .shell #arrangement .rail-toggles .strip-toggle { min-width:22px; min-height:22px; padding:0 5px; font-size:11px; }
 
 /* A scene name plays the block; its separate edit link opens its controls. */
-.shell #arrangement .timeline-section .timeline-edit { flex:none; padding:2px 4px; border-radius:3px; color:var(--muted); font:11px system-ui,sans-serif; text-decoration:none; }
+.shell #arrangement .timeline-section .timeline-edit { flex:none; display:inline-flex; align-items:center; justify-content:center; min-width:24px; min-height:24px; padding:2px 4px; border-radius:3px; color:var(--muted); font:11px system-ui,sans-serif; text-decoration:none; }
 .shell #arrangement .timeline-section .timeline-edit:hover, .shell #arrangement .timeline-section .timeline-edit:focus-visible { color:var(--amber); background:var(--hover); }
 .shell #arrangement .arrangement-block[data-song-selected] { order:-1; border-color:var(--amber); }
+
+@media (pointer:coarse) {
+  .shell #arrangement .timeline-section .timeline-edit { min-width:44px; min-height:44px; }
+}
