@@ -17,12 +17,13 @@ func (s *studioApp) performanceEditor(ctx *server.Context, v workspace, csrf str
 	selected, _ := strconv.Atoi(ctx.Request.URL.Query().Get("note"))
 	selected = min(max(0, selected), len(performance.Notes))
 	contextURL := func(raw string) string {
-		return patternContextURL(raw, ctx.Request.URL.Query().Get("track"), ctx.Request.URL.Query().Get("scene"))
+		q := ctx.Request.URL.Query()
+		return samePatternPlacementURL(patternContextURL(raw, q.Get("track"), q.Get("scene")), q.Get("pattern"), q.Get("placement"))
 	}
 	returnTo := contextURL(patternURL(p.ID, 1, "", "") + "&note=" + strconv.Itoa(selected))
 	form := func(operation string, children ...gosx.Node) gosx.Node {
 		children = append(children, performanceFormStatus(ctx, p.ID, operation))
-		return ui.Form(ui.FormProps{Action: "/__actions/pattern", CSRF: csrf, Revision: v.Revision, ReturnTo: returnTo, Class: "action-form"}, append([]gosx.Node{hidden("pattern", p.ID), hidden("action", operation), hidden("source_revision", v.SourceRevision), hidden("track", ctx.Request.URL.Query().Get("track")), hidden("scene", ctx.Request.URL.Query().Get("scene"))}, children...)...)
+		return ui.Form(ui.FormProps{Action: "/__actions/pattern", CSRF: csrf, Revision: v.Revision, ReturnTo: returnTo, Class: "action-form"}, append([]gosx.Node{hidden("pattern", p.ID), hidden("action", operation), hidden("source_revision", v.SourceRevision), hidden("track", ctx.Request.URL.Query().Get("track")), hidden("scene", ctx.Request.URL.Query().Get("scene")), hidden("context_placement", placementForPattern(ctx.Request.URL.Query(), p.ID))}, children...)...)
 	}
 	var notes []control.Note
 	var rows []gosx.Node

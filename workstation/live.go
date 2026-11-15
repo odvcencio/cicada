@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"runtime"
 	"strconv"
+	"strings"
 
 	"m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/kernel/voice/keyboard"
@@ -337,12 +338,25 @@ func (s *studioApp) live(ctx *server.Context, v workspace, csrf string) gosx.Nod
 		}
 	}
 	var keys []gosx.Node
-	for i, key := range []string{"a", "w", "s", "e", "d", "f", "t", "g", "y", "h", "u", "j", "k"} {
-		keys = append(keys, gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.BoolAttr("disabled"), gosx.Attr("data-live-note", 48+i), gosx.Attr("aria-label", fmt.Sprintf("Note %d, keyboard %s", 48+i, key))), gosx.Text(strconv.Itoa(48+i)+" · "+key)))
+	if len(pitched) > 0 {
+		for i, key := range []string{"a", "w", "s", "e", "d", "f", "t", "g", "y", "h", "u", "j", "k"} {
+			pitch := 48 + i
+			name := noteName(pitch)
+			class := ""
+			if strings.Contains(name, "♯") {
+				class = "sharp"
+			}
+			keys = append(keys, gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.BoolAttr("disabled"), gosx.Attr("class", class), gosx.Attr("data-live-note", pitch), gosx.Attr("aria-label", fmt.Sprintf("%s, note %d, keyboard %s", name, pitch, key))), gosx.El("span", gosx.Text(name)), gosx.El("small", gosx.Text(key))))
+		}
 	}
 	var pads []gosx.Node
-	for _, n := range []int{36, 38, 42, 46, 39, 37, 41, 45, 48, 56, 49} {
-		pads = append(pads, gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.BoolAttr("disabled"), gosx.Attr("data-live-drum", n), gosx.Attr("aria-label", fmt.Sprintf("General MIDI drum %d", n))), gosx.Text(strconv.Itoa(n))))
+	drumLabels := [...]string{"Kick", "Snare", "Closed hat", "Open hat", "Clap", "Rim", "Low tom", "Mid tom", "High tom", "Cowbell", "Crash"}
+	if len(drums) > 0 {
+		for _, n := range []int{36, 38, 42, 46, 39, 37, 41, 45, 48, 56, 49} {
+			lane, _ := edit.GMDrumLane(n)
+			name := drumLabels[lane]
+			pads = append(pads, gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.BoolAttr("disabled"), gosx.Attr("data-live-drum", n), gosx.Attr("aria-label", fmt.Sprintf("%s, General MIDI drum %d", name, n))), gosx.El("span", gosx.Text(name)), gosx.El("small", gosx.Text(strconv.Itoa(n)))))
+		}
 	}
 	button := func(id, label string) gosx.Node {
 		return gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("disabled", id == "record" || id == "finish"), gosx.Attr("data-live-control", id)), gosx.Text(label))
@@ -365,7 +379,17 @@ func (s *studioApp) live(ctx *server.Context, v workspace, csrf string) gosx.Nod
 	viewSelect := func(hook string, choices gosx.Node) gosx.Node {
 		return gosx.El("select", gosx.Attrs(gosx.Attr(hook, ""), gosx.BoolAttr("data-studio-view-control")), choices)
 	}
-	controls := gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), field("Pitched track", viewSelect("data-live-acid", options(pitched))), field("Pitched pattern", viewSelect("data-live-pattern", patternsFor(pitched))), field("Drum track", viewSelect("data-live-drums", options(drums))), field("Drum pattern", viewSelect("data-live-drumpattern", patternsFor(drums))), button("record", "Record notes"), button("finish", "Finish note take"), button("panic", "Release notes"))
+	group := func(label string, tracks []string, trackHook, patternHook, trackLabel, patternLabel string) gosx.Node {
+		attrs := gosx.Attrs(gosx.Attr("class", "live-target-group"))
+		if len(tracks) == 0 {
+			attrs = append(attrs, gosx.BoolAttr("hidden"))
+		}
+		selectTarget := func(hook, name string, choices gosx.Node) gosx.Node {
+			return gosx.El("select", gosx.Attrs(gosx.Attr(hook, ""), gosx.BoolAttr("data-studio-view-control"), gosx.Attr("aria-label", name)), choices)
+		}
+		return gosx.El("div", attrs, gosx.El("span", gosx.Text(label+" play")), selectTarget(trackHook, trackLabel, options(tracks)), gosx.El("span", gosx.Text("into")), selectTarget(patternHook, patternLabel, patternsFor(tracks)))
+	}
+	controls := gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions live-targets")), group("Keys", pitched, "data-live-acid", "data-live-pattern", "Keys play: pitched track", "Keys play into: pitched pattern"), group("Pads", drums, "data-live-drums", "data-live-drumpattern", "Pads play: drum track", "Pads play into: drum pattern"), button("record", "Record notes"), button("finish", "Finish note take"), button("panic", "Release notes"), button("midi", "Enable MIDI"))
 	var quantize []gosx.Node
 	for _, q := range []struct{ value, label string }{{"-1", "Score default"}, {"1", "Next beat"}, {"2", "Next bar"}, {"5", "1 bar"}, {"6", "2 bars"}, {"8", "4 bars"}} {
 		quantize = append(quantize, gosx.El("option", gosx.Attrs(gosx.Attr("value", q.value), gosx.Attr("selected", q.value == "-1")), gosx.Text(q.label)))
@@ -378,7 +402,7 @@ func (s *studioApp) live(ctx *server.Context, v workspace, csrf string) gosx.Nod
 	for _, mode := range []struct{ value, label string }{{"auto", "Auto · follow controller"}, {"lower", "MPE · lower zone"}, {"upper", "MPE · upper zone"}} {
 		midiModes = append(midiModes, gosx.El("option", gosx.Attrs(gosx.Attr("value", mode.value)), gosx.Text(mode.label)))
 	}
-	midi := gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), button("midi", "Enable MIDI"), field("Note expression", viewSelect("data-live-midimode", gosx.Fragment(midiModes...))), field("Learn target", viewSelect("data-live-target", options(targets))), field("MIDI launch timing", viewSelect("data-live-quantize", gosx.Fragment(quantize...))), button("learn", "Learn next input"), button("clear", "Clear browser mappings"))
+	midi := gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), field("Note expression", viewSelect("data-live-midimode", gosx.Fragment(midiModes...))), field("Learn target", viewSelect("data-live-target", options(targets))), field("MIDI launch timing", viewSelect("data-live-quantize", gosx.Fragment(quantize...))), button("learn", "Learn next input"), button("clear", "Clear browser mappings"))
 	var midiPorts gosx.Node = gosx.Fragment()
 	if v.Project.MIDI != nil && len(v.Project.MIDI.Ports) > 0 {
 		midiPorts = gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), field("Score MIDI port", viewSelect("data-live-port", options(v.Project.MIDI.Ports))), field("Device on this machine", viewSelect("data-live-device", gosx.El("option", gosx.Attrs(gosx.Attr("value", "")), gosx.Text("Enable MIDI to see devices")))), button("bind", "Bind device"), button("reload-ports", "Reload bindings"))
@@ -406,7 +430,16 @@ func (s *studioApp) live(ctx *server.Context, v workspace, csrf string) gosx.Nod
 	props, _ := json.Marshal(map[string]any{"csrf": csrf, "revision": v.Revision, "bpm": float64(v.Project.TempoMilli) / 1000, "trackPatterns": trackPatterns, "libraryPatterns": libraryPatterns, "expressionTracks": expressionTracks, "nativeMIDI": runtime.GOOS == "darwin", "preview": previewKey, "persistentNotes": s.notes != nil, "portableMIDI": v.Project.MIDI, "drumTracks": drumTracks})
 	// SSR controls are the engine's owned subtree. GoSX can preserve that
 	// subtree when props are unchanged without retaining detached listeners.
-	content := gosx.Fragment(macros, controls, gosx.El("div", gosx.Attrs(gosx.Attr("class", "live-keyboard")), gosx.Fragment(keys...)), gosx.El("div", gosx.Attrs(gosx.Attr("class", "live-drums")), gosx.Fragment(pads...)), midi, midiPorts, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Declare a logical MIDI port in the score and bind a device on this machine to save learned mappings with the score. Without a MIDI block, learned mappings stay in this browser. Edit score mappings in Code.")), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Bend, pressure and timbre follow individual held notes on authored synths, and acid follows bend. The piano and the modeled keyboards play notes without gestures. Auto keeps ordinary keyboard bend ranges and follows MPE setup messages; choose a zone when your controller does not send setup. Sustain holds notes until pedal release.")), gosx.El("p", gosx.Attrs(gosx.Attr("data-live-status", ""), gosx.Attr("role", "status")), gosx.Text("Live input requires a browser with WebAssembly enabled. Launch forms remain available.")), gosx.El("ul", gosx.Attrs(gosx.Attr("data-live-mappings", ""))))
+	destination := func(hook string, tracks []string) gosx.Node {
+		name := "—"
+		if len(tracks) > 0 {
+			name = tracks[0]
+		}
+		return gosx.El("span", gosx.Attrs(gosx.Attr(hook, "")), gosx.Text(name))
+	}
+	header := gosx.El("div", gosx.Attrs(gosx.Attr("class", "live-input-heading")), gosx.Text("Live input · "), destination("data-live-destination-pitched", pitched), gosx.Text(" · "), destination("data-live-destination-drums", drums), gosx.Text(" · "), gosx.El("span", gosx.Attrs(gosx.Attr("data-live-midi-state", "")), gosx.Text("MIDI off")))
+	midiSetup := gosx.El("details", gosx.Attrs(gosx.Attr("data-live-midi-setup", "")), gosx.El("summary", gosx.Text("MIDI setup")), midi, midiPorts, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Declare a logical MIDI port in the score and bind a device on this machine to save learned mappings with the score. Without a MIDI block, learned mappings stay in this browser. Edit score mappings in Code.")), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Bend, pressure and timbre follow individual held notes on authored synths, and acid follows bend. The piano and the modeled keyboards play notes without gestures. Auto keeps ordinary keyboard bend ranges and follows MPE setup messages; choose a zone when your controller does not send setup. Sustain holds notes until pedal release.")))
+	content := gosx.Fragment(macros, header, controls, gosx.El("div", gosx.Attrs(gosx.Attr("class", "live-keyboard")), gosx.Fragment(keys...)), gosx.El("div", gosx.Attrs(gosx.Attr("class", "live-drums")), gosx.Fragment(pads...)), midiSetup, gosx.El("p", gosx.Attrs(gosx.Attr("data-live-status", ""), gosx.Attr("role", "status")), gosx.Text("Live input requires a browser with WebAssembly enabled. Launch forms remain available.")), gosx.El("ul", gosx.Attrs(gosx.Attr("data-live-mappings", ""))))
 	surface := meterEngine(ctx, engine.Config{Name: "CicadaLive", Kind: engine.KindSurface, MountID: "cicada-live", Runtime: engine.RuntimeGoWASM, Props: props, Capabilities: []engine.Capability{engine.CapFetch, engine.CapKeyboard, engine.CapPointer, engine.CapStorage}, RequiredCapabilities: []engine.Capability{engine.CapWASM, engine.CapFetch}}, content)
 	return ui.Panel(ui.PanelProps{ID: "live", Title: "Live performance", Description: "Keyboard and MIDI play the piano, modeled keyboards, authored instruments, acid, and drums. Retain a take, then keep played timing or snap starts to a step pattern."}, s.liveLaunch(v, csrf), surface,
 		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted"), gosx.BoolAttr("data-live-destination-hint")), gosx.Text("Choose a pattern on this track or an unused compatible pattern from the library. Keeping a take replaces that pattern; unused patterns stay in the library until you arrange or assign them.")),
@@ -511,7 +544,9 @@ func (s *studioApp) liveLaunch(v workspace, csrf string) gosx.Node {
 			if pattern == "off" {
 				action, label = "trackStop", "Stop"
 			}
-			cells = append(cells, gosx.El("td", append(color(i), gosx.Attr("data-live-slot", pattern), gosx.Attr("data-live-track", track.ID)), button(label, liveLaunchCommand{Action: action, Track: track.ID, Pattern: pattern})))
+			data, _ := json.Marshal(liveLaunchCommand{Action: action, Track: track.ID, Pattern: pattern})
+			name := gosx.El("span", gosx.Attrs(gosx.Attr("class", "live-slot-name"), gosx.Attr("title", label)), gosx.Text(label))
+			cells = append(cells, gosx.El("td", append(color(i), gosx.Attr("data-live-slot", pattern), gosx.Attr("data-live-track", track.ID)), gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("name", "command"), gosx.Attr("value", string(data))), name)))
 		}
 		rows = append(rows, gosx.El("tr", gosx.Fragment(cells...)))
 	}
