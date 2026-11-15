@@ -109,7 +109,6 @@ func bindShellNavigation(host enginewasm.Context, root js.Value) (func(), error)
 				event.Call("preventDefault")
 				if status := root.Call("querySelector", "[data-scene-open-status]"); workspacePresent(status) {
 					status.Set("textContent", reason)
-					status.Set("hidden", false)
 				}
 				return nil
 			}
@@ -221,6 +220,12 @@ func syncShellLocation(root, url js.Value) {
 			continue
 		}
 		copyShellContext(target, url)
+		// A scene clip opens its pattern in the Clip dock, whichever dock or
+		// phone region is showing now.
+		if link.Call("hasAttribute", "data-scene-pattern-open").Bool() {
+			target.Get("searchParams").Call("set", "dock", "clip")
+			target.Get("searchParams").Call("set", "region", "detail")
+		}
 		if region := workspaceAttr(link, "data-shell-region"); region != "" {
 			if region == workspaceAttr(root, "data-phone-region") {
 				link.Call("setAttribute", "aria-current", "page")

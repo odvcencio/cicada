@@ -52,6 +52,9 @@
 .shell #arrangement .timeline-clip.silent .clip-name { font-weight:400; }
 
 /* Below the lanes: one quiet hint line, then block and project editing. */
+/* Empty until a clip open is refused; kept in the tree so the refusal is announced. */
+.shell #arrangement .scene-open-status { margin:0; }
+.shell #arrangement .scene-open-status:not(:empty) { margin:6px 12px; color:var(--amber); }
 .shell #arrangement > p.muted { margin:8px 12px; font-size:12px; }
 .shell #arrangement .arrangement-blocks { display:flex; flex-wrap:wrap; gap:6px; margin:4px 12px; }
 .shell #arrangement .arrangement-block { padding:4px 10px; border-radius:4px; background:var(--panel); }
