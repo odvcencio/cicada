@@ -82,6 +82,9 @@ func newConfiguredApp(b *backend, options workspaceOptions) (http.Handler, error
 	}
 	s := &studioApp{backend: b, collaboration: newCollaboration(b), notes: notes}
 	s.collaboration.access = notes
+	// Hosts parse the printed address and accept only "/" or the one-use
+	// "/__local/<token>" path (desktop/session.go, editors/vscode/extension.js,
+	// desktop/smoke.py), then open /studio themselves.
 	startupPath := "/"
 	if options.LocalBootstrap && notes != nil && b != nil {
 		if _, err := notes.localOwner("", ""); err != nil && !errors.Is(err, errLocalOwnerSession) {

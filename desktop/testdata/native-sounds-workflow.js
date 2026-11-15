@@ -38,6 +38,7 @@
   const root = () => document.querySelector('#cicada-sounds[data-sounds-ready=true]');
   const button = id => root().querySelector('[data-sound-preview="' + id + '"]');
   const message = () => root().querySelector('[data-sound-status]').textContent;
+  const select = id => root().querySelector('[data-instrument-patch="' + id + '"]').click();
   const active = id => button(id).textContent === 'Stop' && button(id).getAttribute('aria-busy') === 'false';
   async function ready() {
     await wait(() => window.__gosx?.ready && root() && document.querySelector('#studio-shell[data-shell-actions=ready]'), 'sound engine');
@@ -52,6 +53,7 @@
     if (!initial.source.includes('title "Desktop CI"') || audio.options.inputEnabled ||
         String(audio.inventory.backendName || audio.inventory.backend).toLowerCase() !== 'null')
       throw new Error('Use the disposable null-audio smoke fixture with microphone off');
+    select('soft-bell');
     button('soft-bell').focus();
     await new Promise(requestAnimationFrame);
     const sidebar = document.querySelector('#studio-browser'), scroller = sidebar.querySelector('.shell-scroll');
@@ -64,6 +66,7 @@
     editor.value = draft;
     editor.dispatchEvent(new Event('input', {bubbles:true}));
     const navigationCount = navigations;
+    select('warm-pad');
     button('warm-pad').click();
     await wait(() => active('warm-pad'), 'warm pad acknowledgement');
     const opened = receipts.find(r => r.request.action === 'open');
@@ -73,9 +76,9 @@
     if (played.status !== 200 || !played.response.data.active || (await state('transport')).playing)
       throw new Error('Preview did not remain separate from song playback');
     checks.push('native preview acknowledges the factory sound in the song key and tempo');
-    for (const id of ['round-bass', 'silk-pluck', 'soft-bell']) button(id).click();
+    for (const id of ['round-bass', 'silk-pluck', 'soft-bell']) { select(id); button(id).click(); }
     await wait(() => active('soft-bell'), 'latest rapid sound choice');
-    if (root().querySelectorAll('[aria-pressed=true]').length !== 1) throw new Error('Multiple preview selections');
+    if (root().querySelectorAll('[data-sound-preview][aria-pressed=true]').length !== 1) throw new Error('Multiple preview selections');
     checks.push('rapid choices settle on the last selected sound');
     root().querySelector('[data-sound-stop]').click();
     await stopped('Stop acknowledges cancellation and clears the preview');
@@ -87,17 +90,20 @@
     checks.push('listening preserves the mounted editor, unsaved draft, score and history revision');
     losePlayAcknowledgement = true;
     const beforeLostReceipt = receipts.length;
+    select('wide-strings');
     button('wide-strings').click();
     await wait(() => receipts.slice(beforeLostReceipt).some(r => r.request.action === 'play'), 'real play before acknowledgement loss');
     await stopped('failed play returns the sound browser to idle');
     if (!message().includes('could not reach') || !receipts.slice(beforeLostReceipt).some(r => r.request.action === 'stop' && r.status === 200))
       throw new Error('Lost acknowledgement did not produce an acknowledged Stop and actionable error');
     checks.push('a lost play acknowledgement is retired by an acknowledged Stop');
+    select('round-bass');
     button('round-bass').click();
     await wait(() => active('round-bass'), 'Escape preview');
     button('round-bass').focus();
     button('round-bass').dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', code:'Escape', bubbles:true, cancelable:true}));
     await stopped('Escape stops the focused preview');
+    select('silk-pluck');
     button('silk-pluck').click();
     await wait(() => active('silk-pluck'), 'finite phrase');
     await stopped('a complete phrase and release finishes without looping');
@@ -105,6 +111,7 @@
     // Use the real project-file link to dispose and remount the sound engine.
     editor.value = initial.source;
     editor.dispatchEvent(new Event('input', {bubbles:true}));
+    select('wide-strings');
     button('wide-strings').click();
     await wait(() => active('wide-strings'), 'preview before navigation');
     const oldRoot = root();
@@ -118,6 +125,7 @@
         body:JSON.stringify({csrf_token:csrf, action:'play', lease:oldLease, sequence:'1000000', patch:'warm-pad', tempo:'96000', root:'0', scale:'minor'})});
       return response.status === 409;
     }, 'disposed lease refuses late playback');
+    select('poly-brass');
     button('poly-brass').click();
     await wait(() => active('poly-brass'), 'new sound browser after navigation');
     root().querySelector('[data-sound-stop]').click();
@@ -145,12 +153,14 @@
       }
     }
     function submit(form) { form.requestSubmit(form.querySelector('button[type=submit]')); }
-    const patch = document.querySelector('[data-instrument-patch="warm-pad"]');
+    select('warm-pad');
+    const patch = document.querySelector('[data-sound-detail="warm-pad"]');
     patch.querySelector('summary').click();
     fill(patch.querySelector('form'),{newName:'starter-pad',track:'keys'});
     submit(patch.querySelector('form'));
     await saved(source => source.includes('track keys starter-pad'), 'chosen sound added without replacing the song');
-    const alternate = document.querySelector('[data-instrument-patch="wide-strings"]');
+    select('wide-strings');
+    const alternate = document.querySelector('[data-sound-detail="wide-strings"]');
     alternate.querySelector('summary').click();
     fill(alternate.querySelector('form'),{newName:'alternate-pad',track:'otherkeys'});
     submit(alternate.querySelector('form'));
@@ -196,6 +206,7 @@
     checks.push('changing the preview sound stops the previous loop before retargeting');
     partButton().click();
     await wait(() => partButton().textContent === 'Stop', 'part loop with second sound');
+    select('warm-pad');
     button('warm-pad').click();
     await wait(() => active('warm-pad') && partButton().textContent === 'Loop part', 'factory preview supersedes isolated part');
     root().querySelector('[data-sound-stop]').click();

@@ -1,11 +1,13 @@
 package main
 
 import (
+	"html"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -37,7 +39,7 @@ func TestSamplePackFormDefaultsToPCM16AndOffersExact(t *testing.T) {
 	defer app.Close()
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	response, err := client.Get(app.URL + "/?panel=instruments")
+	response, err := client.Get(app.URL + "/?panel=sampler")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,8 +54,16 @@ func TestSamplePackFormDefaultsToPCM16AndOffersExact(t *testing.T) {
 			t.Fatalf("missing pack control %q", text)
 		}
 	}
+	match := regexp.MustCompile(`(?s)<section[^>]*id="sample-packs".*?<input[^>]*name="__gosx_return_to"[^>]*value="([^"]*)"`).FindStringSubmatch(page)
+	if len(match) != 2 {
+		t.Fatal("sample pack return target missing")
+	}
+	target := html.UnescapeString(match[1])
+	if target != "/?panel=sampler" {
+		t.Fatalf("sample pack return target = %q", target)
+	}
 	csrf := tokenFromPage(t, page)
-	form := url.Values{"csrf_token": {csrf}, "catalogURL": {"https://example.org/catalog.json"}, "sha256": {strings.Repeat("a", 64)}, "id": {"grand"}, "__gosx_return_to": {"/?panel=instruments"}}
+	form := url.Values{"csrf_token": {csrf}, "catalogURL": {"https://example.org/catalog.json"}, "sha256": {strings.Repeat("a", 64)}, "id": {"grand"}, "__gosx_return_to": {target}}
 	response = post(t, client, app.URL+"/__actions/sample-pack", form, false, app.URL)
 	if response.StatusCode != 303 || !strings.Contains(body, `"tier":"hq16"`) {
 		t.Fatalf("default download: %d %s", response.StatusCode, body)

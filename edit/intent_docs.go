@@ -668,8 +668,8 @@ var intentDocs = map[string]typeDoc{
 		},
 	},
 	"SetAutomationPoint": {
-		Meaning: "adds or edits one point of a parameter's automation lane (an `automate <path> { ..",
-		Notes:   "}` block). OldAt names the point being moved; it is empty for a new point. Shape is linear, step, smooth, exponential or curve and defaults to linear; Curve is the tension and only applies to curve. A lane that does not exist yet is created.",
+		Meaning: "adds or edits one point of a parameter's automation lane (an `automate <path> { ... }` block)",
+		Notes:   "OldAt names the point being moved; it is empty for a new point. Shape is linear, step, smooth, exponential or curve and defaults to linear; Curve is the tension and only applies to curve. A lane that does not exist yet is created.",
 		Examples: []string{
 			"{\"kind\":\"setautomationpoint\",\"entity\":\"param:bass.cutoff\",\"at\":\"@4.1.1\",\"value\":\"2kHz\",\"shape\":\"smooth\"}",
 			"{\"kind\":\"setautomationpoint\",\"entity\":\"param:bass.cutoff\",\"at\":\"@4.1.1\",\"value\":\"2kHz\",\"shape\":\"linear\"}",

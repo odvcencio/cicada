@@ -47,6 +47,13 @@ const UnifiedImageVersion = 15     // unified chords, schedules, guitar and resi
 const PerformanceImageVersion = 16 // additive independent note gates after the unified payload
 const GestureImageVersion = 17     // additive note-owned controller samples after performance gates
 const SharedImageVersion = 18      // additive shared gesture lanes and note bindings
+
+// LatestImageVersion is the newest image version the decoder reads. Raise it
+// with every new version: TestLatestImageVersionIsTheNewest compares it with
+// every image version constant in this package, and image version 19, which
+// will carry return slots C to H, must first make the TinyGo engine handle
+// engine.Config.Routing (TestNoImageVersionCarriesRoutingYet).
+const LatestImageVersion = SharedImageVersion
 const ChordImageVersion = UnifiedImageVersion
 const qualityImageVersion = 14 // internal graph decoder only; complete image14 is rejected
 const masterSoloImageVersion = 13
@@ -167,6 +174,18 @@ func (r *reader) f64() (float64, error) {
 func Encode(cfg engine.Config) ([]byte, error) {
 	if cfg.TapeA != nil {
 		return nil, imageError("portable images have no tape echo; use a delay")
+	}
+	if cfg.Routing != nil && (len(cfg.Routing.Returns) > 0 || len(cfg.Routing.TrackSends) > 0) {
+		// Image version 19 will carry return slots C to H; until then a
+		// portable image refuses them rather than dropping their sends.
+		names := ""
+		for i, r := range cfg.Routing.Returns {
+			if i > 0 {
+				names += ", "
+			}
+			names += r.Name
+		}
+		return nil, imageError("portable images hold one reverb return until image version 19; this score routes more (" + names + "). Native playback and render play every reverb return")
 	}
 	if len(cfg.LiveParams) != 0 {
 		return nil, imageError("portable images cannot move an authored instrument parameter while it plays")
