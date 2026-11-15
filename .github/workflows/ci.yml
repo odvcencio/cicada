@@ -1127,7 +1127,13 @@ jobs:
     name: Studio browser suites (shard ${{ matrix.shard }}/4)
     needs: [changes, studio-build]
     if: ${{ needs.changes.outputs.studio_browser == 'true' }}
-    runs-on: ubuntu-24.04
+    # The shards run on the tailnet pool (self-hosted runners labelled
+    # tailnet-pool) when the repository variable CI_TAILNET_POOL is "on" and
+    # the code comes from this repository. A pull request from a fork never
+    # runs on a self-hosted machine. Unset the variable to go back to hosted
+    # runners. The shard script brings its own Playwright and Chrome, and
+    # picks a free port, so several shards can share one machine.
+    runs-on: ${{ (vars.CI_TAILNET_POOL == 'on' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON('["self-hosted","linux","x64","tailnet-pool"]') || 'ubuntu-24.04' }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -1933,7 +1939,9 @@ jobs:
     # a fork must not run it. The machine has one runner: every queued run waits
     # for the one before it, so this job holds only the CPU budget, which a
     # hosted runner cannot measure (it measured 1.296 ms against 0.67 ms).
-    runs-on: [self-hosted, linux, x64]
+    # The reference machine only: these jobs measure CPU and timing, so they
+    # must not land on a pool runner.
+    runs-on: [self-hosted, linux, x64, buildbox]
     timeout-minutes: 20
     env:
       GOWORK: off
@@ -1977,7 +1985,9 @@ jobs:
     if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.soak)
     # Its CPU gate (0.67 ms per callback) is measured on the reference machine.
     # A hosted runner measured 1.296 ms, so this job stays on the self-hosted one.
-    runs-on: [self-hosted, linux, x64]
+    # The reference machine only: these jobs measure CPU and timing, so they
+    # must not land on a pool runner.
+    runs-on: [self-hosted, linux, x64, buildbox]
     timeout-minutes: 55
     env:
       GOWORK: off
