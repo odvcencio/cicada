@@ -433,14 +433,14 @@ It checks the original revision; it cannot overwrite another editor's save.
 **Live** plays the **Pitched track** you choose from the A/W/S/E/D/F/T/G/Y/H/U/J/K
 keys or the onscreen keyboard. That list offers the piano, the modeled
 keyboards, authored instrument tracks, and acid tracks; audio and sampler tracks
-are not offered. The drum pads play the **Drum track** you choose and use General MIDI
-notes. Press **Play** first; changing tracks, leaving the panel, or losing focus
+are not offered. The named drum pads play the **Drum track** you choose and show their General MIDI
+note numbers. The live input header shows the selected destinations and MIDI state. Press **Play** first; changing tracks, leaving the panel, or losing focus
 releases held notes, and **Release notes** releases them on demand.
 The launch matrix queues scenes or individual slots with the selected timing;
 mint marks a playing slot and amber marks a queued slot. Its forms also work
 without browser scripting.
 
-**Enable MIDI** connects the macOS app directly to CoreMIDI when Web MIDI is
+Open **MIDI setup** to enable MIDI, choose expression and launch timing, learn mappings, or bind score ports to devices. **Enable MIDI** connects the macOS app directly to CoreMIDI when Web MIDI is
 unavailable. Inputs appear automatically when connected and disappear when
 unplugged; their held notes are released. **Disconnect MIDI** closes the input
 port. Leaving Live or closing the app also closes it. Bluetooth MIDI inputs

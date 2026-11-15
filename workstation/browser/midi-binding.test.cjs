@@ -34,6 +34,7 @@ test('Studio binds a portable MIDI port without editing the score', {timeout:180
   await page.goto(new URL('/studio?tab=session', startup).href);
   await page.locator('#studio-shell[data-shell-actions=ready]').waitFor({timeout:90000});
   await page.waitForFunction(() => [...document.querySelectorAll('[data-live-mappings] li')].some(e => e.textContent.includes('Old Keyboard')), null, {timeout:30000});
+  await page.locator('[data-live-midi-setup]').evaluate(details => { details.open = true; });
   await page.locator('[data-live-control=midi]').click();
   await page.waitForFunction(() => [...document.querySelector('[data-live-device]').options].some(e => e.value === 'New Keyboard'), null, {timeout:30000});
   await page.locator('[data-live-device]').selectOption('New Keyboard');
@@ -63,6 +64,7 @@ test('Studio binds a portable MIDI port without editing the score', {timeout:180
   }
   await page.reload();
   await page.waitForFunction(() => [...document.querySelectorAll('[data-live-mappings] li')].some(e => e.textContent.includes('New Keyboard')), null, {timeout:60000});
+  await page.locator('[data-live-midi-setup]').evaluate(details => { details.open = true; });
   await page.locator('[data-live-control=midi]').click();
   await page.waitForFunction(() => document.querySelector('[data-live-status]')?.textContent.includes('MIDI enabled'));
   await page.evaluate(() => __sendMIDI(0xb0, 74, 127));

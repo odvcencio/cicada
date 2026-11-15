@@ -783,6 +783,7 @@ func (u *liveUI) bindControls() {
 	})
 	button("midi", u.enableMIDI)
 	button("learn", func() {
+		u.query("[data-live-midi-setup]").Set("open", true)
 		u.closeNotes()
 		u.learning = true
 		u.status.Set("Waiting for a MIDI CC or note for " + u.selected("[data-live-target]"))
@@ -801,6 +802,13 @@ func (u *liveUI) storage() js.Value {
 	return js.Global().Get("localStorage")
 }
 func (u *liveUI) refreshPatterns() {
+	for _, pair := range [][2]string{{"[data-live-acid]", "[data-live-destination-pitched]"}, {"[data-live-drums]", "[data-live-destination-drums]"}} {
+		name := u.selected(pair[0])
+		if name == "" {
+			name = "—"
+		}
+		u.query(pair[1]).Set("textContent", name)
+	}
 	document := js.Global().Get("document")
 	for _, pair := range [][2]string{{"[data-live-acid]", "[data-live-pattern]"}, {"[data-live-drums]", "[data-live-drumpattern]"}} {
 		selectEl := u.query(pair[1])
@@ -1015,6 +1023,7 @@ func awaitPromise(ctx context.Context, p js.Value) (js.Value, error) {
 	}
 }
 func (u *liveUI) enableMIDI() {
+	u.query("[data-live-midi-setup]").Set("open", true)
 	if u.nativeMIDICancel != nil {
 		u.nativeMIDICancel()
 		u.releaseMIDIPrefix("midi:native:")
@@ -1050,6 +1059,7 @@ func (u *liveUI) enableMIDI() {
 			return
 		}
 		u.midi = access
+		u.query("[data-live-midi-state]").Set("textContent", "MIDI ready")
 		u.bindMIDI()
 		u.on(access, "statechange", func(js.Value) { u.bindMIDI() })
 	}()

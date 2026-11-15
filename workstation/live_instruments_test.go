@@ -70,8 +70,23 @@ song { main }
 			t.Fatalf("non-pitched target %s offered as keys", track)
 		}
 	}
-	if !strings.Contains(page, "Pitched track") || !strings.Contains(page, "Pitched pattern") {
-		t.Fatal("live labels still imply only acid is playable")
+
+	for _, want := range []string{`aria-label="Kick, General MIDI drum 36"`, `aria-label="Closed hat, General MIDI drum 42"`, `aria-label="C3, note 48, keyboard a"`, `aria-label="C♯3, note 49, keyboard w"`} {
+		if !strings.Contains(page, want) {
+			t.Errorf("missing accessible label %s", want)
+		}
+	}
+	disclosure := regexp.MustCompile(`(?s)<details[^>]*data-live-midi-setup[^>]*>.*?</details>`).FindString(page)
+	if disclosure == "" || strings.Contains(strings.SplitN(disclosure, ">", 2)[0], " open") || !strings.Contains(disclosure, "MIDI setup") {
+		t.Error("MIDI setup must be closed by default")
+	}
+	if strings.Contains(disclosure, "Release notes") || !strings.Contains(page, "Release notes") {
+		t.Error("Release notes must be outside MIDI setup")
+	}
+	for _, label := range []string{"Pitched track", "Pitched pattern", "Drum track", "Drum pattern"} {
+		if !strings.Contains(page, `aria-label="`+label+`"`) {
+			t.Errorf("missing accessible target name %s", label)
+		}
 	}
 }
 
@@ -110,5 +125,36 @@ func TestGoSXLiveIncludesEveryModeledKeyboard(t *testing.T) {
 				t.Fatal("modeled keys missing or drums offered as pitched target")
 			}
 		})
+	}
+}
+
+func TestGoSXLiveWithoutDrumsHasNoPads(t *testing.T) {
+	score, ds := notation.Parse([]byte("cicada 2\ntrack keys piano {}\npattern n notes { c4 . }\nscene main { keys=n }\nsong { main }\n"))
+	if len(ds) != 0 {
+		t.Fatal(ds)
+	}
+	p, ds := project.FromScore(score)
+	if len(ds) != 0 {
+		t.Fatal(ds)
+	}
+	audio := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/workspace" {
+			_ = json.NewEncoder(w).Encode(workspace{Revision: "current", Valid: true, Project: p})
+		} else {
+			_, _ = io.WriteString(w, `{}`)
+		}
+	}))
+	defer audio.Close()
+	b, _ := newBackend(audio.URL)
+	handler, err := newApp(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := httptest.NewServer(handler)
+	defer app.Close()
+	page := getPage(t, app.Client(), app.URL+"/?panel=live")
+	if strings.Contains(page, "data-live-drum=") {
+		t.Fatal("drum pads rendered without a drum track")
 	}
 }

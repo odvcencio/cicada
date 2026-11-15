@@ -43,6 +43,7 @@ test('MIDI pickup follows the live automated value before taking over', {timeout
   await page.goto(new URL('/studio?tab=session',base).href);
   await page.locator('#studio-shell[data-shell-actions=ready]').waitFor({timeout:90000});
   await page.waitForFunction(() => [...document.querySelectorAll('[data-live-mappings] li')].some(e => e.textContent.includes('Pickup Keyboard')), null, {timeout:30000});
+  await page.locator('[data-live-midi-setup] summary').click();
   await page.locator('[data-live-control=midi]').click();
   await page.waitForFunction(() => document.querySelector('[data-live-status]')?.textContent.includes('MIDI enabled'));
   await page.locator('#transport-form button[value=play]').click();

@@ -185,6 +185,7 @@ test('engine requests time out, fail, refuse, stop at their limit, stream and ab
       return route.continue();
     });
     await openLive(page);
+    await page.locator('[data-live-midi-setup] summary').click();
     const reload = async next => {
       mode = next;
       const mark = (await statuses(page)).length;
@@ -252,6 +253,7 @@ test('engine requests time out, fail, refuse, stop at their limit, stream and ab
     await page.addInitScript(() => Object.defineProperty(Navigator.prototype, 'requestMIDIAccess', {configurable: true, value: undefined}));
     await page.route('**/api/midi/input', route => route.continue({url: origin + '/midi'}));
     await openLive(page);
+    await page.locator('[data-live-midi-setup] summary').click();
     const button = page.locator('[data-live-control=midi]');
     const event = (record, value) => record.res.write(JSON.stringify(value) + '\n');
     const devices = name => ({type: 'devices', inputs: [{id: 'stream-' + name, name, epoch: 1}]});
