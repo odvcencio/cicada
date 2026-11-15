@@ -67,6 +67,21 @@ test('sound choice follows phrase editing without replacing drafts',{timeout:240
    await page.waitForFunction(()=>document.querySelector('#detail-tab-automation')?.getAttribute('aria-selected')==='true');
    assert.equal(new URL(page.url()).searchParams.get('dock'),'automation');
   } finally {release();await page.unroute('**/studio?*',hold);}
+  // A local dock choice must not change a scene clip's destination.
+  await page.goto(base.origin+'/studio?tab=arrange&dock=clip&region=center');
+  await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
+  await page.locator('#detail-tab-device').click();
+  await page.waitForFunction(()=>document.querySelector('#detail-tab-device')?.getAttribute('aria-selected')==='true');
+  await page.locator('#arrangement a.timeline-clip[title="main / upper"]').click();
+  await page.waitForFunction(()=>{const q=new URL(location.href).searchParams;return q.get('pattern')==='played'&&q.get('track')==='upper'&&q.get('dock')==='clip';});
+  await page.locator('#detail-panel-clip').waitFor({state:'visible'});
+  assert.equal(await page.locator('#detail-tab-clip').getAttribute('aria-selected'),'true','a clip opened after a local Device tab choice shows the Clip dock');
+  await page.locator('#cicada-pattern-preview[data-sounds-ready=true]').waitFor();
+  await page.locator('[data-pattern-preview-track]').selectOption('keys');
+  await page.waitForFunction(()=>new URL(location.href).searchParams.get('track')==='keys');
+  await page.locator('#arrangement a.timeline-clip[title="carry / upper"]').click();
+  await page.waitForFunction(()=>{const q=new URL(location.href).searchParams;return q.get('pattern')==='played'&&q.get('track')==='upper'&&q.get('scene')===null;});
+  assert.notEqual(await page.locator('[data-scene-open-status]').textContent(),'Save or discard unsaved edits before opening a pattern.');
   for(const [title,track,scene] of [['main / upper','upper','main'],['carry / upper','upper',null],['main / keys','keys','main']]) {
    await page.goto(base.origin+'/studio?tab=arrange&dock=device&region=center');
    await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
