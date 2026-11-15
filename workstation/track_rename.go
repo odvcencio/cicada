@@ -61,10 +61,14 @@ func (s *studioApp) hasRetainedNoteWork(ctx *action.Context) (bool, error) {
 func (s *studioApp) guardRetainedNoteWork(ctx *action.Context) error {
 	pending, err := s.hasRetainedNoteWork(ctx)
 	if err != nil {
-		return err
+		refusal := action.Error(http.StatusUnprocessableEntity, "Saved notes could not be read. The track was not renamed.")
+		refusal.Result.Data = []byte(`{"code":"saved_notes_unreadable"}`)
+		return refusal
 	}
 	if pending {
-		return action.Error(http.StatusConflict, "Commit or discard retained note takes before renaming a track.")
+		refusal := action.Error(http.StatusUnprocessableEntity, "Commit or discard retained note takes before renaming a track.")
+		refusal.Result.Data = []byte(`{"code":"retained_take_pending"}`)
+		return refusal
 	}
 	return nil
 }

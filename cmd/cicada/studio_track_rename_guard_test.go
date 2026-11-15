@@ -37,7 +37,7 @@ func TestTrackRenameRefusesRunningAndPausedTransport(t *testing.T) {
 				body = map[string]any{}
 			}
 			r := studioCall(t, handler, path, body)
-			if r.Code != http.StatusConflict || !strings.Contains(r.Body.String(), "Stop playback") {
+			if r.Code != http.StatusUnprocessableEntity || !strings.Contains(r.Body.String(), "Stop playback") || !strings.Contains(r.Body.String(), "track_identity_busy") {
 				t.Fatalf("%s %s: %d %s", state, path, r.Code, r.Body.String())
 			}
 		}
@@ -55,7 +55,7 @@ func TestTrackRenameRefusesRunningAndPausedTransport(t *testing.T) {
 		t.Fatal("rename did not commit")
 	}
 	protected := studioCall(t, handler, "/api/undo", studioEdit{Revision: studioRevision(changed), ProtectTrackIdentities: true})
-	if protected.Code != http.StatusConflict || !strings.Contains(protected.Body.String(), "unsaved performances") {
+	if protected.Code != http.StatusUnprocessableEntity || !strings.Contains(protected.Body.String(), "retained_take_track_required") {
 		t.Fatalf("protected history: %d %s", protected.Code, protected.Body.String())
 	}
 	entry, ok := s.history.undoEntry()
@@ -74,7 +74,7 @@ func TestTrackRenameRefusesRunningAndPausedTransport(t *testing.T) {
 	}
 	for _, route := range []string{"/api/undo", fmt.Sprintf("/api/history/%d/revert", entry.ID)} {
 		r = studioCall(t, handler, route, studioEdit{Revision: studioRevision(changed)})
-		if r.Code != http.StatusConflict || !strings.Contains(r.Body.String(), "Stop playback") {
+		if r.Code != http.StatusUnprocessableEntity || !strings.Contains(r.Body.String(), "Stop playback") || !strings.Contains(r.Body.String(), "track_identity_busy") {
 			t.Fatalf("%s while playing: %d %s", route, r.Code, r.Body.String())
 		}
 	}
@@ -91,7 +91,7 @@ func TestTrackRenameRefusesRunningAndPausedTransport(t *testing.T) {
 	}
 	command("play")
 	r = studioCall(t, handler, "/api/redo", studioEdit{Revision: studioRevision([]byte(studioMixerScore))})
-	if r.Code != http.StatusConflict || !strings.Contains(r.Body.String(), "Stop playback") {
+	if r.Code != http.StatusUnprocessableEntity || !strings.Contains(r.Body.String(), "Stop playback") {
 		t.Fatalf("redo while playing: %d %s", r.Code, r.Body.String())
 	}
 	command("stop")
@@ -120,13 +120,77 @@ func TestTrackRenameRefusesRunningAndPausedTransport(t *testing.T) {
 	}
 }
 
-func TestTrackIdentityComparisonDetectsSwappedNames(t *testing.T) {
+func TestHistoryTrackIdentityComparison(t *testing.T) {
 	before := &project.Project{Tracks: []project.Track{{ID: "bass"}, {ID: "lead"}}}
-	after := &project.Project{Tracks: []project.Track{{ID: "lead"}, {ID: "bass"}}}
-	if sameTrackIdentities(before, after) {
-		t.Fatal("swapping names must not appear identity-preserving")
+	for _, tc := range []struct {
+		name           string
+		after          *project.Project
+		removed, added bool
+	}{
+		{"unchanged", before, false, false},
+		{"reorder only", &project.Project{Tracks: []project.Track{{ID: "lead"}, {ID: "bass"}}}, false, false},
+		{"remove A and add B", &project.Project{Tracks: []project.Track{{ID: "low"}, {ID: "lead"}}}, true, true},
+		{"rename A and add C", &project.Project{Tracks: []project.Track{{ID: "low"}, {ID: "lead"}, {ID: "vox"}}}, true, true},
+		{"add only", &project.Project{Tracks: []project.Track{{ID: "bass"}, {ID: "lead"}, {ID: "vox"}}}, false, true},
+		{"remove only", &project.Project{Tracks: []project.Track{{ID: "bass"}}}, true, false},
+		{"missing", nil, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			removed, added := historyTrackChanges(before, tc.after)
+			if removed != tc.removed || added != tc.added {
+				t.Fatalf("got removed=%v added=%v, want %v %v", removed, added, tc.removed, tc.added)
+			}
+		})
 	}
-	if !sameTrackIdentities(before, before) {
-		t.Fatal("unchanged identities must compare equal")
+}
+
+func TestHistoryUndoAddedTrackWhilePlaying(t *testing.T) {
+	isolateState(t)
+	s, handler, path := proposalFixture(t, studioMixerScore)
+	s.transport.audioBackend = "null"
+	if r := studioCall(t, handler, "/api/transport", map[string]string{"action": "play"}); r.Code != http.StatusOK {
+		t.Fatalf("play: %d %s", r.Code, r.Body.String())
+	}
+	defer studioCall(t, handler, "/api/transport", map[string]string{"action": "stop"})
+	env := edit.Envelope{Version: 1, Revision: studioRevision([]byte(studioMixerScore)), Intents: []edit.Intent{&edit.AddAudioTrack{Name: "vox"}}}
+	if r := studioCall(t, handler, "/api/intents", env); r.Code != http.StatusOK {
+		t.Fatalf("add: %d %s", r.Code, r.Body.String())
+	}
+	current, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := studioCall(t, handler, "/api/undo", studioEdit{Revision: studioRevision(current), ProtectTrackIdentities: true}); r.Code != http.StatusUnprocessableEntity || !strings.Contains(r.Body.String(), "retained_take_track_required") {
+		t.Fatalf("protected undo add: %d %s", r.Code, r.Body.String())
+	}
+	if r := studioCall(t, handler, "/api/undo", studioEdit{Revision: studioRevision(current)}); r.Code != http.StatusOK {
+		t.Fatalf("undo add: %d %s", r.Code, r.Body.String())
+	}
+	if current, err = os.ReadFile(path); err != nil || string(current) != studioMixerScore {
+		t.Fatalf("undo did not restore score: %v %s", err, current)
+	}
+}
+
+func TestHistoryUndoInvalidExternalScoreWhilePlaying(t *testing.T) {
+	isolateState(t)
+	s, handler, path := proposalFixture(t, studioMixerScore)
+	s.transport.audioBackend = "null"
+	if r := studioCall(t, handler, "/api/transport", map[string]string{"action": "play"}); r.Code != http.StatusOK {
+		t.Fatalf("play: %d %s", r.Code, r.Body.String())
+	}
+	defer studioCall(t, handler, "/api/transport", map[string]string{"action": "stop"})
+	broken := []byte(studioMixerScore + "\ntrack ???\n")
+	if err := os.WriteFile(path, broken, 0600); err != nil {
+		t.Fatal(err)
+	}
+	// The last good project is stale; the stream still plays the original IDs.
+	s.mu.Lock()
+	s.lastGoodProject = &project.Project{Tracks: []project.Track{{ID: "stale"}}}
+	s.mu.Unlock()
+	if r := studioCall(t, handler, "/api/undo", studioEdit{Revision: studioRevision(broken)}); r.Code != http.StatusOK {
+		t.Fatalf("undo invalid score: %d %s", r.Code, r.Body.String())
+	}
+	if current, err := os.ReadFile(path); err != nil || string(current) != studioMixerScore {
+		t.Fatalf("undo did not restore score: %v %s", err, current)
 	}
 }

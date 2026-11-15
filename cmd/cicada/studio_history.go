@@ -614,20 +614,41 @@ func (s *studio) commitMutationLocked(edit studioEdit, current []byte, mutation 
 			return fail(http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
 		}
 	}
-	// Undo/Redo/revert may restore a renamed (or removed) track without an
+	// Undo/Redo/revert may restore a renamed track without an
 	// intent envelope. Compare the actual compiled transition, including
 	// auxiliary files, before allowing it while a live stream exists.
 	if (historyKind == studioHistoryWriteUndo || historyKind == studioHistoryWriteRedo || historyKind == studioHistoryWriteRevert) && (s.trackIdentityBusy() || edit.ProtectTrackIdentities) {
-		before, err := studioCompile(s.path, current, nil)
-		if err != nil {
-			return fail(http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
+		// s.mu is held; transport commands take the locks in the same order.
+		// Snapshot the playing tracks under transport.mu because poll replaces livePlan.
+		var playing *project.Project
+		s.transport.mu.Lock()
+		if s.transport.stream != nil && s.transport.livePlan != nil && s.transport.livePlan.project != nil {
+			playing = &project.Project{Tracks: append([]project.Track(nil), s.transport.livePlan.project.Tracks...)}
 		}
-		if !sameTrackIdentities(before, p) {
-			message := "Stop playback and finish recording before changing track names through history."
-			if edit.ProtectTrackIdentities {
-				message = "Finish or discard unsaved performances and recordings before changing track names through history."
+		s.transport.mu.Unlock()
+		var before *project.Project
+		if playing == nil || edit.ProtectTrackIdentities {
+			var err error
+			before, err = studioCompile(s.path, current, nil)
+			if err != nil {
+				before = playing
+				if before == nil {
+					before = s.lastGoodProject
+				}
 			}
-			return fail(http.StatusConflict, map[string]any{"error": message})
+		}
+		if edit.ProtectTrackIdentities {
+			removed, _ := historyTrackChanges(before, p)
+			if removed {
+				return fail(http.StatusUnprocessableEntity, map[string]any{"error": "Commit or discard unsaved performances before removing or renaming tracks through history.", "code": "retained_take_track_required"})
+			}
+		}
+		if playing != nil {
+			before = playing
+		}
+		removed, added := historyTrackChanges(before, p)
+		if removed && added {
+			return fail(http.StatusUnprocessableEntity, map[string]any{"error": "Stop playback and finish recording before changing track names through history.", "code": "track_identity_busy"})
 		}
 	}
 	latest, err := os.ReadFile(s.path)

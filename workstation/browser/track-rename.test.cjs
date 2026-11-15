@@ -58,11 +58,10 @@ test('track rename updates project references, guards conflicts, and is one Undo
   await page.evaluate(()=>__sendRenameMIDI(0x80,60,0)); assert.equal((await released).status(),200,'note-off must reach the playing track');
   const blocked=page.waitForResponse(response=>response.url().includes('/__actions/track-rename'));
   await form.getByRole('button',{name:'Rename track'}).click();
-  assert.equal((await blocked).status(),409,'playing transport must refuse rename');
+  assert.equal((await blocked).status(),422,'playing transport must refuse rename');
   await until(async()=>/Stop playback and finish recording before renaming/i.test(await page.locator('body').innerText()),'playing refusal not shown');
   await page.locator('#transport-form button[value=stop]').click();
   await until(async()=>!(await (await page.request.get(new URL('/api/transport',origin).href)).json()).playing,'transport did not stop');
-  const retry=page.locator('[data-workspace-retry]'); if(await retry.isVisible()) { await retry.click(); await until(async()=>!(await retry.isVisible()),'refresh did not finish'); }
   await ready();
   // A score draft must remain intact while the rename is applied.
   if (!(await page.locator('#studio-code > details').evaluate(node=>node.open))) await page.locator('.shell-pane-toggle[data-pane=code][data-pane-action=show]').click();
@@ -97,8 +96,8 @@ test('track rename updates project references, guards conflicts, and is one Undo
   await page.locator('#view-tab-arrange').click();
   const protectedUndo=page.waitForResponse(response=>response.url().includes('/__actions/undo'));
   await page.locator('#undo-form button[type=submit]').click();
-  assert.equal((await protectedUndo).status(),409,'unfinished take must block track-changing history');
-  await until(async()=>/Finish or discard unsaved performances and recordings before changing track names through history/i.test(await page.locator('body').innerText()),'unfinished take refusal not shown');
+  assert.equal((await protectedUndo).status(),422,'unfinished take must block track-changing history');
+  await until(async()=>/Commit or discard unsaved performances before removing or renaming tracks through history/i.test(await page.locator('body').innerText()),'unfinished take refusal not shown');
   assert.ok(fs.readFileSync(file,'utf8').includes('track low acid'));
   await page.locator('#view-tab-session').click();
   await page.locator('[data-live-control=finish]').click();
@@ -110,12 +109,10 @@ test('track rename updates project references, guards conflicts, and is one Undo
   await retainedForm.getByLabel('New name for low').fill('lower');
   const retainedRename=page.waitForResponse(response=>response.url().includes('/__actions/track-rename'));
   await retainedForm.getByRole('button',{name:'Rename track'}).click();
-  assert.equal((await retainedRename).status(),409,'retained take must block another track rename');
-  const retainedRetry=page.locator('[data-workspace-retry]');
-  if (await retainedRetry.isVisible()) { await retainedRetry.click(); await until(async()=>!(await retainedRetry.isVisible()),'refresh after retained rename did not finish'); }
+  assert.equal((await retainedRename).status(),422,'retained take must block another track rename');
   const retainedUndo=page.waitForResponse(response=>response.url().includes('/__actions/undo'));
   await page.locator('#undo-form button[type=submit]').click();
-  assert.equal((await retainedUndo).status(),409,'retained take must block track-changing history');
+  assert.equal((await retainedUndo).status(),422,'retained take must block track-changing history');
   await page.locator('#view-tab-session').click();
   await page.locator('.note-preview button[value=discard]').click();
   await page.locator('.note-preview').waitFor({state:'hidden'});
@@ -144,6 +141,12 @@ test('track rename updates project references, guards conflicts, and is one Undo
   await invalid.getByRole('button',{name:'Rename track'}).click();
   assert.equal((await duplicateResponse).status(),422);
   await until(async()=>/already|taken|exists/i.test(await page.locator('body').innerText()),'duplicate name refusal not shown');
+  assert.equal(fs.readFileSync(file,'utf8'),entry); assert.equal(fs.readFileSync(part,'utf8'),secondary);
+  await invalid.getByLabel('New name for bass').fill('bad name');
+  const invalidResponse=page.waitForResponse(response=>response.url().includes('/__actions/track-rename'));
+  await invalid.getByRole('button',{name:'Rename track'}).click();
+  assert.equal((await invalidResponse).status(),422);
+  await until(async()=>/choose a lowercase track name/i.test(await page.locator('body').innerText()),'invalid name refusal not shown');
   assert.equal(fs.readFileSync(file,'utf8'),entry); assert.equal(fs.readFileSync(part,'utf8'),secondary);
   // A secondary source changed after form capture must never be overwritten.
   const external=secondary+'// external edit\r\n'; let intercepted=false;

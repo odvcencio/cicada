@@ -199,7 +199,7 @@ func (s *studioApp) fileHistory(command string) action.Handler {
 		}
 		pending, err := s.hasRetainedNoteWork(ctx)
 		if err != nil {
-			return err
+			pending = true
 		}
 		path := "/api/" + command
 		if ctx.FormData["file"] != "" {
@@ -587,7 +587,7 @@ func (s *studioApp) actions() map[string]action.Handler {
 			}
 			pending, err := s.hasRetainedNoteWork(ctx)
 			if err != nil {
-				return err
+				pending = true
 			}
 			id, err := strconv.ParseUint(ctx.FormData["id"], 10, 64)
 			if err != nil || id == 0 {

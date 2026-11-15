@@ -400,7 +400,7 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 		}
 	}
 	if err := s.trackRenameGuard(env); err != nil {
-		studioJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
+		studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error(), "code": "track_identity_busy"})
 		return
 	}
 	env.Version, env.Revision = edits.EnvelopeVersion, edit.Revision
@@ -635,7 +635,7 @@ func (s *studio) acceptProposal(w http.ResponseWriter, r *http.Request) {
 	commitEnvelope := proposal.Envelope
 	commitEnvelope.DryRun = false
 	if err := s.trackRenameGuard(commitEnvelope); err != nil {
-		studioJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
+		studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error(), "code": "track_identity_busy"})
 		return
 	}
 	if staged.mixer {

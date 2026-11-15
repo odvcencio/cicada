@@ -38,14 +38,23 @@ func (s *studio) trackIdentityBusy() bool {
 	return busy || s.captureID != "" || s.captureInstrument
 }
 
-func sameTrackIdentities(a, b *project.Project) bool {
-	if a == nil || b == nil || len(a.Tracks) != len(b.Tracks) {
-		return false
+func historyTrackChanges(a, b *project.Project) (removed, added bool) {
+	if a == nil || b == nil {
+		return false, false
 	}
-	for i := range a.Tracks {
-		if a.Tracks[i].ID != b.Tracks[i].ID {
-			return false
-		}
+	oldIDs := make(map[string]bool, len(a.Tracks))
+	newIDs := make(map[string]bool, len(b.Tracks))
+	for _, track := range a.Tracks {
+		oldIDs[track.ID] = true
 	}
-	return true
+	for _, track := range b.Tracks {
+		newIDs[track.ID] = true
+	}
+	for id := range oldIDs {
+		removed = removed || !newIDs[id]
+	}
+	for id := range newIDs {
+		added = added || !oldIDs[id]
+	}
+	return removed, added
 }
