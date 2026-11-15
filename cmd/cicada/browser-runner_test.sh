@@ -18,6 +18,7 @@
 #              Chrome's group but never the bare PID.
 #   helper     as crashed, but Chrome leaves a helper process in its group:
 #              the cleanup must still stop the helper.
+#   stubborn-helper  as helper, but the helper ignores TERM and needs KILL.
 #   hup        the runner gets SIGHUP while the go test runs. bash does not
 #              trap HUP, so the cleanup runs while "jobs -rp" lists the go test
 #              pipeline next to Chrome; it must still stop Chrome, and the
@@ -49,7 +50,7 @@ finish() {
 }
 trap finish EXIT
 
-alive() { [[ "$1" =~ ^[1-9][0-9]*$ ]] && kill -0 "$1" 2>/dev/null; }
+alive() { [[ "$1" =~ ^[1-9][0-9]*$ ]] && kill -0 "$1" 2>/dev/null && [[ $(ps -o stat= -p "$1") != *Z* ]]; }
 
 run_case() {
   local name=$1 delay=$2 dir="$work/$1"
@@ -64,9 +65,10 @@ EOF
   # it first starts a helper that stays in its process group; in the stubborn
   # case it ignores TERM (an ignored signal stays ignored across exec).
   local chrome_end='exec sleep 300' chrome_helper=''
-  if [[ "$name" == crashed || "$name" == helper ]]; then chrome_end='exec sleep 0.5'; fi
+  if [[ "$name" == crashed || "$name" == helper || "$name" == stubborn-helper ]]; then chrome_end='exec sleep 0.5'; fi
   if [[ "$name" == stubborn ]]; then chrome_end="trap '' TERM; exec sleep 300"; fi
   if [[ "$name" == helper ]]; then chrome_helper="sleep 300 & echo \$! >\"$dir/helper.pid\""; fi
+  if [[ "$name" == stubborn-helper ]]; then chrome_helper="(trap '' TERM; exec sleep 300) & echo \$! >\"$dir/helper.pid\""; fi
   cat >"$dir/bin/chrome" <<EOF
 #!/bin/sh
 case " \$* " in *" --version "*) echo 'stand-in Chrome'; exit 0 ;; esac
@@ -85,7 +87,7 @@ EOF
   # bash reaps Chrome before the cleanup runs. In the hup case it marks that
   # it started and runs long enough for the HUP to arrive during it.
   case "$name" in
-    crashed | helper) printf '#!/bin/sh\nsleep 1\necho "ok  stand-in go test"\n' >"$dir/bin/go" ;;
+    crashed | helper | stubborn-helper) printf '#!/bin/sh\nsleep 1\necho "ok  stand-in go test"\n' >"$dir/bin/go" ;;
     hup) printf '#!/bin/sh\n: >"%s/go.started"\nsleep 5\necho "ok  stand-in go test"\n' "$dir" >"$dir/bin/go" ;;
     *) printf '#!/bin/sh\necho "ok  stand-in go test"\n' >"$dir/bin/go" ;;
   esac
@@ -133,6 +135,8 @@ EOF
   # bare PID, which may belong to another process by then.
   if [[ ("$name" == crashed || "$name" == helper) && -s "$dir/kill.log" ]]; then
     bare=$(grep -v -x -e "kill -TERM -- -${chrome:-none}" "$dir/kill.log" || true)
+  elif [[ "$name" == stubborn-helper && -s "$dir/kill.log" ]]; then
+    bare=$(grep -v -x -e "kill -TERM -- -${chrome:-none}" -e "kill -KILL -- -${chrome:-none}" "$dir/kill.log" || true)
   fi
 
   if [[ "$limit" == 124 ]]; then
@@ -153,7 +157,7 @@ EOF
   elif [[ -n "$helper" ]] && alive "$helper"; then
     echo "FAIL $name: the crashed Chrome's helper (PID $helper) outlived browser-runner.sh" >&2
     failed=1
-  elif [[ "$name" == stubborn ]] && ! grep -q -- "-KILL" "$dir/kill.log" 2>/dev/null; then
+  elif [[ ("$name" == stubborn || "$name" == stubborn-helper) ]] && ! grep -q -- "-KILL" "$dir/kill.log" 2>/dev/null; then
     echo "FAIL $name: browser-runner.sh never sent KILL to a Chrome that ignores TERM" >&2
     failed=1
   elif [[ "$status" != "$expected" ]]; then
@@ -169,6 +173,7 @@ run_case ordinary 0
 run_case early 0.5
 run_case crashed 0
 run_case helper 0
+run_case stubborn-helper 0
 run_case hup 0
 run_case stubborn 0
 exit "$failed"

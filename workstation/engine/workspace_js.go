@@ -466,6 +466,12 @@ func (u *workspaceUI) submit(event js.Value) {
 			u.status.Set("Studio is updating. Check the tempo step and submit again.")
 			return
 		}
+		if u.edits > 0 && workspaceActionPath(workspaceAttr(form, "action")) == "/__actions/arrange" {
+			workspaceStop(event)
+			u.statusGeneration++
+			u.status.Set("The arrangement is still saving. Try again.")
+			return
+		}
 		if u.shellHolding(form) {
 			// One hold per form: a second click while it waits does nothing.
 			workspaceStop(event)
@@ -480,9 +486,9 @@ func (u *workspaceUI) submit(event js.Value) {
 		domDrop(form, "data-workspace-updated")
 		// Transport commands carry no score revision check and never wait.
 		if region := domCall(form, "closest", "[data-update-region]"); strings.EqualFold(workspaceAttr(form, "method"), "post") && workspaceAttr(form, "id") != "transport-form" && workspacePresent(region) && (domHas(region, "data-region-stale") || u.edits > 0 && !shellCaptures(form, submitter)) && !domHas(region, "data-region-reload") && !shellHeld(region) {
-			// Only a stale region means the arrangement itself changed; an edit that is
-			// merely in flight takes the ordinary path below.
-			if domHas(region, "data-region-stale") && workspaceActionPath(workspaceAttr(form, "action")) == "/__actions/split-placement" {
+			// The split form is captured during an edit; here its region is stale
+			// because the arrangement changed under the form.
+			if workspaceActionPath(workspaceAttr(form, "action")) == "/__actions/split-placement" {
 				workspaceStop(event)
 				u.status.Set("The arrangement changed. Check the refreshed placement before splitting it.")
 				u.refreshStale(regionsVisibleStale)
@@ -1209,11 +1215,15 @@ func (u *workspaceUI) runJob(job workspaceJob) bool {
 		// second time. Re-read canonical state before another edit.
 		u.blocked.Store(true)
 		u.syncHistoryLock()
-		u.clearQueue()
+		dropped := u.clearQueue()
 		if u.shell && !saved {
 			u.restoreAll()
 		}
-		u.status.Set(err.Error() + " Refresh the workspace; your drafts are retained.")
+		message := err.Error() + " Refresh the workspace; your drafts are retained."
+		if u.shell && dropped > 0 {
+			message += fmt.Sprintf(" %d waiting edit(s) were not sent. Make them again.", dropped)
+		}
+		u.status.Set(message)
 		return true
 	}
 	if projection.WriteRevision == "" && (projection.Revision != u.revision.Get() || projection.SourceRevision != u.sourceRevision) {

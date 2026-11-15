@@ -83,8 +83,11 @@ signal_chrome() {
 }
 # Chrome, and any helper left in its group, gets 5 s to exit after TERM, then
 # KILL: a Chrome that ignores TERM would otherwise keep the wait below, and the
-# runner, blocked forever. kill -0 on the group asks only whether it still has
-# members; the same limits as above apply to it.
+# runner, blocked forever. Zombies cannot run or receive signals and may
+# remain in the group until their parent reaps them.
+chrome_group_running() {
+  ps -eo pgid=,stat= | awk -v group="$chrome_pid" '$1 == group && $2 !~ /^Z/ { live = 1 } END { exit !live }'
+}
 chrome_grace=5
 cleanup() {
   trap - EXIT INT TERM
@@ -92,10 +95,10 @@ cleanup() {
     signal_chrome TERM
     local tick
     for ((tick = 0; tick < chrome_grace * 10; tick++)); do
-      if ! chrome_listed && ! kill -0 -- "-$chrome_pid" 2>/dev/null; then break; fi
+      if ! chrome_listed && ! chrome_group_running; then break; fi
       sleep 0.1
     done
-    if chrome_listed || kill -0 -- "-$chrome_pid" 2>/dev/null; then
+    if chrome_listed || chrome_group_running; then
       echo "browser-runner: Chrome (PID $chrome_pid) did not exit within ${chrome_grace} s of TERM; sending KILL" >&2
       signal_chrome KILL
     fi
