@@ -96,6 +96,7 @@ var pathsEngineOnly = map[string]string{
 	"detail/instrument-modulation.cicada": "modulators",
 	"detail/modulators.cicada":            "modulators",
 	"drum-machines/main.cicada":           "an arrangement",
+	"fx/dub-echo-highpass.cicada":         "a tape echo",
 	"keys/sampled/bell_keys.cicada":       "sample packs",
 	"keys/sampled/brass_stab.cicada":      "sample packs",
 	"keys/sampled/clav.cicada":            "sample packs",
@@ -142,6 +143,15 @@ pattern idle { c3 . . . }
 // pathsCases are targeted scores. Each uses only what the direct mixer can
 // render, so both paths run.
 var pathsCases = []pathsCase{
+	{name: "delay highpass scene and automation", source: `fx echo delay { highpass = 300Hz feedback = 0.6 }
+track echoed acid { send echo = 0.7 }
+scene x { echoed = idle echo.highpass = 500Hz }
+scene y { echoed = idle echo.highpass = 800Hz }
+song { x*2 y*2 }
+automate echo.highpass {
+ @1.1.1 300Hz
+ @3.1.1 1200Hz linear
+}`},
 	{name: "slide across a scene switch", source: `pattern ax { . . . . . . . . . . . . . . . 1~ }
 pattern ay { 5 . . . . . . . . . . . . . . . }
 scene x { bass = ax }

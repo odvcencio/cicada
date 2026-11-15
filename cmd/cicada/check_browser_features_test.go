@@ -85,3 +85,22 @@ func TestBrowserCheckNamesEachExtraReverbReturn(t *testing.T) {
 		t.Fatalf("the first reverb or the encoder's refusal was reported:\n%s", text)
 	}
 }
+
+func TestBrowserFeaturesEchoHighpass(t *testing.T) {
+	for _, kind := range []string{"delay", "tape"} {
+		t.Run(kind, func(t *testing.T) {
+			source := "cicada 2\ntempo 120\nfx echo " + kind + " { highpass = 300Hz }\ntrack lead acid { send echo = 0.2 }\npattern line { 1 . }\nscene main { lead = line }\nsong { main }\n"
+			path := t.TempDir() + "/main.cicada"
+			if err := os.WriteFile(path, []byte(source), 0600); err != nil {
+				t.Fatal(err)
+			}
+			var out, stderr bytes.Buffer
+			if err := checkCommand([]string{"--profile", "browser", path}, &out, &stderr); err == nil {
+				t.Fatal("accepted highpass")
+			}
+			if !strings.Contains(stderr.String(), "effect echo sets highpass") {
+				t.Fatalf("missing highpass: %s", stderr.String())
+			}
+		})
+	}
+}
