@@ -35,6 +35,9 @@ func TestLocalStartupRestoresOwnerAfterCookieLossWithoutPromotingViewer(t *testi
 	if !strings.Contains(page, `id="studio-shell"`) || strings.Contains(page, "/__local/") {
 		t.Fatal("startup did not open the shell with a clean URL")
 	}
+	if legacy := getPage(t, owner, app.URL+"/?panel=live"); strings.Contains(legacy, "/__local/") {
+		t.Fatal("startup capability leaked into the legacy workspace HTML")
+	}
 	if r := noteJSONPost(t, owner, app.URL, "/__actions/note-checkpoint", tokenFromPage(t, page), values); r.StatusCode != 200 {
 		t.Fatal("local owner could not save notes", r.StatusCode)
 	}
@@ -82,15 +85,18 @@ func TestLocalStartupRestoresOwnerAfterCookieLossWithoutPromotingViewer(t *testi
 	}
 }
 
-func TestStartupWithoutLocalBootstrapOpensStudio(t *testing.T) {
+// Without a state folder the workstation prints a plain root address. The
+// hosts that read that line accept only "/" or "/__local/<token>", so the
+// printed path stays "/" while both pages keep working.
+func TestStartupWithoutLocalBootstrapKeepsTheRootAddress(t *testing.T) {
 	app := noteRecoveryApp(t, t.TempDir())
 	startup := app.Config.Handler.(interface{ StartupPath() string }).StartupPath()
-	if startup != "/studio" {
-		t.Fatalf("startup path = %q, want /studio", startup)
+	if startup != "/" {
+		t.Fatalf("startup path = %q, want / (hosts reject any other printed path)", startup)
 	}
 	client := privateNoteClient()
-	if page := getPage(t, client, app.URL+startup); !strings.Contains(page, `id="studio-shell"`) {
-		t.Fatal("startup did not open the Studio shell")
+	if page := getPage(t, client, app.URL+"/studio"); !strings.Contains(page, `id="studio-shell"`) {
+		t.Fatal("/studio did not open the Studio shell")
 	}
 	if page := getPage(t, client, app.URL+"/?panel=live"); !strings.Contains(page, `id="live"`) {
 		t.Fatal("the legacy panel route is no longer available")
