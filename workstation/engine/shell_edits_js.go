@@ -434,6 +434,7 @@ func (u *workspaceUI) applyRegions(projection workspaceProjection, job workspace
 			}
 			continue
 		}
+		workspaceSetRevisions(wrapper, projection)
 		confirm(wrapper, update.Digest)
 		u.syncHistoryLock()
 	}

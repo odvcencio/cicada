@@ -312,6 +312,101 @@ func (u *workspaceUI) owned(node js.Value) bool {
 	return workspacePresent(node) && u.root.Call("contains", node).Bool()
 }
 
+// Delegated listeners also cover panels replaced by a patch.
+func bindClipToolbar(root js.Value) func() {
+	u := &workspaceUI{root: root}
+	document := js.Global().Get("document")
+	u.listen(document, "keydown", u.clipToolbarKeyDown)
+	u.listen(document, "pointerdown", u.clipToolbarPointerDown)
+	u.listen(document, "click", u.clipToolbarClick)
+	u.listen(document, "toggle", u.clipToolbarToggle)
+	return func() {
+		u.closed.Store(true)
+		for _, event := range u.events {
+			event.target.Call("removeEventListener", event.name, event.callback, true)
+			event.callback.Release()
+		}
+	}
+}
+
+func (u *workspaceUI) clipToolbarKeyDown(event js.Value) {
+	if event.Get("key").String() != "Escape" {
+		return
+	}
+	target := event.Get("target")
+	if !u.owned(target) || target.Get("closest").Type() != js.TypeFunction {
+		return
+	}
+	panel := target.Call("closest", `details[name="clip-toolbar"][open]`)
+	if workspacePresent(panel) {
+		panel.Set("open", false)
+		if summary := panel.Call("querySelector", "summary"); workspacePresent(summary) {
+			summary.Call("focus")
+		}
+		workspaceStop(event)
+	}
+}
+
+func (u *workspaceUI) clipToolbarPointerDown(event js.Value) {
+	target := event.Get("target")
+	if workspacePresent(target) && target.Get("closest").Type() == js.TypeFunction {
+		if workspacePresent(target.Call("closest", `.clip-toolbar, [data-gosx-toast-host]`)) || (u.owned(target) && workspacePresent(target.Call("closest", `#detail-panel-clip a[href$="#pattern-variation"]`))) {
+			return
+		}
+	}
+	panels := u.root.Call("querySelectorAll", `details[name="clip-toolbar"][open]`)
+	for i := 0; i < panels.Length(); i++ {
+		panel := panels.Index(i)
+		if !panel.Call("contains", event.Get("target")).Bool() {
+			panel.Set("open", false)
+		}
+	}
+}
+
+func (u *workspaceUI) clipToolbarClick(event js.Value) {
+	target := event.Get("target")
+	if !u.owned(target) || target.Get("closest").Type() != js.TypeFunction || !workspacePresent(target.Call("closest", `#detail-panel-clip a[href$="#pattern-variation"]`)) {
+		return
+	}
+	variation := u.root.Call("querySelector", "#detail-panel-clip #pattern-variation")
+	if !workspacePresent(variation) {
+		return
+	}
+	panel := variation.Call("closest", "details")
+	if !workspacePresent(panel) {
+		return
+	}
+	panel.Set("open", true)
+	if input := variation.Call("querySelector", `input:not([type]), input[type="text"]`); workspacePresent(input) {
+		input.Call("focus")
+	}
+	workspaceStop(event)
+}
+
+func (u *workspaceUI) clipToolbarToggle(event js.Value) {
+	panel := event.Get("target")
+	if !u.owned(panel) || panel.Get("matches").Type() != js.TypeFunction || !panel.Call("matches", `details[name="clip-toolbar"]`).Bool() || panel.Get("open").Bool() {
+		return
+	}
+	forms := panel.Call("querySelectorAll", "form")
+	for i := 0; i < forms.Length(); i++ {
+		form := forms.Index(i)
+		form.Call("reset")
+		if workspaceAttr(form, "data-gosx-form-state") == "error" {
+			form.Call("setAttribute", "data-gosx-form-state", "idle")
+		}
+		if status := form.Call("querySelector", ".form-status"); workspacePresent(status) {
+			status.Set("textContent", "")
+		}
+	}
+	controls := panel.Call("querySelectorAll", "[data-edited], [data-baseline]")
+	for i := 0; i < controls.Length(); i++ {
+		control := controls.Index(i)
+		control.Call("removeAttribute", "data-edited")
+		control.Call("removeAttribute", "data-baseline")
+	}
+}
+
 func workspaceNative(node js.Value) bool {
 	return node.Call("hasAttribute", "data-gosx-native").Bool() || strings.EqualFold(workspaceAttr(node, "data-gosx-managed"), "false") || strings.EqualFold(workspaceAttr(node, "data-gosx-link"), "false") || strings.EqualFold(workspaceAttr(node, "data-gosx-form"), "false")
 }

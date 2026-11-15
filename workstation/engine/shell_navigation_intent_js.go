@@ -49,6 +49,8 @@ func rememberPendingShellChoice(root, event js.Value) {
 			name = "view"
 		case "$dock":
 			name = "dock"
+		case "$layout.libraryTab":
+			name = "library"
 		}
 		value = workspaceAttr(tab, "data-gosx-tab")
 	}
@@ -97,11 +99,17 @@ func restorePendingShellChoice(host enginewasm.Context, root js.Value) {
 			break
 		}
 	}
-	for name, choices := range map[string][]string{"view": {"arrange", "session", "mixer"}, "dock": {"clip", "device", "automation"}} {
+	for name, choices := range map[string][]string{"view": {"arrange", "session", "mixer"}, "dock": {"clip", "device", "automation"}, "library": {"sounds", "samples", "takes"}} {
 		value := workspaceString(intent, name)
 		for _, allowed := range choices {
 			if value != allowed {
 				continue
+			}
+			if name == "library" {
+				_ = host.SetSignal("$layout.libraryTab", value)
+				url.Get("searchParams").Call("delete", "reveal")
+				url.Get("searchParams").Call("set", "library", value)
+				break
 			}
 			key := name
 			_ = host.SetSignal("$"+name, value)

@@ -109,7 +109,7 @@ func checkArrangeSection(root js.Value) {
 // belong in the URL so saved forms, refreshes and modified clicks keep context.
 func bindShellNavigation(host enginewasm.Context, root js.Value) (func(), error) {
 	var releases []enginewasm.HandleFunc
-	for name, choices := range map[string][]string{"view": {"arrange", "session", "mixer"}, "dock": {"clip", "device", "automation"}} {
+	for name, choices := range map[string][]string{"view": {"arrange", "session", "mixer"}, "dock": {"clip", "device", "automation"}, "layout.libraryTab": {"sounds", "samples", "takes"}} {
 		release, err := host.SubscribeSignal("$"+name, func(raw json.RawMessage) {
 			var value string
 			if json.Unmarshal(raw, &value) != nil || !root.Get("isConnected").Bool() {
@@ -121,6 +121,10 @@ func bindShellNavigation(host enginewasm.Context, root js.Value) (func(), error)
 				}
 				url := shellCurrentURL()
 				key := name
+				if name == "layout.libraryTab" {
+					key = "library"
+					url.Get("searchParams").Call("delete", "reveal")
+				}
 				if name == "view" {
 					key = "tab"
 					root.Call("querySelector", "#studio-center").Call("setAttribute", "data-studio-region", value)
@@ -418,9 +422,14 @@ func revealShellBrowserDestination(host enginewasm.Context, root js.Value) {
 	activation := js.Global().Get("__cicadaRevealActivation")
 	js.Global().Set("__cicadaRevealActivation", js.Undefined())
 	_ = host.SetSignal("$layout.browserOpen", true)
-	_ = host.SetSignal("$layout."+panel.String()+"Open", true)
+	libraryTab := "takes"
+	if panel.String() == "sampler" {
+		libraryTab = "samples"
+	}
+	_ = host.SetSignal("$layout.libraryTab", libraryTab)
 	root.Call("setAttribute", "data-phone-region", "browser")
 	url.Get("searchParams").Call("set", "region", "browser")
+	url.Get("searchParams").Call("set", "library", libraryTab)
 	// The signals persist the user's resulting layout. Consume the instruction
 	// so a later explicit close remains closed after reload.
 	url.Get("searchParams").Call("delete", "reveal")
@@ -433,7 +442,7 @@ func revealShellBrowserDestination(host enginewasm.Context, root js.Value) {
 		if !root.Get("isConnected").Bool() || !document.Get("activeElement").Equal(focus) || workspaceAttr(root, "data-phone-region") != "browser" {
 			return nil
 		}
-		section := root.Call("querySelector", "#browser-"+panel.String()+" > summary")
+		section := root.Call("querySelector", "#library-tab-"+libraryTab)
 		if workspacePresent(section) {
 			section.Call("scrollIntoView", map[string]any{"block": "nearest", "inline": "nearest", "behavior": "auto"})
 			if workspacePresent(activation) && activation.Get("keyboard").Bool() && !activation.Get("focusChanged").Bool() {
@@ -486,6 +495,8 @@ func syncShellLocation(root, url js.Value) {
 			key := "dock"
 			if workspaceAttr(container, "data-gosx-tabs-signal") == "$view" {
 				key = "tab"
+			} else if workspaceAttr(container, "data-gosx-tabs-signal") == "$layout.libraryTab" {
+				key = "library"
 			}
 			target.Get("searchParams").Call("set", key, workspaceAttr(link, "data-gosx-tab"))
 		}
@@ -508,7 +519,7 @@ func syncShellLocation(root, url js.Value) {
 		if !shellContextTarget(window.Get("URL").New(form.Get("action")), url) {
 			continue
 		}
-		for _, key := range []string{"tab", "dock", "region"} {
+		for _, key := range []string{"tab", "dock", "library", "region"} {
 			field := form.Call("querySelector", "input[type=hidden][name="+key+"]")
 			if !workspacePresent(field) {
 				field = window.Get("document").Call("createElement", "input")
@@ -530,7 +541,7 @@ func shellContextTarget(target, current js.Value) bool {
 }
 
 func copyShellContext(target, current js.Value) {
-	for _, key := range []string{"tab", "dock", "region"} {
+	for _, key := range []string{"tab", "dock", "library", "region"} {
 		if key == "region" && !target.Get("searchParams").Call("get", "reveal").IsNull() {
 			continue
 		}
