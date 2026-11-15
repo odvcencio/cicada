@@ -30,7 +30,7 @@ const (
 
 var (
 	shellTabs   = []string{"arrange", "session", "mixer"}
-	shellDocks  = []string{"clip", "device", "automation"}
+	shellDocks  = []string{"clip", "device", "automation", "takes"}
 	shellPhones = []string{"center", "browser", "detail", "code"}
 )
 
@@ -146,7 +146,12 @@ func (p *shellPage) regionContent(id string) (gosx.Node, bool) {
 		), true
 	case "dock-header":
 		clip, track := dockSelection(p.view, p.query)
-		return ui.DockSelection(ui.DockSelectionProps{Selection: clip.name, SelectionDetail: clip.detail, TrackDetail: track}), true
+		// The Takes label names the vocal track it works on; a project with none says only what the tab is.
+		takes := "vocal takes"
+		if vocal := vocalTrack(p.view, p.query.Get("vocalTrack")); vocal != "" {
+			takes = vocal + " · " + takes
+		}
+		return gosx.Fragment(ui.DockSelection(ui.DockSelectionProps{Selection: clip.name, SelectionDetail: clip.detail, TrackDetail: track}), gosx.El("p", gosx.Attrs(gosx.Attr("class", "shell-dock-selection"), gosx.Attr("data-dock-selection", "takes"), gosx.Attr("title", takes)), gosx.El("span", gosx.Text(takes)))), true
 	case "code":
 		return gosx.Fragment(p.panel("code"), p.panel("collaboration")), true
 	}
@@ -162,7 +167,7 @@ func (p *shellPage) regionContent(id string) (gosx.Node, bool) {
 var shellPanelRegions = []struct{ id, panel string }{
 	{"browser-instruments", "instruments"}, {"browser-generate", "generator"}, {"browser-takes", "takes"}, {"browser-sampler", "sampler"},
 	{"center-arrange", "session"}, {"center-session", "live"}, {"center-mixer", "mixer"},
-	{"dock-clip", "patterns"}, {"dock-device", "device"}, {"dock-automation", "automation"},
+	{"dock-clip", "patterns"}, {"dock-device", "device"}, {"dock-automation", "automation"}, {"dock-takes", "vocal-dock"},
 	{"dialog-history", "history"}, {"dialog-audio", "audio"}, {"dialog-export", "export"},
 }
 
@@ -171,7 +176,7 @@ var shellRegionIDs = []string{
 	"project", "transport", "tempo", "actions",
 	"browser-instruments", "browser-generate", "browser-takes", "browser-sampler",
 	"center-arrange", "center-session", "center-mixer",
-	"dock-header", "dock-clip", "dock-device", "dock-automation", "code", "status",
+	"dock-header", "dock-clip", "dock-device", "dock-automation", "dock-takes", "code", "status",
 	"dialog-history", "dialog-audio", "dialog-export",
 }
 
@@ -277,10 +282,17 @@ func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, boo
 		ArrangeHref: shellLink(current, "tab", "arrange"), SessionHref: shellLink(current, "tab", "session"), MixerHref: shellLink(current, "tab", "mixer"),
 		ArrangeShown: tab == "arrange", SessionShown: tab == "session", MixerShown: tab == "mixer",
 	}, centerPanel("arrange"), centerPanel("session"), centerPanel("mixer"))
-	detail := ui.DetailDock(ui.DetailDockProps{
-		ClipHref: shellLink(current, "dock", "clip"), DeviceHref: shellLink(current, "dock", "device"), AutomationHref: shellLink(current, "dock", "automation"),
-		ClipShown: dock == "clip", DeviceShown: dock == "device", AutomationShown: dock == "automation", Height: strconv.Itoa(shellDockHeight),
-	}, p.region("dock-header"), ui.ShellScroll(dockPanel("clip"), dockPanel("device"), dockPanel("automation")))
+
+	// Keep this markup in sync with DetailDock until its generated Go is refreshed.
+	tabs := []gosx.Node{}
+	for _, item := range []struct{ id, label string }{{"clip", "Clip"}, {"device", "Device"}, {"automation", "Automation"}, {"takes", "Takes"}} {
+		tabs = append(tabs, ui.Tab(ui.TabProps{ID: "detail-tab-" + item.id, Value: item.id, Href: shellLink(current, "dock", item.id), Panel: "detail-panel-" + item.id, Selected: dock == item.id}, gosx.Text(item.label)))
+	}
+	detail := gosx.El("section", gosx.Attrs(gosx.Attr("id", "studio-detail"), gosx.Attr("class", "gsx-dock__bottom shell-region"), gosx.Attr("aria-label", "Detail dock")),
+		ui.SplitHandleY(ui.SplitHandleProps{Signal: "$layout.dockHeight", Label: "Resize Detail dock", Min: "120", Max: "640", Value: strconv.Itoa(shellDockHeight)}),
+		gosx.El("div", gosx.Attrs(gosx.Attr("id", "detail-tabs"), gosx.BoolAttr("data-gosx-tabs"), gosx.Attr("data-gosx-tabs-signal", "$dock"), gosx.Attr("class", "shell-tabs")),
+			gosx.El("nav", gosx.Attrs(gosx.Attr("class", "gsx-tabs__list"), gosx.Attr("role", "tablist"), gosx.Attr("aria-orientation", "horizontal"), gosx.Attr("aria-label", "Detail")), gosx.Fragment(tabs...)),
+			p.region("dock-header"), ui.ShellScroll(dockPanel("clip"), dockPanel("device"), dockPanel("automation"), dockPanel("takes"))))
 	code := ui.CodeLens(ui.CodeLensProps{Open: codeOpen, Width: strconv.Itoa(shellCodeWidth)}, p.region("code"))
 	status := ui.StatusBar(p.region("status"))
 
@@ -612,12 +624,12 @@ func shellReturn(r *http.Request) {
 // score can still be repaired and inspected in the shell.
 var shellNeedsScore = map[string]bool{
 	"session": true, "live": true, "mixer": true, "patterns": true, "instruments": true,
-	"generator": true, "takes": true, "sampler": true, "device": true, "automation": true,
+	"vocal-dock": true, "generator": true, "takes": true, "sampler": true, "device": true, "automation": true,
 }
 
 var shellPanelTitles = map[string]string{
 	"session": "Arrange", "live": "Session", "mixer": "Mixer", "patterns": "Clip", "instruments": "Instruments",
-	"generator": "Generate", "takes": "Takes", "sampler": "Sampler", "device": "Device", "automation": "Automation",
+	"vocal-dock": "Takes", "generator": "Generate", "takes": "Takes", "sampler": "Sampler", "device": "Device", "automation": "Automation",
 }
 
 // shellPanel mounts a panel, or a short explanation when the score does not
@@ -640,14 +652,15 @@ func (s *studioApp) shellPanel(ctx *server.Context, v workspace, csrf, name stri
 		// Automation lives in its detail tab in the shell. The standalone
 		// Session panel still renders its editors through panel().
 		timeline := s.session(ctx, v, csrf, ctx.Request.URL.Query().Get("placement"))
-		vocals := s.vocals(ctx, v, csrf)
 		if v.Project.Edition != 2 {
 			return timeline
 		}
 		jump := func(target, label string) gosx.Node {
 			return gosx.El("a", gosx.Attrs(gosx.Attr("href", target), gosx.Attr("data-gosx-native", "true")), gosx.Text(label))
 		}
-		return gosx.Fragment(gosx.El("nav", gosx.Attrs(gosx.Attr("class", "arrange-workspace-nav"), gosx.Attr("aria-label", "Arrange workspaces")), jump("#arrangement", "Song timeline"), jump("#vocals", "Record & comp vocals")), timeline, vocals)
+		return gosx.Fragment(gosx.El("nav", gosx.Attrs(gosx.Attr("class", "arrange-workspace-nav"), gosx.Attr("aria-label", "Arrange workspaces")), jump("#arrangement", "Song timeline"), gosx.El("a", gosx.Attrs(gosx.Attr("href", shellLink(ctx.Request.URL.Query(), "dock", "takes")), gosx.Attr("data-reveal-vocals", ""), gosx.Attr("data-gosx-native", "true")), gosx.Text("Record & comp vocals"))), timeline)
+	case "vocal-dock":
+		return s.vocals(ctx, v, csrf)
 	case "device":
 		return s.deviceDock(ctx, v, csrf)
 	case "automation":

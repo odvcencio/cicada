@@ -269,16 +269,18 @@ type DetailDockProps struct {
 	ClipHref        string
 	DeviceHref      string
 	AutomationHref  string
+	TakesHref       string
 	ClipShown       bool
 	DeviceShown     bool
 	AutomationShown bool
+	TakesShown      bool
 	Height          string
 }
 
 // DetailDock's children are the selection header and the ShellScroll that
-// holds the three tab panels. The page wraps the header in an update region.
+// holds the four tab panels. The page wraps the header in an update region.
 func DetailDock(props DetailDockProps, children ...gosx.Node) gosx.Node {
-	return gosx.El("section", gosx.Attrs(gosx.Attr("id", "studio-detail"), gosx.Attr("class", "gsx-dock__bottom shell-region"), gosx.Attr("aria-label", "Detail dock")), SplitHandleY(SplitHandleProps{Signal: "$layout.dockHeight", Label: "Resize Detail dock", Min: "120", Max: "640", Value: props.Height}), gosx.El("div", gosx.Attrs(gosx.Attr("id", "detail-tabs"), gosx.BoolAttr("data-gosx-tabs"), gosx.Attr("data-gosx-tabs-signal", "$dock"), gosx.Attr("class", "shell-tabs")), gosx.El("nav", gosx.Attrs(gosx.Attr("class", "gsx-tabs__list"), gosx.Attr("role", "tablist"), gosx.Attr("aria-orientation", "horizontal"), gosx.Attr("aria-label", "Detail")), Tab(TabProps{ID: "detail-tab-clip", Value: "clip", Href: props.ClipHref, Panel: "detail-panel-clip", Selected: props.ClipShown}, gosx.Text("Clip")), Tab(TabProps{ID: "detail-tab-device", Value: "device", Href: props.DeviceHref, Panel: "detail-panel-device", Selected: props.DeviceShown}, gosx.Text("Device")), Tab(TabProps{ID: "detail-tab-automation", Value: "automation", Href: props.AutomationHref, Panel: "detail-panel-automation", Selected: props.AutomationShown}, gosx.Text("Automation"))), gosx.Expr(children)))
+	return gosx.El("section", gosx.Attrs(gosx.Attr("id", "studio-detail"), gosx.Attr("class", "gsx-dock__bottom shell-region"), gosx.Attr("aria-label", "Detail dock")), SplitHandleY(SplitHandleProps{Signal: "$layout.dockHeight", Label: "Resize Detail dock", Min: "120", Max: "640", Value: props.Height}), gosx.El("div", gosx.Attrs(gosx.Attr("id", "detail-tabs"), gosx.BoolAttr("data-gosx-tabs"), gosx.Attr("data-gosx-tabs-signal", "$dock"), gosx.Attr("class", "shell-tabs")), gosx.El("nav", gosx.Attrs(gosx.Attr("class", "gsx-tabs__list"), gosx.Attr("role", "tablist"), gosx.Attr("aria-orientation", "horizontal"), gosx.Attr("aria-label", "Detail")), Tab(TabProps{ID: "detail-tab-clip", Value: "clip", Href: props.ClipHref, Panel: "detail-panel-clip", Selected: props.ClipShown}, gosx.Text("Clip")), Tab(TabProps{ID: "detail-tab-device", Value: "device", Href: props.DeviceHref, Panel: "detail-panel-device", Selected: props.DeviceShown}, gosx.Text("Device")), Tab(TabProps{ID: "detail-tab-automation", Value: "automation", Href: props.AutomationHref, Panel: "detail-panel-automation", Selected: props.AutomationShown}, gosx.Text("Automation")), Tab(TabProps{ID: "detail-tab-takes", Value: "takes", Href: props.TakesHref, Panel: "detail-panel-takes", Selected: props.TakesShown}, gosx.Text("Takes"))), gosx.Expr(children)))
 }
 
 type DockSelectionProps struct {

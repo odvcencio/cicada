@@ -399,14 +399,16 @@ type DetailDockProps struct {
 	ClipHref       string
 	DeviceHref     string
 	AutomationHref string
+	TakesHref string
 	ClipShown      bool
 	DeviceShown    bool
 	AutomationShown bool
+	TakesShown bool
 	Height         string
 }
 
 // DetailDock's children are the selection header and the ShellScroll that
-// holds the three tab panels. The page wraps the header in an update region.
+// holds the four tab panels. The page wraps the header in an update region.
 component DetailDock(props: DetailDockProps) {
 	return <section id="studio-detail" class="gsx-dock__bottom shell-region" aria-label="Detail dock">
 		<SplitHandleY Signal="$layout.dockHeight" Label="Resize Detail dock" Min="120" Max="640" Value={props.Height} />
@@ -415,6 +417,7 @@ component DetailDock(props: DetailDockProps) {
 				<Tab ID="detail-tab-clip" Value="clip" Href={props.ClipHref} Panel="detail-panel-clip" Selected={props.ClipShown}>Clip</Tab>
 				<Tab ID="detail-tab-device" Value="device" Href={props.DeviceHref} Panel="detail-panel-device" Selected={props.DeviceShown}>Device</Tab>
 				<Tab ID="detail-tab-automation" Value="automation" Href={props.AutomationHref} Panel="detail-panel-automation" Selected={props.AutomationShown}>Automation</Tab>
+				<Tab ID="detail-tab-takes" Value="takes" Href={props.TakesHref} Panel="detail-panel-takes" Selected={props.TakesShown}>Takes</Tab>
 			</nav>
 			{children}
 		</div>

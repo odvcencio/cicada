@@ -65,6 +65,7 @@ func mountTakes(host enginewasm.Context) (enginewasm.Handle, error) {
 	}
 	releaseCapture := capturePublisher.acquire()
 	lastActive := props.Active
+	releaseUnsaved := holdUnsavedWork("capture:"+root.Get("id").String(), func() bool { return lastActive != "" })
 	captureWatch := signal.Watch(func() {
 		update := nativeCapture.Get()
 		if !update.Ready || closed.Load() {
@@ -149,6 +150,7 @@ func mountTakes(host enginewasm.Context) (enginewasm.Handle, error) {
 		if closed.Swap(true) {
 			return
 		}
+		releaseUnsaved()
 		releaseCapture()
 		captureWatch.Dispose()
 		watch.Dispose()

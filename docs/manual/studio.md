@@ -7,16 +7,14 @@ score files. Its editor, forms, navigation, meters, and live performance use
 GoSX; Tymbal handles native audio devices.
 Changes to patterns, mixer settings, and arrangements write back to the score.
 
-In the desktop app, **Arrange** opens on the song timeline, with vocal recording
-below it. Edition-2 scores have **Song timeline** and **Record & comp vocals**
-links to jump between them.
+In the desktop app, **Arrange** opens on the song timeline, with a **Record & comp vocals** link to the Takes dock for Edition-2 scores.
 **Session** contains the launch matrix and live playing;
 **Mixer** contains mix controls. The left Library has Sounds, Samples, and
 Takes tabs. Search and select a sound to audition it or add it to the song;
 project instruments, preset saving, recording, and Generate are below the sounds.
 Samples opens the sampler. The detail dock's **Clip** tab edits patterns, **Device**
 edits the selected track's sound and processing, and **Automation** contains
-curve and scene-point editors. The **Code** lens shows the score. Older
+curve and scene-point editors. **Takes** contains vocal recording and comping. The **Code** lens shows the score. Older
 screenshots show these tools as standalone panels.
 
 Studio shows **Opening Studio controls…** while its interactive controls load.
@@ -912,7 +910,7 @@ Its gain only changes what you hear. Raw input is retained before monitoring,
 and a period-sized capture queue gives the disk writer at least one second of
 headroom without adding headphone latency.
 
-**Arrange → Record & comp vocals** records across the full song, including
+The detail dock’s **Takes** tab records across the full song, including
 arrange-only scores. The toolbar's **Record** button, **F9**, or
 **Command-Shift-R** on Mac (**Control-Shift-R** elsewhere) reveals these controls.
 When recording is available, the same command starts a take or finishes the

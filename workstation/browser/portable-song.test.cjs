@@ -55,7 +55,7 @@ test(reopening ? 'reopen a portable recording project and reproduce its WAV' : '
     checks.push(label);
   };
   await page.goto(origin.href);
-  await page.goto(new URL('/studio', origin).href);
+  await page.goto(new URL('/studio?dock=takes', origin).href);
   await ready();
   const initial = await read('state'), audio = await read('audio/config');
   assert.ok(initial.valid && initial.source.includes('title "Carry the song"'));
@@ -139,7 +139,7 @@ test(reopening ? 'reopen a portable recording project and reproduce its WAV' : '
   async function frameTakes() {
     await page.locator('#scene-takes').evaluate(node => {
       const pane = node.closest('.shell-scroll');
-      // Leave the section heading below Arrange's sticky navigation.
+      // Bring the scene takes into the dock viewport.
       pane.scrollTop += node.getBoundingClientRect().top - pane.getBoundingClientRect().top - 56;
     });
   }

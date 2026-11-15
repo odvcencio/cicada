@@ -14,12 +14,12 @@ import (
 // Record still submits their ordinary guarded action when recording is allowed.
 func revealVocalWorkspace(ctx context.Context, host enginewasm.Context, root js.Value) bool {
 	vocals := root.Call("querySelector", "#vocals")
-	arrange := root.Call("querySelector", "#view-panel-arrange")
+	arrange := root.Call("querySelector", "#detail-panel-takes")
 	if !workspacePresent(vocals) || !workspacePresent(arrange) {
 		return false
 	}
 	if arrange.Get("hidden").Bool() {
-		if err := host.SetSignal("$view", "arrange"); err != nil {
+		if err := host.SetSignal("$dock", "takes"); err != nil {
 			return false
 		}
 	}
@@ -36,11 +36,11 @@ func revealVocalWorkspace(ctx context.Context, host enginewasm.Context, root js.
 
 	// Phone regions are server-rendered. Keep their URL and navigation links
 	// consistent with the revealed pane so subsequent form returns stay here.
-	root.Call("setAttribute", "data-phone-region", "center")
+	root.Call("setAttribute", "data-phone-region", "detail")
 	url := shellCurrentURL()
-	url.Get("searchParams").Call("set", "region", "center")
-	url.Get("searchParams").Call("set", "tab", "arrange")
-	url.Set("hash", "vocals")
+	url.Get("searchParams").Call("set", "region", "detail")
+	url.Get("searchParams").Call("set", "dock", "takes")
+	url.Set("hash", "")
 	syncShellLocation(root, url)
 	vocals.Call("scrollIntoView", map[string]any{"block": "start", "behavior": "auto"})
 	return true
