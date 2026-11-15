@@ -13,6 +13,9 @@ type Transport struct {
 	pendingTempo int64
 	applyTick    int64
 	meters       MeterMap
+	// The bar that held the tick when Bar last looked: bar barIndex, ticks
+	// barStart up to barEnd. Empty (barEnd 0) until Bar fills it.
+	barIndex, barStart, barEnd int64
 }
 
 func NewTransport(sampleRate int, bpmMilli int64) (Transport, error) {
@@ -36,7 +39,25 @@ func (t *Transport) PendingTempo() (int64, int64) {
 func (t *Transport) MeterMap() MeterMap { return t.meters }
 
 // SetMeterMap replaces the meter map. Call it before playback.
-func (t *Transport) SetMeterMap(m MeterMap) { t.meters = m }
+func (t *Transport) SetMeterMap(m MeterMap) { t.meters, t.barStart, t.barEnd = m, 0, 0 }
+
+// Bar returns the zero-based bar that holds the tick and the tick's offset
+// into it, as MeterMap().BarAt(Tick()) does. The engine asks once per audio
+// frame, so the bar is kept and the map is asked only when the tick leaves it.
+func (t *Transport) Bar() (bar, offset int64) {
+	if t.tick < t.barStart || t.tick >= t.barEnd {
+		bar, offset := t.meters.BarAt(t.tick)
+		t.barIndex, t.barStart, t.barEnd = bar, t.tick-offset, t.meters.NextBarLine(t.tick)
+	}
+	return t.barIndex, t.tick - t.barStart
+}
+
+// NextBarLine returns the first bar line after the tick, as
+// MeterMap().NextBarLine(Tick()) does.
+func (t *Transport) NextBarLine() int64 {
+	t.Bar()
+	return t.barEnd
+}
 
 func (t *Transport) Play() {
 	if t.playing {

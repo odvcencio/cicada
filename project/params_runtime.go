@@ -90,6 +90,12 @@ func ParamAddresses(p *Project) []ParamAddress {
 			continue
 		}
 		kind := semanticEffectKind(effect)
+		// A reverb's live controls reach return slot B, the first reverb. A
+		// later reverb has no live address, so a change to it rebuilds the
+		// score instead of moving slot B.
+		if kind == "reverb" && !firstReverb(p, effect.ID) {
+			continue
+		}
 		for _, descriptor := range paramdefs.Registry {
 			if descriptor.Scope != "global" || !strings.HasPrefix(descriptor.ID, "fx."+kind+".") {
 				continue

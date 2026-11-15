@@ -4,6 +4,7 @@ import (
 	"math"
 	"testing"
 
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 	"m31labs.dev/cicada/kernel/dsp/fastmath"
 )
 
@@ -114,7 +115,7 @@ func (v *Voice) nextUncached() float32 {
 					}
 					y += polyBLEP(phase, dt) - polyBLEP(frac(phase+0.5), dt)
 				case Sine:
-					y = float32(math.Sin(2 * math.Pi * float64(phase)))
+					y = float32(detmath.SinPi(2 * float64(phase)))
 				}
 				s.phase = frac(phase + dt)
 			}
@@ -132,10 +133,10 @@ func (v *Voice) nextUncached() float32 {
 				ms = 30
 			}
 			y = s.env
-			s.env *= float32(math.Exp(-4600 / float64(ms*v.sampleRate)))
+			s.env *= float32(detmath.Exp(-4600 / float64(ms*v.sampleRate)))
 		case Ladder, Diode:
 			frequency := clamp(b, 20, v.sampleRate*0.45)
-			g := float32(math.Tan(math.Pi * float64(frequency/v.sampleRate)))
+			g := float32(detmath.Tan(math.Pi * float64(frequency/v.sampleRate)))
 			coef := g / (1 + g)
 			feedback := float32(3.2) * clamp(c, 0, 1)
 			if n.Op == Diode {
@@ -144,7 +145,7 @@ func (v *Voice) nextUncached() float32 {
 			y = ladder(&s.filter, coef, feedback, a)
 		case Lowpass, Highpass:
 			frequency := clamp(b, 20, v.sampleRate*0.45)
-			coef := float32(1 - math.Exp(-2*math.Pi*float64(frequency/v.sampleRate)))
+			coef := float32(1 - detmath.Exp(-2*math.Pi*float64(frequency/v.sampleRate)))
 			s.filter[0] += float32(coef * (a - s.filter[0]))
 			y = s.filter[0]
 			if n.Op == Highpass {
@@ -154,9 +155,9 @@ func (v *Voice) nextUncached() float32 {
 			blend := clamp(c, 0, 1)
 			y = float32(a*(1-blend)) + float32(b*blend)
 		case Tanh:
-			y = float32(math.Tanh(float64(a)))
+			y = float32(detmath.Tanh(float64(a)))
 		case Exp2:
-			y = float32(math.Exp2(float64(clamp(a, -8, 8))))
+			y = float32(detmath.Exp2(float64(clamp(a, -8, 8))))
 		case Clamp:
 			y = clamp(a, b, c)
 		}

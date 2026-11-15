@@ -671,6 +671,12 @@ func TestSilentTrackHasZeroShare(t *testing.T) {
 	if keys.EnergySharePct != 0 || keys.LevelVsLoudestDB != 0 {
 		t.Errorf("silent track share %.1f level %.1f, want 0", keys.EnergySharePct, keys.LevelVsLoudestDB)
 	}
+	// The text report gives the quiet track's level, so a producer can tell a
+	// track that plays too quietly from one that makes no sound.
+	want := fmt.Sprintf("  keys       %7.1f  silent: under -80 dBFS RMS, too quiet to measure\n", keys.RMSdBFS)
+	if text := textOf(a); !strings.Contains(text, want) {
+		t.Errorf("text report does not give the silent track's level %q:\n%s", want, text)
+	}
 }
 
 const sceneTempoBody = `

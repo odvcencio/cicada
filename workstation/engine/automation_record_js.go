@@ -3,13 +3,10 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"strconv"
 	"strings"
 	"syscall/js"
@@ -124,30 +121,24 @@ func (r *curveRecordingUI) post(command string, number float64) error {
 		values["monitor"] = "on"
 	}
 	data, _ := json.Marshal(values)
-	req, err := http.NewRequestWithContext(r.ctx, http.MethodPost, js.Global().Get("location").Get("origin").String()+"/__actions/automation-record", bytes.NewReader(data))
+	response, err := nativeRequest{Method: methodPost, Path: "/__actions/automation-record", Body: data, Timeout: 30 * time.Second, Limit: 64 << 10, Headers: map[string]string{
+		"Content-Type": "application/json", "Accept": "application/json", "X-CSRF-Token": values["csrf_token"],
+	}}.do(r.ctx)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("X-CSRF-Token", values["csrf_token"])
-	response, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
-	if err != nil {
-		return err
-	}
-	defer response.Body.Close()
 	var result struct {
 		OK      bool   `json:"ok"`
 		Message string `json:"message"`
 	}
-	if err = json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&result); err != nil {
+	if err = decodeLimited(response.Body, 64<<10, &result); err != nil {
 		return err
 	}
-	if !result.OK || response.StatusCode >= 400 {
+	if !result.OK || response.Status >= 400 {
 		if result.Message == "" {
 			result.Message = "Automation action failed"
 		}
-		if response.StatusCode == http.StatusBadRequest || response.StatusCode == http.StatusConflict || response.StatusCode == http.StatusUnprocessableEntity {
+		if response.Status == statusBadRequest || response.Status == statusConflict || response.Status == statusUnprocessableEntity {
 			return &automationActionRejected{message: result.Message}
 		}
 		return fmt.Errorf("%s", result.Message)

@@ -16,7 +16,7 @@ import (
 
 // Grid and played phrases share the same route into the song. Recording a
 // performance must not remove arrangement or variation controls from its editor.
-func (s *studioApp) patternManagement(ctx *server.Context, v workspace, csrf string, pattern project.Pattern) gosx.Node {
+func (s *studioApp) patternManagement(ctx *server.Context, v workspace, csrf string, pattern project.Pattern, toolbar ...bool) gosx.Node {
 	q := ctx.Request.URL.Query()
 	returnTo := ctx.Request.URL.RequestURI()
 	form := func(name string, children ...gosx.Node) gosx.Node {
@@ -91,7 +91,14 @@ func (s *studioApp) patternManagement(ctx *server.Context, v workspace, csrf str
 		}
 		destination = form("pattern", hidden("action", "bind"), hidden("pattern", pattern.ID), field("Scene", selectInput("scene", value("bind", "scene", q.Get("scene")), scenes)), field("Track", selectInput("track", value("bind", "track", preferred), tracks)), submit("binding", "play", "Assign to scene"), submit("binding", "off", "Stop in this scene"), submit("binding", "keep", "Carry previous pattern"), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Assign replaces this track’s pattern wherever the scene is used. Scene choices carry forward until changed or stopped. Stop releases this track; Carry keeps its earlier selection. Undo restores the previous assignment.")))
 	}
-	return gosx.El("details", gosx.Attrs(gosx.Attr("class", "pattern-management"), gosx.Attr("data-pattern-management", pattern.ID), gosx.Attr("data-gosx-key", "pattern-management-"+pattern.ID), gosx.Attr("open", failed || strings.Contains(pattern.ID, "."))), gosx.El("summary", gosx.Text("Use this pattern")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), variation, destination))
+	isToolbar := len(toolbar) > 0 && toolbar[0]
+	attrs := gosx.Attrs(gosx.Attr("class", "pattern-management"), gosx.Attr("data-pattern-management", pattern.ID), gosx.Attr("data-gosx-key", "pattern-management-"+pattern.ID), gosx.Attr("open", failed || (!isToolbar && strings.Contains(pattern.ID, "."))))
+	summary := "Use this pattern"
+	if isToolbar {
+		attrs = append(attrs, gosx.Attr("name", "clip-toolbar"))
+		summary = "More"
+	}
+	return gosx.El("details", attrs, gosx.El("summary", gosx.Text(summary)), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields clip-menu-content")), variation, destination))
 }
 
 func patternPlacementName(p *project.Project, pattern string) string {

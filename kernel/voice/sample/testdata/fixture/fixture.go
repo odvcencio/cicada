@@ -4,11 +4,14 @@ package fixture
 import "m31labs.dev/cicada/kernel/voice/sample"
 
 const Frames = 4096
-const Cases = 13
+const Cases = 14
 
 // Render includes intro, loop wraps, repeated pitches, smoothing, release and
 // a full-pool steal. Integer-generated PCM avoids platform-specific tone math.
 func Render(index, blockSize int, output []float32) error {
+	if index == 13 {
+		return renderRecordedInstrument(blockSize, output)
+	}
 	if index >= 9 {
 		return renderCrossfadedLoop(index, blockSize, output)
 	}
@@ -182,6 +185,49 @@ func renderInstrument(index, blockSize int, output []float32) error {
 				if _, err = p.NoteOn(uint8(60+j), uint8(64+j)); err != nil {
 					return err
 				}
+			}
+		}
+		p.Render(output[frame:frame+blockSize], output[Frames+frame:Frames+frame+blockSize])
+	}
+	return nil
+}
+
+// renderRecordedInstrument plays a pack whose zones share one gain, so the
+// recorded-dynamics law runs: two attack layers whose velocity ranges split at
+// 64, one release layer, velocities below, between and above the centres.
+func renderRecordedInstrument(blockSize int, output []float32) error {
+	var soft, loud [701]float32
+	for i := range soft {
+		soft[i] = float32((i*13)%97-48) / 400
+		loud[i] = float32((i*29)%89-44) / 100
+	}
+	var zones []sample.Zone
+	for _, layer := range []struct {
+		pcm             []float32
+		centre, low, hi uint8
+	}{{soft[:], 32, 1, 63}, {loud[:], 96, 64, 127}} {
+		r := sample.Region{Left: layer.pcm, SampleRate: 48000, RootKey: 60, End: len(layer.pcm), Loop: true, LoopStart: 41, LoopEnd: 677, Crossfade: 37}
+		zones = append(zones, sample.Zone{Region: r, KeyLow: 48, KeyHigh: 72, VelocityLow: layer.low, VelocityHigh: layer.hi, Layer: layer.centre, Count: 1, Gain: .25})
+	}
+	release := sample.Region{Left: soft[:300], SampleRate: 48000, RootKey: 60, End: 300}
+	zones = append(zones, sample.Zone{Region: release, KeyLow: 48, KeyHigh: 72, VelocityLow: 1, VelocityHigh: 127, Layer: 64, Count: 1, Release: true, Gain: .25})
+	c := sample.DefaultInstrumentConfig()
+	c.Voices = 4
+	c.Amp = sample.Envelope{Attack: 2, Decay: 5, Sustain: .8, Release: 15}
+	p, err := sample.NewInstrument(48000, zones, c)
+	if err != nil {
+		return err
+	}
+	var held [4]sample.Handle
+	for frame := 0; frame < Frames; frame += blockSize {
+		for i, at := range [4]int{0, 768, 1536, 2304} {
+			if frame == at {
+				if held[i], err = p.NoteOn(uint8(60+i), [4]uint8{9, 47, 70, 120}[i]); err != nil {
+					return err
+				}
+			}
+			if frame == at+512 {
+				p.NoteOff(held[i])
 			}
 		}
 		p.Render(output[frame:frame+blockSize], output[Frames+frame:Frames+frame+blockSize])

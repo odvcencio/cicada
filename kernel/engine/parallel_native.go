@@ -3,12 +3,19 @@
 package engine
 
 import (
+	"math"
 	"runtime"
 	"sync/atomic"
 	"time"
+
+	"m31labs.dev/cicada/internal/renderlanes"
 )
 
 const maxParallelLanes = 4
+
+// offlineLanes is true: native engines can render offline on lanes
+// (EnableOfflineParallel).
+const offlineLanes = true
 
 // parallelState owns one prepared stereo buffer per track. Only the callback
 // assigns jobs; workers touch disjoint track sources/inserts and buffer spans.
@@ -29,6 +36,22 @@ type parallelState struct {
 	// A finite native scheduling allowance catches an abandoned worker. This
 	// is a safety bound, not a promise that a late callback meets its deadline.
 	waitFloor time.Duration
+	// offline is set by EnableOfflineParallel: an export with no deadline.
+	// Its lanes come from a renderlanes.Pool, which balances tracks by
+	// measured cost and publishes each track's frames in chunks, so the
+	// callback mixes a chunk while the lanes render the next; the workers
+	// array, the wait floor, the generation counter and faultFrame are unused.
+	offline *renderlanes.Pool
+	// readyUntil is the first frame of the segment the offline lanes may not
+	// have published yet.
+	readyUntil int
+	// shortSegments counts offline segments too short to hand to the lanes;
+	// they render serially on the caller.
+	shortSegments int64
+	// faultAt is, per track, the block frame of the track's first raw fault
+	// in the segment, or math.MaxInt64; a lane stores it after faultCode, so
+	// a callback that loads a frame at or before its own reads the code too.
+	faultAt []atomic.Int64
 }
 
 type parallelWorker struct {
@@ -116,6 +139,88 @@ func (e *Engine) EnableParallel(workers int) error {
 	return nil
 }
 
+// EnableOfflineParallel prepares lanes for an offline render, which has no
+// deadline: lanes counts the caller's own, and the engine never uses more
+// lanes than it has tracks. Each segment between control changes renders every
+// track's raw signal on some lane, with the tracks spread over the lanes by
+// their measured cost, and the caller mixes the tracks frame by frame in
+// track order, as the serial render does, as soon as every lane has published
+// the frame; so the output is bit-identical to the serial render whatever the
+// lane count, and the mix overlaps the synthesis. A segment with too little
+// work runs on the caller alone. Below two lanes, or with graph LFOs, which share
+// the serial frame clock, the render stays serial. Call it once, after New
+// and before the first Render; Close stops the lanes.
+//
+// Live playback uses EnableParallel, whose thresholds and fixed track
+// assignment this does not change.
+func (e *Engine) EnableOfflineParallel(lanes int) error {
+	if lanes < 1 {
+		return engineError("offline rendering needs at least one lane")
+	}
+	if e.parallel != nil {
+		return engineError("parallel DSP is already configured")
+	}
+	if e.graphLFO != nil {
+		return nil // Graph LFOs share the serial transport frame clock.
+	}
+	lanes = renderlanes.Lanes(lanes, e.tracks)
+	if lanes < 2 {
+		return nil
+	}
+	p := &parallelState{
+		engine: e, lanes: lanes,
+		left: make([]float32, e.tracks*e.maxBlock), right: make([]float32, e.tracks*e.maxBlock),
+		faultCode: make([]uint16, e.tracks), faultAt: make([]atomic.Int64, e.tracks),
+		stop: make(chan struct{}), priority: "offline",
+	}
+	p.offline = renderlanes.New(lanes, e.tracks, p.renderTrack)
+	if p.offline == nil {
+		return nil
+	}
+	e.parallel = p
+	return nil
+}
+
+// OfflineParallelStats reports how an offline render used its lanes.
+func (e *Engine) OfflineParallelStats() renderlanes.Stats {
+	if e.parallel == nil {
+		return renderlanes.Stats{}
+	}
+	stats := e.parallel.offline.Stats()
+	stats.ShortSegments = e.parallel.shortSegments
+	return stats
+}
+
+// OfflineLaneStats summarizes an offline render's lanes; zero without them.
+func (e *Engine) OfflineLaneStats() OfflineLaneCounts {
+	stats := e.OfflineParallelStats()
+	return OfflineLaneCounts{Segments: stats.Segments + stats.ShortSegments, ParallelSegments: stats.ParallelSegments, StarvedSegments: stats.StarvedSegments, Peak: stats.MaxUsed}
+}
+
+// renderTrack renders count raw frames of one track, from block frame from,
+// into its span of the prepared buffers, and stops the track at its first
+// fault. An offline lane calls it with consecutive runs that cover the
+// segment; the track belongs to that lane until the segment ends.
+func (p *parallelState) renderTrack(track, from, count int) {
+	if from == p.start {
+		p.faultAt[track].Store(math.MaxInt64)
+	} else if p.faultAt[track].Load() != math.MaxInt64 {
+		return
+	}
+	renderlanes.StressPoint(renderlanes.StressTrackStart, int64(track), int64(from))
+	base := track*p.count + from - p.start
+	for i := range count {
+		left, right, fault := p.engine.nextRawTrack(track)
+		p.left[base+i], p.right[base+i] = left, right
+		if fault != 0 {
+			p.faultCode[track] = fault
+			renderlanes.StressPoint(renderlanes.StressFaultPublish, int64(track), int64(from+i))
+			p.faultAt[track].Store(int64(from + i))
+			return
+		}
+	}
+}
+
 // Retired pools remain available until host teardown: a timeout must never
 // cause serial fallback to mutate voices that an outstanding worker owns.
 func (e *Engine) parallelAvailable() bool { return e.parallel != nil && e.graphLFO == nil }
@@ -144,6 +249,13 @@ func (e *Engine) parallelRetired() bool {
 func (e *Engine) parallelQuiescent() bool {
 	p := e.parallel
 	if p == nil {
+		return true
+	}
+	if p.offline != nil {
+		// An offline render has no deadline: wait for the lanes to finish the
+		// segment, which returns every track to the caller. This blocks, so an
+		// offline engine's Retire waits for its lanes too.
+		p.offline.End()
 		return true
 	}
 	for lane := 1; lane < p.lanes; lane++ {
@@ -237,6 +349,19 @@ func (e *Engine) parallelPrepareSegment(start, count int) (faultFrame int, fault
 	// Tiny event intervals do not amortize worker wakeups. Rendering remains
 	// sample-accurate through the serial nextRawTrack fallback.
 	if count < 32 {
+		if p.offline != nil {
+			p.shortSegments++
+		}
+		return -1, 0
+	}
+	if p.offline != nil {
+		// The lanes publish the segment in chunks; renderedTrack waits for
+		// each chunk, and a raw fault surfaces at its frame, as it does in the
+		// serial render. A panic in a lane is raised on this goroutine.
+		// End any segment still running before its fields change.
+		p.offline.End()
+		p.start, p.count, p.readyUntil, p.prepared = start, count, start, true
+		p.offline.Begin(start, count)
 		return -1, 0
 	}
 	p.generation++
@@ -308,7 +433,14 @@ func (e *Engine) renderedTrack(track, frame int) (left, right float32, fault uin
 			if track < 0 || track >= e.tracks || frame < p.start || frame >= p.start+p.count {
 				return 0, 0, FaultRenderBlock
 			}
-			if p.faultCode[track] != 0 && frame >= p.faultFrame[track] {
+			if p.offline != nil {
+				if frame >= p.readyUntil {
+					p.readyUntil = p.offline.Ready(frame)
+				}
+				if int64(frame) >= p.faultAt[track].Load() {
+					return 0, 0, p.faultCode[track]
+				}
+			} else if p.faultCode[track] != 0 && frame >= p.faultFrame[track] {
 				return 0, 0, p.faultCode[track]
 			}
 			index := track*p.count + frame - p.start
@@ -320,6 +452,7 @@ func (e *Engine) renderedTrack(track, frame int) (left, right float32, fault uin
 
 func (e *Engine) parallelEndSegment() {
 	if e.parallel != nil {
+		e.parallel.offline.End()
 		e.parallel.prepared = false
 	}
 }
@@ -337,6 +470,11 @@ func (e *Engine) retireParallel() {
 func (e *Engine) closeParallel() {
 	e.retireParallel()
 	if p := e.parallel; p != nil {
+		if p.offline != nil {
+			p.offline.Close()
+			p.prepared = false
+			return
+		}
 		for lane := 1; lane < p.lanes; lane++ {
 			<-p.workers[lane-1].joined
 		}

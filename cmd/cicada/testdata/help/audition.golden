@@ -8,6 +8,7 @@ Flags:
   --bars <n>                 bars to analyze; 0 means through song end
   --json                     write the report as JSON (format cicada.audition/1)
   --max-resident-pcm <size>  cap on decoded sampler-pack PCM held in memory, such as 2GiB (default 1GiB)
+  --jobs auto|<n>            render lanes; absent or 1 renders serially, auto picks the smaller of 4 and half the CPUs, <n> is honoured up to the number of CPUs
   --cpuprofile <file>        write a Go CPU profile of the command to file
   --help                     show this help
 

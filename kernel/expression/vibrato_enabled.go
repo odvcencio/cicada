@@ -2,7 +2,11 @@
 
 package expression
 
-import "math"
+import (
+	"math"
+
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+)
 
 type defaultVibrato struct {
 	depth            float32
@@ -28,7 +32,7 @@ func (v *defaultVibrato) next() float64 {
 		v.remaining--
 		return 0
 	}
-	cents := float64(v.depth) * math.Sin(2*math.Pi*v.phase)
+	cents := float64(v.depth) * detmath.SinPi(2*v.phase)
 	v.phase += v.increment
 	if v.phase >= 1 {
 		v.phase -= 1

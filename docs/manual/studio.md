@@ -11,8 +11,10 @@ In the desktop app, **Arrange** opens on the song timeline, with vocal recording
 below it. Edition-2 scores have **Song timeline** and **Record & comp vocals**
 links to jump between them.
 **Session** contains the launch matrix and live playing;
-**Mixer** contains mix controls. Instruments, Generate, Takes, and Sampler are
-in the left Browser. The detail dock's **Clip** tab edits patterns, **Device**
+**Mixer** contains mix controls. The left Library has Sounds, Samples, and
+Takes tabs. Search and select a sound to audition it or add it to the song;
+project instruments, preset saving, recording, and Generate are below the sounds.
+Samples opens the sampler. The detail dock's **Clip** tab edits patterns, **Device**
 edits the selected track's sound and processing, and **Automation** contains
 curve and scene-point editors. The **Code** lens shows the score. Older
 screenshots show these tools as standalone panels.
@@ -22,8 +24,7 @@ If loading takes longer or fails, **Reload Studio** offers a fresh attempt.
 Save or copy unsaved edits and finish recording before reloading. Code typed
 during startup remains protected when arranging controls become ready.
 
-Browser sections keep their open/closed state through saves, navigation, and
-reopening Studio.
+The Library and its Generate section keep their open/closed state through saves, navigation, and reopening Studio.
 
 Switching Arrange, Session, or Mixer, changing detail tabs, or choosing a
 workspace region on a phone keeps your unsaved **Code** text in place.
@@ -101,8 +102,10 @@ not set. **Keep** preserves that track's slot.
 
 **Arrange** shows scene blocks across all tracks, their bar ranges, and inherited
 patterns. Click a scene header to play from that block, or a pattern clip to
-open its editor. Expand a block to replace its scene, set its length, duplicate
-it, remove it, or move it earlier or later.
+open its editor. Edit beside a scene name opens that block’s controls without
+stopping playback or leaving the page; after a song edit, choose Edit again.
+Expand a block to replace its scene, set its length, duplicate it, remove it,
+or move it earlier or later.
 **Add to arrangement** appends an existing scene. At least one block remains.
 
 Scenes can live in any source listed in `cicada.mod`. Assigning a pattern or
@@ -166,6 +169,14 @@ supports Undo. The **Placement list** shows exact starts and exclusive ends;
 sub-sixteenth boundaries retain their exact ticks. Content links open the
 pattern or clip editor. Returning from Score reads the current saved project.
 
+For a named placement of a step pattern with a complete pattern boundary
+inside it, open **Split placement** in its inspector. Choose a position at a pattern-length boundary strictly between its
+start and end. For long placements the picker shows the first 128 boundaries.
+Studio compares the original and split renders before saving and refuses the
+edit if the sound would change. Audio clips and performed-note patterns are not
+split by this control. A successful split is one Undo step; a changed project
+or placement must be refreshed before retrying.
+
 With a placement inspected in Arrange, **Command-D** on Mac (**Control-D**
 elsewhere) duplicates it after the existing placements on its track.
 **Backspace** or **Delete** removes it; the last placement remains protected.
@@ -198,10 +209,20 @@ playback. **Play full song** restores all parts and starts at the beginning;
 
 ![Tidal Glass placement editing and listening controls, captured from the release build at 1440 px.](screenshots/studio-session-listening-1440.png)
 
-**Project settings** changes the title, tempo, key, and scale. Tempo keeps up
+For a scene song, the Arrange tool strip provides playback, exact looping, **Add section**, and **Project**. Choose a section’s **Edit** link to open its controls below the lanes. For every project with scenes, the scene launch grid is in Session.
+
+**Project** opens project settings for the title, tempo, key, and scale. Tempo keeps up
 to three decimal places. Changing the key retunes scale-degree notes; explicit
 letter pitches keep their pitch. Every edit validates and checks the current
 disk revision before saving, and has an Undo entry.
+
+To rename a track, open the rename button (✎) in its Arrange rail, enter the new name,
+and choose **Rename track**. Stop playback and finish recording first; a paused
+transport must also be stopped. Commit or discard unfinished or retained note
+performances before renaming. The rename updates references throughout the
+project, including other score files, and one Undo restores them. If a name is
+invalid, already in use, or the project has changed since the form was shown,
+Studio refuses the edit and reports why.
 
 ![GoSX Studio's arrangement timeline and block controls.](screenshots/studio-arrangement-1440.png)
 
@@ -288,7 +309,13 @@ The editor also supports [touch editing on phone screens](screenshots/studio-pro
 
 ## Patterns
 
-Use **Create pattern** in the pattern editor to start a new grid. Choose its
+In the Clip tab, use the pattern picker to switch patterns. The toolbar shows
+the pattern's timing and preview controls; **New** creates a pattern,
+**Generate pattern** opens Pattern Machine, and **More** holds variation and
+song placement or scene assignment controls. The grid fills the dock below.
+Select a step to edit its fields below the grid.
+
+Use **New** in the Clip tab (or **Create pattern** in the pattern editor) to start a new grid. Choose its
 track, name, and length (1–64 steps). The track supplies the appropriate notes,
 acid, or drum pattern type, including a custom kit's lanes. Choose a scene to
 create and assign together in one Undo step, or **Library only** to leave the
@@ -430,17 +457,17 @@ It checks the original revision; it cannot overwrite another editor's save.
 
 ![GoSX Live performance with scene launches, note input, and MIDI learning.](screenshots/studio-live-1440.png)
 
-**Live** plays the **Pitched track** you choose from the A/W/S/E/D/F/T/G/Y/H/U/J/K
+**Live** plays the track you choose under **Keys play** from the A/W/S/E/D/F/T/G/Y/H/U/J/K
 keys or the onscreen keyboard. That list offers the piano, the modeled
 keyboards, authored instrument tracks, and acid tracks; audio and sampler tracks
-are not offered. The drum pads play the **Drum track** you choose and use General MIDI
-notes. Press **Play** first; changing tracks, leaving the panel, or losing focus
+are not offered. The named drum pads play the track you choose under **Pads play** and show their General MIDI
+note numbers. The live input header shows the selected destinations and MIDI state. Press **Play** first; changing tracks, leaving the panel, or losing focus
 releases held notes, and **Release notes** releases them on demand.
 The launch matrix queues scenes or individual slots with the selected timing;
 mint marks a playing slot and amber marks a queued slot. Its forms also work
 without browser scripting.
 
-**Enable MIDI** connects the macOS app directly to CoreMIDI when Web MIDI is
+Select **Enable MIDI** and use **MIDI setup** to choose expression and launch timing, learn mappings, or bind score ports to devices. **Enable MIDI** connects the macOS app directly to CoreMIDI when Web MIDI is
 unavailable. Inputs appear automatically when connected and disappear when
 unplugged; their held notes are released. **Disconnect MIDI** closes the input
 port. Leaving Live or closing the app also closes it. Bluetooth MIDI inputs
@@ -476,7 +503,7 @@ launch matrix also offers the score default and timing overrides. Mapping and
 track selections are saved in this browser. **Clear mappings**
 removes them. Browsers without Web MIDI can still use keyboard and drum pads.
 
-Choose the **Pitched pattern** and **Drum pattern** destinations. Each picker
+Choose the pattern destinations after **Keys play** and **Pads play**. Each picker
 lists patterns on that track first, then unused compatible local patterns marked
 **library**. Use **Create pattern** in Live to make an empty library pattern
 without assigning a scene. A pattern used only by another track is not offered
@@ -675,30 +702,62 @@ history remains private to the workspace owner.
 
 ## Mixer and instruments
 
-Select a placement and open **Device** to shape its track, or choose another
-**Track** and **Inspect track**. **Sound** includes controls for built-in voices
-and declared instrument parameters. Units, ranges, and menu choices show the
-values each control accepts. **Apply** saves the setting; **Use default**
-removes that track's override. Each change supports Undo. **Mix and routing**
-and **Insert effects** have their own controls below Sound.
+**Mixer** shows one strip for each track, bus and return, with the master
+pinned at the right end while the others scroll. Every strip has the same rows,
+lined up across strips: its name, what it is (a track's instrument, **Bus**,
+**Return** or **Master**), its inserts in order, its sends with their levels,
+**M** and **S**, pan, then the meter beside the fader and its dB value. The
+fader, the pan slider, **M** and **S** save as you use them, one Undo step for
+each gesture. A bus level takes only the values the score supports, so its
+fader shows the level and does not move; set it in Device.
 
-**Mixer** edits track, bus, return, effect, and master fields supported by the
-source patcher. Each **Set** writes one parameter. Unsupported fields explain
-their limitation and remain available in **Score**.
-Ranges, units, enum choices, and On/Off controls come from Cicada's parameter
-registry. Existing track sends are included in their mixer strip.
-Use **Create chorus** to add a chorus declaration, then add it to a track's
-**Insert chain** and adjust its controls in the mixer.
+Above the strips, **Show** limits the view to tracks or to buses and returns,
+**Meter** shows peak, RMS or both, and **Reset peaks** clears the held peaks
+and clip marks at once. These change only what this tab shows, never the
+score. **Add effect** holds **Create chorus**, which adds a chorus declaration,
+and **Send return**, and lists each effect that is on no insert chain.
+
+To add an insert, open a channel in Device, choose a kind under Insert
+effects, then select Add insert. The effect appears at the end of the chain;
+open it there to adjust its parameters. Convolution also needs the name of a
+declared impulse asset. To add a send return, open Add effect in the Mixer
+tool strip, choose a return kind under Send return, and select Add return. The
+new return has its own Mixer strip. It receives no signal until a track sends
+to it: open the track in Device and use Send to and Add send to set its level.
+A name is optional in both forms: when the field is empty, Studio names the effect after its kind (`comp`, then `comp2`).
+Both changes support Undo; edition 1 asks for confirmation to upgrade the
+score.
+
+Select a strip's name to open that channel in **Device**; its strip takes an
+amber edge. Selecting a placement in Arrange opens its track, and **Channel**
+with **Inspect channel** chooses any other track, bus, return, effect or the
+master. For a track, **Sound** includes controls for built-in voices and
+declared instrument parameters. Units, ranges, and menu choices show the
+values each control accepts. **Apply** saves the setting; **Use default**
+removes that track's override. Each change supports Undo.
+
+**Mix and routing** in Device holds the exact values of the selected track, bus
+or master: level, pan, mute, solo, **out** and each send level. A track level
+also takes `off`. Each **Set** writes one parameter. A control the source
+patcher does not support shows **Not available** with the reason, and remains
+available in **Score**. Ranges, units, enum choices, and On/Off controls come
+from Cicada's parameter registry. A return, or an effect on no insert chain,
+opens in Device with its own parameters.
+
+**Insert effects** in Device holds the ordered **Insert chain**. Add a declared
+effect such as a new chorus, move or remove stages, and follow each effect
+name to its parameter controls.
 Audio tracks offer **Add vocal chain**: a high-pass EQ, compressor and de-esser
-in that order. A second click retains the existing vocal chain. Use the ordered
-**Insert chain** controls to move or remove stages, and follow each effect name
-to its parameter controls. These processors have independent state per track;
+in that order. A second click retains the existing vocal chain. These
+processors have independent state per track;
 changes are saved and recompiled. Finish a vocal take before changing saved
 mixer settings. See [track inserts](../audio/mix-chain.md#track-inserts) for
 processor syntax and supported controls.
 
 ![An ordered EQ, compressor and de-esser chain on a test vocal track.](screenshots/studio-producer-vocal-chain-1440.png)
-For an edition 1 score, first check **Upgrade score to edition 2 for this change**.
+An edition 1 score shows its levels and pan on the strips without faders or
+**M** and **S**. Make each change in Device, and first check **Upgrade score
+to edition 2 for this change**.
 The domain service performs the migration and parameter edit together.
 #### PCM capture and shared sampler audition
 
@@ -750,7 +809,9 @@ step-grid commits continue to check for collisions before writing.
 
 The local Studio profile keeps private Code recovery copies while you type.
 Wait for **Recovery copy kept on this device** before closing or switching
-projects. This keeps a draft; **Save file** applies it to the song. Playback and
+projects. This keeps a draft; **Save file** applies it to the song. When the
+editor holds exactly the text of the file, there is nothing to keep, and the
+status says **No unsaved Code edits. The score file has this text.** Playback and
 exports continue to use saved music. A restart restores the most recent copy
 for each file, including unfinished syntax. **Other recovery copies** opens
 versions kept by another window. Saving or discarding the selected copy does

@@ -5,6 +5,9 @@ package strings
 import (
 	"math"
 
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+	"m31labs.dev/cicada/kernel/dsp/subnormal"
+
 	"m31labs.dev/cicada/kernel/voice/acid"
 	"m31labs.dev/cicada/kernel/voice/keyboard"
 )
@@ -93,6 +96,7 @@ type Instrument struct {
 	// the 2-point polyBLEP saw is used instead.
 	tables [8][3]*acid.TableOscillator
 	rate   float64
+	frames uint32 // samples since New or Reset, for flushSubnormals
 }
 
 func New(rate int, params Params) (*Instrument, error) {
@@ -106,7 +110,7 @@ func New(rate int, params Params) (*Instrument, error) {
 	sr := float64(rate)
 	for c := range i.increments {
 		top := 108 - ((108 - c) % 12)
-		freq := 440 * math.Pow(2, (float64(top)-69)/12)
+		freq := 440 * detmath.Pow(2, (float64(top)-69)/12)
 		i.increments[c] = uint64(math.Round(freq / sr * 4294967296))
 	}
 	for n := range i.pitches {
@@ -117,7 +121,7 @@ func New(rate int, params Params) (*Instrument, error) {
 		i.pitches[n] = pitch{uint8(class), shift, float32(float64(i.increments[class]) / (4294967296 * float64(uint64(1)<<shift)))}
 	}
 	for s := range i.sine {
-		i.sine[s] = float32(math.Sin(2 * math.Pi * float64(s) / 1024))
+		i.sine[s] = float32(detmath.Sin(2 * math.Pi * float64(s) / 1024))
 	}
 	i.rate = sr
 	if _, err := acid.NewTableOscillator(rate); err == nil {
@@ -128,15 +132,15 @@ func New(rate int, params Params) (*Instrument, error) {
 		}
 	}
 	i.attack = float32(1 / (params.Attack * sr))
-	i.release = float32(math.Exp(-4.605170186 / (params.Release * sr)))
+	i.release = float32(detmath.Exp(-4.605170186 / (params.Release * sr)))
 	i.velocity = float32(params.Velocity)
 	norm := 1 / (params.Octave16 + params.Octave8 + params.Octave4)
 	i.octave16, i.octave8, i.octave4 = float32(params.Octave16*norm), float32(params.Octave8*norm), float32(params.Octave4*norm)
-	i.lowpass = float32(1 - math.Exp(-2*math.Pi*params.Cutoff/sr))
-	i.highpass = float32(math.Exp(-2 * math.Pi * 65 / sr))
-	i.gain, i.ensemble = float32(.42*math.Pow(10, params.LevelDB/20)), float32(params.Ensemble)
+	i.lowpass = float32(1 - detmath.Exp(-2*math.Pi*params.Cutoff/sr))
+	i.highpass = float32(detmath.Exp(-2 * math.Pi * 65 / sr))
+	i.gain, i.ensemble = float32(.42*detmath.Pow(10, params.LevelDB/20)), float32(params.Ensemble)
 	i.gainT = i.gain
-	i.bbdAlpha = float32(1 - math.Exp(-2*math.Pi*6500/sr))
+	i.bbdAlpha = float32(1 - detmath.Exp(-2*math.Pi*6500/sr))
 	i.fastDepth = float32(sr * .00065)
 	for c := range i.slow {
 		i.slow[c], i.fast[c] = float32(c)*.317, float32(c)*.271
@@ -249,6 +253,7 @@ func (i *Instrument) Reset() {
 	clear(i.delay[:])
 	i.lastInput, i.hp, i.lp, i.bbd = 0, 0, 0, 0
 	i.write, i.clock, i.sustain = 0, 0, false
+	i.frames = 0
 	for c := range i.slow {
 		i.slow[c], i.fast[c] = float32(c)*.317, float32(c)*.271
 	}
@@ -329,14 +334,17 @@ func (i *Instrument) NextStereo() (float32, float32) {
 	for c := range i.phases {
 		i.phases[c] += i.increments[c]
 	}
+	// The ensemble filter feeds the delay line, so it is flushed out of
+	// subnormal numbers (kernel/dsp/subnormal) at every sample; the output
+	// filters are swept by flushSubnormals. Their gain to the output is below 4.
 	i.hp = float32(i.highpass * float32(float32(i.hp+mono)-i.lastInput))
 	i.lastInput = mono
 	i.lp = float32(i.lp + float32(i.lowpass*float32(i.hp-i.lp)))
 	mono = i.lp
 	left, right := mono, mono
 	if i.ensemble > 0 {
-		i.bbd = float32(i.bbd + float32(i.bbdAlpha*float32(mono-i.bbd)))
-		i.delay[i.write] = i.bbd
+		bbd := subnormal.Flush(float32(i.bbd + float32(i.bbdAlpha*float32(mono-i.bbd))))
+		i.bbd, i.delay[i.write] = bbd, bbd
 		var taps [3]float32
 		for c := range taps {
 			i.slow[c] = wrap(float32(i.slow[c] + i.slowRate[c]))
@@ -357,7 +365,23 @@ func (i *Instrument) NextStereo() (float32, float32) {
 		left = float32(float32(mono*float32(1-float32(.6*i.ensemble))) + float32(i.ensemble*wetL))
 		right = float32(float32(mono*float32(1-float32(.6*i.ensemble))) + float32(i.ensemble*wetR))
 	}
+	i.frames++
+	if i.frames%flushFrames == 0 {
+		i.flushSubnormals()
+	}
 	return float32(left * i.gain), float32(right * i.gain)
+}
+
+// flushFrames is how often, in samples, flushSubnormals runs. A decaying
+// filter state can stay subnormal for at most this many samples.
+const flushFrames = 256
+
+// flushSubnormals replaces subnormal values in the output filters with zeros
+// (kernel/dsp/subnormal). It runs at sample positions counted from New or
+// Reset, so the result does not depend on the block size or the target.
+func (i *Instrument) flushSubnormals() {
+	i.hp = subnormal.Flush(i.hp)
+	i.lp = subnormal.Flush(i.lp)
 }
 
 // controlOutput is the keyboard control slot for the output level in dB.
@@ -375,7 +399,7 @@ func (i *Instrument) SetControl(index int, value, glide float32) error {
 	if !keyboard.InRange(value, -60, 6) {
 		return Error("string machine output must be -60..6 dB")
 	}
-	i.gainT = float32(.42 * math.Pow(10, float64(value)/20))
+	i.gainT = float32(.42 * detmath.Pow(10, float64(value)/20))
 	i.glideAlpha, i.gliding = glide, true
 	if glide == 1 {
 		i.gliding = !keyboard.Approach(&i.gain, i.gainT, 1)

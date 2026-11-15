@@ -3,6 +3,8 @@ package drum
 import (
 	"math"
 
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+
 	"m31labs.dev/cicada/kernel/voice/sample"
 )
 
@@ -80,7 +82,7 @@ func (k *Kit) SetSampler(lane Lane, bank *SamplerBank, note uint8, levelDB, pan 
 	if !ok {
 		return validationError("sampler kit lane note has no attack sample in its pack")
 	}
-	level := math.Pow(10, levelDB/20)
+	level := detmath.Pow(10, levelDB/20)
 	v := &k.lanes[lane]
 	v.enabled = true
 	v.custom, v.customOld, v.modeled = nil, nil, nil

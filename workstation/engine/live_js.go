@@ -3,12 +3,10 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -56,13 +54,6 @@ type liveJob struct {
 	Values map[string]string
 }
 
-type liveActionFailure struct {
-	Status  int
-	Message string
-}
-
-func (e *liveActionFailure) Error() string { return e.Message }
-
 type liveEvent struct {
 	Target   js.Value
 	Name     string
@@ -105,6 +96,7 @@ type liveUI struct {
 	playing              bool
 	sampled              time.Time
 	learning             bool
+	midiReady            bool
 	mappings             []liveMapping
 	descriptors          map[string]control.Descriptor
 	addresses            map[string]string
@@ -155,11 +147,13 @@ func mountLive(host enginewasm.Context) (enginewasm.Handle, error) {
 	go u.poll()
 	go u.checkpointNotes()
 	releaseUnsaved := holdUnsavedWork("live", func() bool { return len(u.takes) > 0 || u.recording || len(u.held) > 0 })
+	heldLiveNotes.Store(u.lease, func() bool { return len(u.held) > 0 })
 	return enginewasm.HandleFunc(func() {
 		if u.closed.Swap(true) {
 			return
 		}
 		releaseUnsaved()
+		heldLiveNotes.Delete(u.lease)
 		u.closeNotes()
 		if u.nativeMIDICancel != nil {
 			u.nativeMIDICancel()
@@ -253,14 +247,6 @@ func (u *liveUI) post(ctx context.Context, action string, values map[string]stri
 	if err != nil {
 		return nil, err
 	}
-	origin := js.Global().Get("location").Get("origin").String()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, origin+"/__actions/"+action, bytes.NewReader(data))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("X-CSRF-Token", u.props.CSRF)
 	timeout := 2 * time.Second
 	if action == "note-preview" {
 		timeout = 90 * time.Second
@@ -271,29 +257,13 @@ func (u *liveUI) post(ctx context.Context, action string, values map[string]stri
 	if action == "midi-bind" {
 		timeout = 20 * time.Second // local score validation and atomic file update
 	}
-	resp, err := (&http.Client{Timeout: timeout}).Do(req)
+	response, err := nativeRequest{Method: methodPost, Path: "/__actions/" + action, Body: data, Timeout: timeout, Limit: 1 << 20, Headers: map[string]string{
+		"Content-Type": "application/json", "Accept": "application/json", "X-CSRF-Token": u.props.CSRF,
+	}}.do(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
-	var result struct {
-		OK      bool            `json:"ok"`
-		Message string          `json:"message"`
-		Data    json.RawMessage `json:"data"`
-	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&result); err != nil {
-		return nil, err
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 || !result.OK {
-		if result.Message == "" {
-			result.Message = fmt.Sprintf("Live action failed (%d)", resp.StatusCode)
-		}
-		if action == "live" && resp.StatusCode == http.StatusConflict {
-			result.Message += ". Reopen Live to resume."
-		}
-		return nil, &liveActionFailure{Status: resp.StatusCode, Message: result.Message}
-	}
-	return result.Data, nil
+	return liveActionResult(action, response)
 }
 func (u *liveUI) runCommands() {
 	var pending *liveJob
@@ -332,7 +302,11 @@ func (u *liveUI) runCommands() {
 			}
 			data, err := u.post(u.ctx, job.Action, job.Values)
 			if err != nil && !u.closed.Load() {
-				u.status.Set(err.Error())
+				var failure *liveActionFailure
+				if !errors.As(err, &failure) {
+					consoleWarn("Live action "+job.Action, err)
+				}
+				u.status.Set(liveFailureText(err))
 			}
 			if err == nil && job.Action == "note-preview" && !u.closed.Load() {
 				var retained struct {
@@ -812,8 +786,10 @@ func (u *liveUI) bindControls() {
 	})
 	button("midi", u.enableMIDI)
 	button("learn", func() {
+		u.query("[data-live-midi-setup]").Set("open", true)
 		u.closeNotes()
 		u.learning = true
+		u.syncMIDIState()
 		u.status.Set("Waiting for a MIDI CC or note for " + u.selected("[data-live-target]"))
 	})
 	button("clear", func() {
@@ -830,6 +806,13 @@ func (u *liveUI) storage() js.Value {
 	return js.Global().Get("localStorage")
 }
 func (u *liveUI) refreshPatterns() {
+	for _, pair := range [][2]string{{"[data-live-acid]", "[data-live-destination-pitched]"}, {"[data-live-drums]", "[data-live-destination-drums]"}} {
+		name := u.selected(pair[0])
+		if name == "" {
+			name = "—"
+		}
+		u.query(pair[1]).Set("textContent", name)
+	}
 	document := js.Global().Get("document")
 	for _, pair := range [][2]string{{"[data-live-acid]", "[data-live-pattern]"}, {"[data-live-drums]", "[data-live-drumpattern]"}} {
 		selectEl := u.query(pair[1])
@@ -1043,7 +1026,18 @@ func awaitPromise(ctx context.Context, p js.Value) (js.Value, error) {
 		return js.Undefined(), ctx.Err()
 	}
 }
+func (u *liveUI) syncMIDIState() {
+	state := "MIDI off"
+	if u.learning {
+		state = "MIDI learning"
+	} else if u.midiReady {
+		state = "MIDI ready"
+	}
+	u.query("[data-live-midi-state]").Set("textContent", state)
+}
+
 func (u *liveUI) enableMIDI() {
+	u.query("[data-live-midi-setup]").Set("open", true)
 	if u.nativeMIDICancel != nil {
 		u.nativeMIDICancel()
 		u.releaseMIDIPrefix("midi:native:")
@@ -1079,6 +1073,8 @@ func (u *liveUI) enableMIDI() {
 			return
 		}
 		u.midi = access
+		u.midiReady = true
+		u.syncMIDIState()
 		u.bindMIDI()
 		u.on(access, "statechange", func(js.Value) { u.bindMIDI() })
 	}()
@@ -1190,6 +1186,7 @@ func (u *liveUI) midiMessageAt(device string, data js.Value, at *control.NoteTim
 				}
 			}
 			u.learning = false
+			u.syncMIDIState()
 			if u.queue("midi-learn", map[string]string{"revision": u.props.Revision, "source_revision": u.sourceRevision, "port": port, "message": message, "channel": strconv.Itoa(channel + 1), "number": strconv.Itoa(a), "target": portableTarget}) {
 				u.status.Set("Saving MIDI mapping in the score…")
 			}
@@ -1226,6 +1223,7 @@ func (u *liveUI) midiMessageAt(device string, data js.Value, at *control.NoteTim
 		}
 		u.mappings = append(u.mappings, m)
 		u.learning = false
+		u.syncMIDIState()
 		u.saveMappings()
 		u.renderMappings()
 		u.status.Set("MIDI input learned in this browser for " + target)

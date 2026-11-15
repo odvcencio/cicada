@@ -72,6 +72,10 @@ type studio struct {
 	proposals           map[string]stagedProposal
 	previewProposal     string
 	afterStage          func() // Test seam: nil in production; see commitMutationLocked.
+
+	// filePaths maps a project file's name to its path for fileRevision,
+	// which takes no lock; a name is checked once with filePath.
+	filePaths sync.Map
 }
 
 // applyStudioResidentPCM takes --max-resident-pcm out of Studio's arguments and
@@ -292,6 +296,7 @@ func (s *studio) studioRoutes(qualification bool) http.Handler {
 	mux.HandleFunc("GET /api/midi/ports", s.midiPorts)
 	mux.HandleFunc("POST /api/midi/ports", s.setMIDIPort)
 	mux.HandleFunc("GET /api/files", s.projectFiles)
+	mux.HandleFunc("GET /api/files/revision", s.fileRevision)
 	mux.HandleFunc("GET /api/revision", s.projectRevision)
 	mux.HandleFunc("POST /api/files", s.editFile)
 	mux.HandleFunc("GET /api/meters", s.meters)
@@ -488,68 +493,69 @@ func (s *studio) state(w http.ResponseWriter, r *http.Request) {
 }
 
 type studioEdit struct {
-	recordedTake          bool // Set by the record route; arms the playback handoff after the commit.
-	historyFiles          []studioAuxiliaryFile
-	Hits                  []int                         `json:"hits,omitempty"`
-	File                  string                        `json:"file,omitempty"`
-	Capture               *studioBrowserTake            `json:"capture,omitempty"`
-	Sample                *studioSampleRequest          `json:"sample,omitempty"`
-	TakeID                string                        `json:"takeId,omitempty"`
-	Recording             *studioRecordingSettings      `json:"recording,omitempty"`
-	Scene                 string                        `json:"scene,omitempty"`
-	Revision              string                        `json:"revision"`
-	SourceRevision        string                        `json:"source_revision,omitempty"`
-	Label                 string                        `json:"label,omitempty"`
-	Author                string                        `json:"author,omitempty"`
-	Session               string                        `json:"session,omitempty"`
-	Action                string                        `json:"action,omitempty"`
-	Index                 int                           `json:"index,omitempty"`
-	Target                int                           `json:"target,omitempty"`
-	Bars                  int                           `json:"bars,omitempty"`
-	Source                string                        `json:"source"`
-	Pattern               string                        `json:"pattern"`
-	Track                 string                        `json:"track,omitempty"`
-	Count                 int                           `json:"count,omitempty"`
-	Take                  []studioTakeNote              `json:"take,omitempty"`
-	Recordings            []studioTakeRecording         `json:"recordings,omitempty"`
-	Timing                string                        `json:"timing,omitempty"`
-	PatternCount          int                           `json:"patternCount,omitempty"`
-	Lane                  string                        `json:"lane"`
-	Step                  int                           `json:"step"`
-	Pitch                 *int                          `json:"pitch,omitempty"`
-	Modifier              string                        `json:"modifier,omitempty"`
-	Path                  string                        `json:"path,omitempty"`
-	Item                  string                        `json:"item,omitempty"`
-	Name                  string                        `json:"name,omitempty"`
-	Mode                  string                        `json:"mode,omitempty"`
-	Rate                  int                           `json:"rate,omitempty"`
-	Value                 json.RawMessage               `json:"value,omitempty"`
-	ConfirmUpgrade        bool                          `json:"confirmUpgrade,omitempty"`
-	ClipSettings          *studioClipSettings           `json:"clipSettings,omitempty"`
-	Placement             *studioPlaceSettings          `json:"placement,omitempty"`
-	Tempo                 *edits.SetArrangementTempo    `json:"tempo,omitempty"`
-	Metadata              *studioProjectSettings        `json:"metadata,omitempty"`
-	Range                 *studioPatternRange           `json:"range,omitempty"`
-	Length                int                           `json:"length,omitempty"`
-	Settings              *studioPatternSettings        `json:"settings,omitempty"`
-	PerformanceNote       *edits.SetPerformedNote       `json:"performanceNote,omitempty"`
-	PerformanceExpression *edits.SetPerformedExpression `json:"performanceExpression,omitempty"`
-	PerformanceGroup      *edits.SetPerformanceGroup    `json:"performanceGroup,omitempty"`
-	PerformanceBinding    *edits.BindPerformedGroup     `json:"performanceBinding,omitempty"`
-	SharedExpression      *edits.SetSharedExpression    `json:"sharedExpression,omitempty"`
-	PerformanceLength     int64                         `json:"performanceLength,omitempty"`
-	PerformanceScale      *edits.ScalePerformance       `json:"performanceScale,omitempty"`
-	PerformancePitch      *edits.ShapePerformancePitch  `json:"performancePitch,omitempty"`
-	NoteEdit              *studioStepEdit               `json:"noteEdit,omitempty"`
-	Chord                 *edits.SetChord               `json:"chord,omitempty"`
-	Notes                 *edits.EditNotes              `json:"notes,omitempty"`
-	NewName               string                        `json:"newName,omitempty"`
-	Starter               string                        `json:"starter,omitempty"`
-	Machine               *patternmachine.Recipe        `json:"machine,omitempty"`
-	AmpDrive              *float64                      `json:"ampDrive,omitempty"`
-	AmpTone               *float64                      `json:"ampTone,omitempty"`
-	AmpOutput             *float64                      `json:"ampOutput,omitempty"`
-	AmpCabinet            *int                          `json:"ampCabinet,omitempty"`
+	recordedTake           bool // Set by the record route; arms the playback handoff after the commit.
+	historyFiles           []studioAuxiliaryFile
+	Hits                   []int                         `json:"hits,omitempty"`
+	File                   string                        `json:"file,omitempty"`
+	Capture                *studioBrowserTake            `json:"capture,omitempty"`
+	Sample                 *studioSampleRequest          `json:"sample,omitempty"`
+	TakeID                 string                        `json:"takeId,omitempty"`
+	Recording              *studioRecordingSettings      `json:"recording,omitempty"`
+	Scene                  string                        `json:"scene,omitempty"`
+	Revision               string                        `json:"revision"`
+	SourceRevision         string                        `json:"source_revision,omitempty"`
+	ProtectTrackIdentities bool                          `json:"protect_track_identities,omitempty"`
+	Label                  string                        `json:"label,omitempty"`
+	Author                 string                        `json:"author,omitempty"`
+	Session                string                        `json:"session,omitempty"`
+	Action                 string                        `json:"action,omitempty"`
+	Index                  int                           `json:"index,omitempty"`
+	Target                 int                           `json:"target,omitempty"`
+	Bars                   int                           `json:"bars,omitempty"`
+	Source                 string                        `json:"source"`
+	Pattern                string                        `json:"pattern"`
+	Track                  string                        `json:"track,omitempty"`
+	Count                  int                           `json:"count,omitempty"`
+	Take                   []studioTakeNote              `json:"take,omitempty"`
+	Recordings             []studioTakeRecording         `json:"recordings,omitempty"`
+	Timing                 string                        `json:"timing,omitempty"`
+	PatternCount           int                           `json:"patternCount,omitempty"`
+	Lane                   string                        `json:"lane"`
+	Step                   int                           `json:"step"`
+	Pitch                  *int                          `json:"pitch,omitempty"`
+	Modifier               string                        `json:"modifier,omitempty"`
+	Path                   string                        `json:"path,omitempty"`
+	Item                   string                        `json:"item,omitempty"`
+	Name                   string                        `json:"name,omitempty"`
+	Mode                   string                        `json:"mode,omitempty"`
+	Rate                   int                           `json:"rate,omitempty"`
+	Value                  json.RawMessage               `json:"value,omitempty"`
+	ConfirmUpgrade         bool                          `json:"confirmUpgrade,omitempty"`
+	ClipSettings           *studioClipSettings           `json:"clipSettings,omitempty"`
+	Placement              *studioPlaceSettings          `json:"placement,omitempty"`
+	Tempo                  *edits.SetArrangementTempo    `json:"tempo,omitempty"`
+	Metadata               *studioProjectSettings        `json:"metadata,omitempty"`
+	Range                  *studioPatternRange           `json:"range,omitempty"`
+	Length                 int                           `json:"length,omitempty"`
+	Settings               *studioPatternSettings        `json:"settings,omitempty"`
+	PerformanceNote        *edits.SetPerformedNote       `json:"performanceNote,omitempty"`
+	PerformanceExpression  *edits.SetPerformedExpression `json:"performanceExpression,omitempty"`
+	PerformanceGroup       *edits.SetPerformanceGroup    `json:"performanceGroup,omitempty"`
+	PerformanceBinding     *edits.BindPerformedGroup     `json:"performanceBinding,omitempty"`
+	SharedExpression       *edits.SetSharedExpression    `json:"sharedExpression,omitempty"`
+	PerformanceLength      int64                         `json:"performanceLength,omitempty"`
+	PerformanceScale       *edits.ScalePerformance       `json:"performanceScale,omitempty"`
+	PerformancePitch       *edits.ShapePerformancePitch  `json:"performancePitch,omitempty"`
+	NoteEdit               *studioStepEdit               `json:"noteEdit,omitempty"`
+	Chord                  *edits.SetChord               `json:"chord,omitempty"`
+	Notes                  *edits.EditNotes              `json:"notes,omitempty"`
+	NewName                string                        `json:"newName,omitempty"`
+	Starter                string                        `json:"starter,omitempty"`
+	Machine                *patternmachine.Recipe        `json:"machine,omitempty"`
+	AmpDrive               *float64                      `json:"ampDrive,omitempty"`
+	AmpTone                *float64                      `json:"ampTone,omitempty"`
+	AmpOutput              *float64                      `json:"ampOutput,omitempty"`
+	AmpCabinet             *int                          `json:"ampCabinet,omitempty"`
 }
 
 func (s *studio) editSong(w http.ResponseWriter, r *http.Request) {

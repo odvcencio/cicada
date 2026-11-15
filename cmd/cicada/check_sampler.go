@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"m31labs.dev/cicada/host/instrumentpack"
+	"m31labs.dev/cicada/kernel/voice/sample"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -37,6 +38,32 @@ type admittedPack struct {
 	zones    instrumentpack.ZoneMap
 }
 
+// checkPackReport names the velocity law a declared pack plays by:
+// "recorded" when its sounding zones share one gain, so its recorded layers
+// carry its dynamics, or "velocity/127" when their gains differ.
+type checkPackReport struct {
+	Sampler     string `json:"sampler"`
+	Manifest    string `json:"manifest"`
+	VelocityLaw string `json:"velocity_law"`
+}
+
+// samplerPackReports lists the packs that loaded, in declaration order.
+func samplerPackReports(score *notation.Score, packs map[string]admittedPack) []checkPackReport {
+	var reports []checkPackReport
+	for _, sampler := range score.Samplers {
+		admitted, ok := packs[sampler.Name]
+		if !ok {
+			continue
+		}
+		law := "velocity/127"
+		if sample.RecordedDynamics(admitted.zones) {
+			law = "recorded"
+		}
+		reports = append(reports, checkPackReport{Sampler: sampler.Name, Manifest: admitted.manifest, VelocityLaw: law})
+	}
+	return reports
+}
+
 // checkSamplerPacks reads every sampler pack that the score declares, as render
 // does, and reports each pack that does not load, the packs that render would
 // refuse for their size, and each scored note that falls outside every zone of
@@ -44,10 +71,10 @@ type admittedPack struct {
 // do. limit is the cap on decoded pack PCM, in bytes; zero is the default. It
 // returns nothing for a score without pack samplers. Diagnostics are in source
 // order.
-func checkSamplerPacks(path string, inspection scoreInspection, limit int64) []notation.Diagnostic {
+func checkSamplerPacks(path string, inspection scoreInspection, limit int64) ([]notation.Diagnostic, []checkPackReport) {
 	p, score := inspection.semantic, inspection.score
 	if p == nil || score == nil {
-		return nil
+		return nil, nil
 	}
 	packs, diagnostics := loadSamplerPacks(inspection.root(path), limit, p.Samplers, score.Samplers)
 	diagnostics = append(diagnostics, notesOutsideEveryZone(p, score, packs)...)
@@ -63,7 +90,7 @@ func checkSamplerPacks(path string, inspection scoreInspection, limit int64) []n
 		}
 		return a.Column < b.Column
 	})
-	return diagnostics
+	return diagnostics, samplerPackReports(score, packs)
 }
 
 // loadSamplerPacks admits each distinct pack once, however many samplers share

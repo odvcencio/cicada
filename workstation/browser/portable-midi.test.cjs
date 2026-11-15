@@ -71,7 +71,14 @@ test('portable MIDI routes input, learns to the score, and survives reload', {ti
   await page.evaluate(() => __sendMIDI(0x80, 60, 0));
   await page.locator('[data-live-target]').selectOption('param:bass.pan');
   await page.locator('[data-live-control=learn]').click();
-  await page.evaluate(() => __sendMIDI(0xb0, 71, 96));
+  await page.locator('[data-live-midi-setup]').evaluate(details => { details.open = false; });
+  assert.equal(await page.locator('[data-live-midi-state]').textContent(), 'MIDI learning');
+  await page.evaluate(() => __sendMIDI(0x90, 71, 96));
+  assert.equal(await page.locator('[data-live-midi-state]').textContent(), 'MIDI learning');
+  assert.equal(await page.evaluate(() => {
+    __sendMIDI(0xb0, 71, 96);
+    return document.querySelector('[data-live-midi-state]').textContent;
+  }), 'MIDI ready');
   await page.waitForFunction(() => document.querySelector('[data-live-status]')?.textContent.includes('saved in the score'), null, {timeout:30000});
   const score = fs.readFileSync(scorePath,'utf8');
   assert(score.includes('keys ch 1 cc 71 -> bass.pan'));

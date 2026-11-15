@@ -2,3 +2,4 @@ build/
 tools/sampler/__pycache__/
 go.work
 go.work.sum
+/llms-full.txt

@@ -40,9 +40,11 @@ func newBackend(address string) (*backend, error) {
 type backendError struct {
 	Status  int
 	Message string
+	Data    json.RawMessage
 }
 
 type expectedProjectSourcesKey struct{}
+type splitIntentTimeoutKey struct{}
 
 func (e *backendError) Error() string { return e.Message }
 
@@ -78,6 +80,9 @@ func (b *backend) request(ctx context.Context, method, path string, input any) (
 	if method == http.MethodPost && (path == "/api/record" || path == "/api/intents") {
 		copy := *client
 		copy.Timeout = 30 * time.Second // large retained gesture takes compile before acknowledgment
+		if path == "/api/intents" && ctx.Value(splitIntentTimeoutKey{}) == true {
+			copy.Timeout = 120 * time.Second // compare full renders before accepting a split
+		}
 		client = &copy
 	}
 	if method == http.MethodPost && path == "/api/arrange" {
@@ -137,7 +142,7 @@ func (b *backend) call(ctx context.Context, method, path string, input, output a
 		if failure.Error == "" {
 			failure.Error = strings.TrimSpace(string(data))
 		}
-		return &backendError{response.StatusCode, failure.Error}
+		return &backendError{Status: response.StatusCode, Message: failure.Error, Data: json.RawMessage(data)}
 	}
 	if method == http.MethodPost {
 		if receipt, ok := ctx.Value(workspaceWriteReceiptKey{}).(*workspaceWriteReceipt); ok {
@@ -253,16 +258,24 @@ type mixerField struct {
 type mixerSend struct {
 	mixerField
 	To string `json:"to"`
+	// Level is the send level as the score writes it, such as "-12dB" or
+	// "0.25"; Value is the linear gain the engine uses. Pre is a pre-fader tap.
+	Level string `json:"level"`
+	Pre   bool   `json:"pre"`
 }
 type mixerStrip struct {
-	Name    string                `json:"name"`
-	ID      string                `json:"id"`
-	Fields  map[string]mixerField `json:"fields"`
-	Sends   []mixerSend           `json:"sends"`
-	Inserts []string              `json:"inserts"`
+	Name string `json:"name"`
+	ID   string `json:"id"`
+	// SourceKind is a track's instrument kind; buses and the master have none.
+	SourceKind string                `json:"sourceKind"`
+	Fields     map[string]mixerField `json:"fields"`
+	Sends      []mixerSend           `json:"sends"`
+	Inserts    []string              `json:"inserts"`
 }
 type mixerReturn struct {
-	Name   string       `json:"name"`
+	Name string `json:"name"`
+	// Kind is the effect kind, such as "delay", "reverb" or "eq".
+	Kind   string       `json:"kind"`
 	Meter  string       `json:"meter"`
 	Fields []mixerField `json:"fields"`
 }

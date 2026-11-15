@@ -39,7 +39,7 @@ func generatorCommand(args []string) error {
 	if *trace && *output == "" {
 		return fmt.Errorf("--trace requires -o so source and trace have separate outputs")
 	}
-	if *rootOctave < 0 || *rootOctave > 4 || *steps < 0 || *steps > 64 || *gate < 0 || *gate > 100 || math.IsNaN(*swing) || math.IsInf(*swing, 0) || *swing < 50 || *swing > 75 || math.Abs(math.Round(*swing*100)-*swing*100) > 1e-7 {
+	if *rootOctave < 0 || *rootOctave > 4 || *steps < 0 || *steps > 64 || *gate < 0 || *gate > 100 || math.IsNaN(*swing) || math.IsInf(*swing, 0) || *swing < 50 || *swing > 75 || math.Abs(math.Round(*swing*100)-float64(*swing*100)) > 1e-7 {
 		return fmt.Errorf("gen parameter is out of range")
 	}
 	keys := map[string]uint8{"c": 0, "c#": 1, "d": 2, "d#": 3, "e": 4, "f": 5, "f#": 6, "g": 7, "g#": 8, "a": 9, "a#": 10, "b": 11}

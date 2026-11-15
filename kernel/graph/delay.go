@@ -1,6 +1,10 @@
 package graph
 
-import "math"
+import (
+	"math"
+
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+)
 
 // DelaySamples is the ring storage reserved per voice, in float32 samples.
 func (p Program) DelaySamples() int {
@@ -119,7 +123,7 @@ func staticValuesInto(p *Program, rate, pitch float32, values *[MaxNodes]float32
 			values[i] = clamp(a, b, values[n.C])
 		case Exp2:
 			known[i] = known[n.A]
-			values[i] = float32(math.Exp2(float64(clamp(a, -8, 8))))
+			values[i] = float32(detmath.Exp2(float64(clamp(a, -8, 8))))
 		}
 	}
 }
@@ -164,11 +168,12 @@ func (s *delayState) linear(ring []float32, input, samples float32) float32 {
 func (s *delayState) comb(ring []float32, input, period, feedback, damping float32) float32 {
 	if s.period != period || s.damping != damping {
 		w := 2 * math.Pi / float64(period)
-		phaseDelay := math.Atan2(float64(damping)*math.Sin(w), 1-float64(float64(damping)*math.Cos(w))) / w
+		// atan(y/x) for x = 1 - damping*cos(w) > 0, the angle math.Atan2(y, x) gives.
+		phaseDelay := detmath.Atan(float64(damping)*detmath.Sin(w)/(1-float64(float64(damping)*detmath.Cos(w)))) / w
 		delay := math.Max(2, float64(period)-phaseDelay)
 		s.integer = int(delay - .5)
 		fraction := delay - float64(s.integer)
-		ratio := math.Tan(w*fraction/2) / math.Tan(w/2)
+		ratio := detmath.Tan(w*fraction/2) / detmath.Tan(w/2)
 		s.coefficient = float32((1 - ratio) / (1 + ratio))
 		s.period, s.damping = period, damping
 	}

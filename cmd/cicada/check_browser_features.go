@@ -17,19 +17,24 @@ const (
 	featureSamplerChords = "sampler chords"
 	featureKitLanes      = "sampler kit lanes"
 	featureEchoHighpass  = "echo highpass"
+	featureReverbReturns = "reverb returns"
 )
 
 // portableFeatureRefusals lists every use of a feature that portable (browser
-// and WAM2) images refuse: the tape echo, the echo highpass, pattern humanize,
-// sampler kit lanes and sampler chords. The image encoder stops at the first, so check reads the
-// project itself to report them all at once. kinds holds the features found.
+// and WAM2) images refuse: tape echo, echo highpass, extra reverb returns,
+// pattern humanize, sampler kit lanes and sampler chords. The encoder stops at
+// the first, so check reports them all at once. kinds holds the features found.
 func portableFeatureRefusals(p *project.Project) (diagnostics []notation.Diagnostic, kinds map[string]bool) {
 	kinds = map[string]bool{}
 	var messages []string
+	var reverbs []string // reverb returns, in slot order
 	for _, effect := range p.Effects {
 		if effect.Kind == "tape" {
 			kinds[featureTape] = true
 			messages = append(messages, fmt.Sprintf("effect %s is a tape echo, which portable images do not have; use a delay", effect.ID))
+		}
+		if (effect.Kind == "reverb" || effect.Kind == "" && effect.ID == "reverb") && !project.MasterHasInsert(p, effect.ID) {
+			reverbs = append(reverbs, effect.ID)
 		}
 		if effect.Kind != "delay" {
 			continue
@@ -53,6 +58,10 @@ func portableFeatureRefusals(p *project.Project) (diagnostics []notation.Diagnos
 				messages = append(messages, fmt.Sprintf("an automate lane moves %s, which portable images do not have", path))
 			}
 		}
+	}
+	for i := 1; i < len(reverbs); i++ {
+		kinds[featureReverbReturns] = true
+		messages = append(messages, fmt.Sprintf("effect %s is reverb return %d of %d; portable images hold one reverb return until image version 19 (native playback and render play them all)", reverbs[i], i+1, len(reverbs)))
 	}
 	used := map[string][]string{} // pattern ID -> tracks that play it
 	for _, track := range p.Tracks {
@@ -129,6 +138,8 @@ func imageFeatureKind(message string) string {
 		return featureTape
 	case strings.Contains(message, "portable images have no echo highpass"):
 		return featureEchoHighpass
+	case strings.Contains(message, "portable images hold one reverb return"):
+		return featureReverbReturns
 	case strings.Contains(message, "portable images have no pattern humanize"):
 		return featureHumanize
 	case strings.Contains(message, "portable images have no sampler kit lanes"):

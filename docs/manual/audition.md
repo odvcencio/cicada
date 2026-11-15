@@ -18,6 +18,7 @@ cicada audition song.cicada --from 9 --bars 8 --json
 | `--bars <n>` | Bars to analyze; 0 means through the song end. |
 | `--json` | Print the report as JSON instead of text. |
 | `--max-resident-pcm <size>` | Cap on the decoded audio of the score's sampler packs, such as `2GiB` (default 1 GiB). `CICADA_MAX_RESIDENT_PCM` sets it when the flag is omitted. A score over the cap is refused before any pack is read. |
+| `--jobs auto\|<n>` | Render lanes for the stems render: tracks synthesized at once. Without it the render is serial; `auto` picks the smaller of 4 and half the CPUs. Every value gives the same stems and the same report; see [render lanes](../cli.md#render-lanes). |
 
 The command renders the mix and the per-track stems in process with the same
 engine as `cicada render` and `cicada stems`, with no tail. The same score and
@@ -87,6 +88,12 @@ correct render.
 | `decay20` | Median time for the level to fall 20 dB below its peak, in ms. Each note is measured only until the next detected attack on that track. A `>` means the median note did not fall 20 dB before the next attack (or 2 s), so the value is a lower bound: the note is sustained. |
 | `on/bar` | Detected note starts per bar over the bars where the track plays or sounds. A bar counts when a note starts or is still held in it (a held note with no release lasts to the end of the range) or when the stem has sound in it (for a track that plays notes, sound in the half second after a bar starts is treated as the release tail of the bar before and is ignored). A note ends when the renderer releases it: its own release, a scene that stops the track, the end of a placement, or, for a held pitched note, the next note on the track. A drum hit or a clip start has no length: it counts only the bar it starts in, and its tail counts only through the stem energy above. A note that starts mid-bar counts its first bar. |
 | step 1-16 | Rhythm profile (next paragraph). The percentage is the swing of the track's pattern. |
+
+A track whose stem is under -80 dBFS RMS is listed as `silent` with its level
+and no other measure, for example `piano  -81.4  silent: under -80 dBFS RMS,
+too quiet to measure`. Such a track still plays: raise its level or its
+velocities to measure it. `silent: no signal above -120 dBFS` means the stem
+holds no sound at all.
 
 The **rhythm profile** shows where in the bar the track's attacks land. Each
 cell is the mean onset strength at one sixteenth of the bar, scaled so the

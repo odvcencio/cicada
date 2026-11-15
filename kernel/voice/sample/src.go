@@ -3,6 +3,8 @@ package sample
 import (
 	"math"
 	"sync"
+
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 )
 
 const phases = 1024
@@ -54,7 +56,7 @@ func generateBanks() {
 				window := besselI0(beta*math.Sqrt(1-float64(u*u))) / normalizer
 				value := 2 * cutoff
 				if x != 0 {
-					value = math.Sin(2*math.Pi*cutoff*x) / (math.Pi * x)
+					value = detmath.Sin(2*math.Pi*cutoff*x) / (math.Pi * x)
 				}
 				row[tap] = float32(value * window)
 				sum += float64(row[tap])

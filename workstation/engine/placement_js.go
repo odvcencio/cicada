@@ -5,7 +5,6 @@ package main
 import (
 	"fmt"
 	"math"
-	"net/http"
 	"net/url"
 	"strconv"
 	"syscall/js"
@@ -45,6 +44,7 @@ type placementEditorUI struct {
 	placementEdit   func(js.Value, string, int64)
 	placementCopy   func(js.Value, int64)
 	refresh         func(js.Value)
+	open            func(js.Value) bool
 }
 
 func placementTicks(block js.Value, name string) int64 {
@@ -234,7 +234,9 @@ func (u *placementEditorUI) placementPointerUp(event js.Value) {
 		// Pointer capture targets the click at the block rather than its link.
 		// Read the selected view so its defaults and revision also follow edits
 		// saved from another panel or browser.
-		u.refresh(drag.block)
+		if drag.resize || drag.moved || u.open == nil || !u.open(drag.block) {
+			u.refresh(drag.block)
+		}
 	}
 }
 
@@ -309,7 +311,7 @@ func (u *workspaceUI) placementEdit(block js.Value, field string, value int64) {
 			break
 		}
 	}
-	u.queue(workspaceJob{method: http.MethodPost, target: "/__actions/arrange", values: values, confirmed: u.revision.Get(), form: form, controls: controls, pendingCell: block})
+	u.queue(workspaceJob{method: methodPost, target: "/__actions/arrange", values: values, confirmed: u.revision.Get(), form: form, controls: controls, pendingCell: block})
 }
 
 func (u *placementEditorUI) placementViewChanged(event js.Value) {
@@ -370,7 +372,7 @@ func (u *workspaceUI) placementCopy(block js.Value, at int64) {
 	}
 	values := u.editValues()
 	values["action"], values["name"], values["newName"], values["at"] = "duplicate", workspaceAttr(block, "data-placement-block"), name, strconv.FormatInt(at, 10)+"ticks"
-	u.queue(workspaceJob{method: http.MethodPost, target: "/__actions/arrange", values: values, confirmed: u.revision.Get(), form: form, pendingCell: block, placementSelection: name})
+	u.queue(workspaceJob{method: methodPost, target: "/__actions/arrange", values: values, confirmed: u.revision.Get(), form: form, pendingCell: block, placementSelection: name})
 }
 
 // Pattern scheduling requires sixteenth-aligned starts. Use the smallest

@@ -7,6 +7,7 @@ import (
 	"math"
 
 	"m31labs.dev/cicada/kernel/dsp/detmath"
+	"m31labs.dev/cicada/kernel/dsp/subnormal"
 
 	"m31labs.dev/cicada/kernel/dsp/halfband"
 )
@@ -58,6 +59,14 @@ type Processor struct {
 	// normGain and norm cache 1/tanh(gain) for the drive's current gain: both
 	// channels use it every frame, and it changes only while the drive moves.
 	normGain, norm float64
+	frames         uint32 // Process calls since New or Reset, for flushSubnormals
+	// blend caches the three impulses mixed by weights, keyed on the weights'
+	// bits: both channels use it every frame, and it changes only while a
+	// cabinet change fades in. The values are the ones the mix computed per
+	// channel before, so the output bits are the same.
+	blend        [taps]float64
+	blendWeights [3]uint64
+	blendValid   bool
 }
 
 func New(rate int, params Params) (*Processor, error) {
@@ -145,6 +154,27 @@ func (p *Processor) Reset() {
 	if p.params.Bypass {
 		p.bypass = 1
 	}
+	p.frames = 0
+}
+
+// flushSubnormals replaces a subnormal value with a zero of the same sign
+// (kernel/dsp/subnormal) in the values that glide to exactly zero: the drive,
+// the bypass blend, the weight of every cabinet but the selected one (a
+// cabinet switch takes the old one to zero, and each weight multiplies every
+// impulse-response tap), and each channel's DC blocker and tone filter, which
+// decay toward zero in silence. Without it each stalls at a subnormal number
+// and slows every frame from then on. Once the DC blocker is zero the FIR
+// stages behind it hold exact zeros after their length. Each reaches the
+// output only through sums with normal values or the float32 conversion,
+// which absorb it.
+func (p *Processor) flushSubnormals() {
+	p.drive, p.bypass = subnormal.Flush64(p.drive), subnormal.Flush64(p.bypass)
+	for i := range p.weights {
+		p.weights[i] = subnormal.Flush64(p.weights[i])
+	}
+	for _, c := range [...]*channel{&p.left, &p.right} {
+		c.dc, c.tone = subnormal.Flush64(c.dc), subnormal.Flush64(c.tone)
+	}
 }
 func (p *Processor) Process(l, r float32) (float32, float32) {
 	p.drive += float64(p.smooth * (p.params.Drive - p.drive))
@@ -162,9 +192,19 @@ func (p *Processor) Process(l, r float32) (float32, float32) {
 		target = 1
 	}
 	p.bypass += float64(p.smooth * (target - p.bypass))
+	p.frames++
+	if p.frames%subnormal.SweepFrames == 0 {
+		p.flushSubnormals()
+	}
 	gain := 1 + float64(12*p.drive)
 	if gain != p.normGain {
 		p.normGain, p.norm = gain, 1/detmath.Tanh(gain)
+	}
+	if w := [3]uint64{math.Float64bits(p.weights[0]), math.Float64bits(p.weights[1]), math.Float64bits(p.weights[2])}; !p.blendValid || w != p.blendWeights {
+		p.blendWeights, p.blendValid = w, true
+		for i := range p.blend {
+			p.blend[i] = float64(p.weights[0]*p.ir[0][i]) + float64(p.weights[1]*p.ir[1][i]) + float64(p.weights[2]*p.ir[2][i])
+		}
 	}
 	return float32(p.process(&p.left, float64(l), gain)), float32(p.process(&p.right, float64(r), gain))
 }
@@ -181,10 +221,12 @@ func (p *Processor) process(c *channel, x, gain float64) float64 {
 	a0, a1 := c.up2.Upsample(a)
 	b0, b1 := c.up2.Upsample(b)
 	norm := p.norm
-	a0 = detmath.Tanh(a0*gain) * norm
-	a1 = detmath.Tanh(a1*gain) * norm
-	b0 = detmath.Tanh(b0*gain) * norm
-	b1 = detmath.Tanh(b1*gain) * norm
+	// Per-sample saturation: the second tier (detmath package comment); the
+	// normaliser above is a coefficient and stays on the exact Tanh.
+	a0 = detmath.TanhNear(a0*gain) * norm
+	a1 = detmath.TanhNear(a1*gain) * norm
+	b0 = detmath.TanhNear(b0*gain) * norm
+	b1 = detmath.TanhNear(b1*gain) * norm
 	a0, a1, b0, b1, c.phase = c.phase, a0, a1, b0, b1
 	a = c.down2.Downsample(a0, a1)
 	b = c.down2.Downsample(b0, b1)
@@ -192,8 +234,7 @@ func (p *Processor) process(c *channel, x, gain float64) float64 {
 	c.history[c.pos] = y
 	var z float64
 	idx := c.pos
-	for i := range p.ir[0] {
-		h := float64(p.weights[0]*p.ir[0][i]) + float64(p.weights[1]*p.ir[1][i]) + float64(p.weights[2]*p.ir[2][i])
+	for _, h := range p.blend {
 		z += float64(h * c.history[idx])
 		idx--
 		if idx < 0 {

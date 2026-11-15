@@ -5,6 +5,8 @@ import (
 	"math"
 	"time"
 
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/expression"
@@ -188,6 +190,10 @@ type Config struct {
 	// last field so that the fields before it keep their offsets in the core
 	// kernel, which has none.
 	LiveParams []LiveParam `json:",omitempty"`
+	// Routing holds the returns beyond one delay or tape and one reverb (slots
+	// C to H) and the sends to them. It follows LiveParams for the same reason;
+	// a score without extra returns leaves it nil.
+	Routing *RoutingConfig `json:",omitempty"`
 }
 
 // DefaultParallelWaitFloor is the production parallel lane wait floor.
@@ -291,6 +297,7 @@ type Engine struct {
 	tapeA                        *tapeReturn
 	reverbB                      *fx.Reverb
 	compMusic                    *fx.Compressor
+	routing                      *routingState
 	compSidechainTrack           int
 	masterGain                   float32
 	masterProcessor              StereoProcessor
@@ -420,7 +427,7 @@ func MasterGain(db float64) float32 {
 	if db == 0 {
 		return 1
 	}
-	return float32(math.Pow(10, db/20))
+	return float32(detmath.Pow(10, db/20))
 }
 
 func New(cfg Config) (*Engine, error) {
@@ -485,6 +492,16 @@ func NewFromConfig(cfg *Config) (*Engine, error) {
 	}
 	if err := e.initEffects(cfg, bpmMilli); err != nil {
 		return nil, err
+	}
+	// Portable kernels never see Routing: kernel images have no field for it,
+	// and kernelimage.Encode refuses a config that sets it. A TinyGo engine
+	// ignores Routing without an error, so image version 19, which will carry
+	// slots C to H, must first make portable kernels build the extra returns
+	// or refuse Routing here (host/kernelimage TestNoImageVersionCarriesRoutingYet).
+	if returnsEnabled {
+		if err := e.initRouting(cfg); err != nil {
+			return nil, err
+		}
 	}
 	voices, err := e.initTrackVoices(cfg)
 	if err != nil {
@@ -621,7 +638,7 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 		if spec.Mute {
 			v.mix = mix.Track{}
 		}
-		e.spatial.tracks[i].gain = float32(math.Pow(10, gain/20))
+		e.spatial.tracks[i].gain = float32(detmath.Pow(10, gain/20))
 		e.spatial.tracks[i].target = e.spatial.tracks[i].gain
 		v.targetMix = v.mix
 		v.mixSmooth = e.paramAlpha[kernel.ParamMixGain]
@@ -1190,6 +1207,9 @@ func (e *Engine) Reset() {
 	if e.reverbB != nil {
 		e.reverbB.Reset()
 	}
+	if returnsEnabled {
+		e.resetExtraReturns()
+	}
 	if e.compMusic != nil {
 		e.compMusic.Reset()
 	}
@@ -1299,6 +1319,11 @@ func (e *Engine) Render(outL, outR []float32) {
 }
 
 func accumulateMeter(m *meterAccum, left, right float32) {
+	if left == 0 && right == 0 {
+		// A zero frame raises no peak (every peak is at least zero) and adds
+		// zero to every sum, so silence skips the arithmetic.
+		return
+	}
 	peak := float32(math.Max(math.Abs(float64(left)), math.Abs(float64(right))))
 	m.peak = max(m.peak, peak)
 	m.power += float64((float64(float64(left)*float64(left)) + float64(float64(right)*float64(right))) * .5)
@@ -1309,7 +1334,7 @@ func accumulateMeter(m *meterAccum, left, right float32) {
 }
 
 func smoothingAlpha(id kernel.ParamID, sampleRate int) float32 {
-	return float32(1 - math.Exp(-1/(float64(kernel.Params[id].SmoothingMS)*.001*float64(sampleRate))))
+	return float32(1 - detmath.Exp(-1/(float64(kernel.Params[id].SmoothingMS)*.001*float64(sampleRate))))
 }
 
 func (e *Engine) emitMeters(masterBlockPeak float32) {
@@ -1392,7 +1417,7 @@ func (e *Engine) drainCommands() {
 		e.commandRead++
 		// A layer mask, and a pattern edit while playing, wait for the next bar line.
 		if c.Tick == 0 && (c.Op == cmd.OpSetLayerMask || e.transport.Playing() && c.Pad != cmd.PatternEditNow && (c.Op == cmd.OpSetStep || c.Op == cmd.OpSetChordStep || c.Op == cmd.OpSetPatternLen || c.Op == cmd.OpSetPatternMeta)) {
-			c.Tick = e.MeterMap().NextBarLine(e.transport.Tick())
+			c.Tick = e.transport.NextBarLine()
 		}
 		if e.pendingLen == len(e.pending) {
 			e.fault(FaultPendingFull)
@@ -1547,6 +1572,9 @@ func (e *Engine) apply(c cmd.Command) {
 		}
 		if e.reverbB != nil {
 			e.reverbB.Reset()
+		}
+		if returnsEnabled {
+			e.resetExtraReturns()
 		}
 		if e.compMusic != nil {
 			e.compMusic.Reset()
@@ -2428,6 +2456,9 @@ func (e *Engine) emit(message cmd.Message) {
 			if e.reverbB != nil {
 				e.reverbB.Reset()
 			}
+			if returnsEnabled {
+				e.resetExtraReturns()
+			}
 			if e.compMusic != nil {
 				e.compMusic.Reset()
 			}
@@ -2461,6 +2492,9 @@ func (e *Engine) fault(code uint16) {
 	}
 	if e.reverbB != nil {
 		e.reverbB.Reset()
+	}
+	if returnsEnabled {
+		e.resetExtraReturns()
 	}
 	if e.compMusic != nil {
 		e.compMusic.Reset()

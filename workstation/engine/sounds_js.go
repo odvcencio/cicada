@@ -3,14 +3,12 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall/js"
@@ -64,6 +62,41 @@ func mountSounds(host enginewasm.Context) (enginewasm.Handle, error) {
 		cancel()
 		return nil, fmt.Errorf("sound browser is missing")
 	}
+	u.on(u.root, "input", func(e js.Value) {
+		input := e.Get("target")
+		if !input.Call("matches", "[data-sound-search]").Bool() {
+			return
+		}
+		query := strings.ToLower(input.Get("value").String())
+		rows := u.root.Call("querySelectorAll", "[data-instrument-patch]")
+		visible := 0
+		for i := 0; i < rows.Length(); i++ {
+			row := rows.Index(i)
+			match := strings.Contains(strings.ToLower(workspaceAttr(row, "data-sound-search-text")), query)
+			row.Set("hidden", !match)
+			if match {
+				visible++
+			}
+		}
+		u.root.Call("querySelector", "[data-sound-empty]").Set("hidden", visible != 0)
+	})
+	u.on(u.root, "click", func(e js.Value) {
+		row := e.Get("target").Call("closest", "[data-instrument-patch]")
+		if !workspacePresent(row) || !u.root.Call("contains", row).Bool() {
+			return
+		}
+		id := workspaceAttr(row, "data-instrument-patch")
+		rows := u.root.Call("querySelectorAll", "[data-instrument-patch]")
+		for i := 0; i < rows.Length(); i++ {
+			item := rows.Index(i)
+			item.Call("setAttribute", "aria-pressed", strconv.FormatBool(workspaceAttr(item, "data-instrument-patch") == id))
+		}
+		details := u.root.Call("querySelectorAll", "[data-sound-detail]")
+		for i := 0; i < details.Length(); i++ {
+			detail := details.Index(i)
+			detail.Set("hidden", workspaceAttr(detail, "data-sound-detail") != id)
+		}
+	})
 	u.on(u.root, "click", func(e js.Value) {
 		button := e.Get("target").Call("closest", "[data-sound-preview], [data-sound-stop]")
 		if !workspacePresent(button) || !u.root.Call("contains", button).Bool() {
@@ -99,7 +132,7 @@ func mountSounds(host enginewasm.Context) (enginewasm.Handle, error) {
 	})
 	u.on(u.root, "keydown", func(e js.Value) {
 		if key := e.Get("key").String(); key == " " || key == "Enter" {
-			if workspacePresent(e.Get("target").Call("closest", "[data-sound-preview], [data-sound-stop]")) {
+			if workspacePresent(e.Get("target").Call("closest", "[data-sound-preview], [data-sound-stop], [data-instrument-patch]")) {
 				e.Call("stopPropagation")
 			}
 		}
@@ -120,9 +153,12 @@ func mountSounds(host enginewasm.Context) (enginewasm.Handle, error) {
 			u.syncPatternSound(choice.Get("value").String(), false)
 		}
 	}
-	message := "Listen to a sound, then add it to your song."
+	message := ""
 	if u.props.Pattern != "" {
 		message = "Preview leaves your song position unchanged."
+		if js.Global().Get("location").Get("pathname").String() == "/studio" {
+			message = ""
+		}
 	}
 	u.render(message)
 	go u.run()
@@ -161,7 +197,7 @@ func (u *soundsUI) render(message string) {
 	for i := 0; i < buttons.Length(); i++ {
 		button := buttons.Index(i)
 		selected := u.selected == workspaceAttr(button, "data-sound-preview")
-		label, text := "Listen to "+workspaceAttr(button, "data-sound-name"), "Listen"
+		label, text := "Audition "+workspaceAttr(button, "data-sound-name"), "Audition"
 		if u.props.Pattern != "" {
 			label, text = "Loop "+workspaceAttr(button, "data-sound-name"), "Loop part"
 		}
@@ -218,28 +254,21 @@ func (u *soundsUI) post(ctx context.Context, values map[string]string) (soundRes
 	if err != nil {
 		return result, err
 	}
-	origin := js.Global().Get("location").Get("origin").String()
-	request, err := http.NewRequestWithContext(ctx, "POST", origin+"/__actions/sound-preview", bytes.NewReader(data))
-	if err != nil {
-		return result, err
-	}
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Accept", "application/json")
-	request.Header.Set("X-CSRF-Token", u.props.CSRF)
-	response, err := (&http.Client{Timeout: 10 * time.Second}).Do(request)
+	response, err := nativeRequest{Method: methodPost, Path: "/__actions/sound-preview", Body: data, Timeout: 10 * time.Second, Limit: 16 << 10, Headers: map[string]string{
+		"Content-Type": "application/json", "Accept": "application/json", "X-CSRF-Token": u.props.CSRF,
+	}}.do(ctx)
 	if err != nil {
 		return result, fmt.Errorf("sound preview could not reach the audio service")
 	}
-	defer response.Body.Close()
 	var receipt struct {
 		OK      bool          `json:"ok"`
 		Message string        `json:"message"`
 		Data    soundResponse `json:"data"`
 	}
-	if err := json.NewDecoder(io.LimitReader(response.Body, 16<<10)).Decode(&receipt); err != nil {
+	if err := decodeLimited(response.Body, 16<<10, &receipt); err != nil {
 		return result, fmt.Errorf("sound preview returned an unreadable response")
 	}
-	if response.StatusCode < 200 || response.StatusCode >= 300 || !receipt.OK {
+	if response.Status < 200 || response.Status >= 300 || !receipt.OK {
 		if receipt.Message == "" {
 			receipt.Message = "Sound preview is unavailable."
 		}

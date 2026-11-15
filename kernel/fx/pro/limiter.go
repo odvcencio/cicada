@@ -39,6 +39,7 @@ type peakEntry struct {
 type Limiter struct {
 	coeff                 [limiterTaps][limiterPhases - 1]float64
 	ring                  [2][2 * limiterTaps]float64
+	nonzero               int // ring entries (both channels, one copy) that are not zero
 	audio                 [2][]float32
 	queue                 []peakEntry
 	queueHead, queueCount int
@@ -101,10 +102,24 @@ func NewLimiter(sampleRate int, p LimiterParams) (*Limiter, error) {
 
 func (l *Limiter) detector(left, right float64) float64 {
 	index := int(l.frames & (limiterTaps - 1))
+	for channel, value := range [2]float64{left, right} {
+		if l.ring[channel][index] != 0 {
+			l.nonzero--
+		}
+		if value != 0 {
+			l.nonzero++
+		}
+	}
 	l.ring[0][index], l.ring[1][index] = left, right
 	// Mirror the ring so every FIR window is contiguous. The seven phases
 	// reuse each stereo input load rather than wrapping/indexing it seven times.
 	l.ring[0][index+limiterTaps], l.ring[1][index+limiterTaps] = left, right
+	if l.nonzero == 0 {
+		// Every input in the window is a zero, so every FIR product is a zero,
+		// every sum stays +0 and the peak below is exactly 0: skip the
+		// filter, as silence after the music needs no peak search.
+		return 0
+	}
 	center := int((l.frames - limiterHalf) & (limiterTaps - 1))
 	peak := math.Max(math.Abs(l.ring[0][center]), math.Abs(l.ring[1][center]))
 	start := (index + 1) & (limiterTaps - 1)
@@ -182,6 +197,7 @@ func (l *Limiter) Process(left, right float32) (float32, float32) {
 
 func (l *Limiter) Reset() {
 	l.ring = [2][2 * limiterTaps]float64{}
+	l.nonzero = 0
 	for channel := range l.audio {
 		clear(l.audio[channel])
 	}

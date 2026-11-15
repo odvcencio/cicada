@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 )
 
 // MarshalJSON supplies the effect kind when a migrated in-memory /2 value
@@ -515,6 +517,8 @@ func DecodeJSON(data []byte) (*Project, error) {
 	for _, effect := range p.Effects {
 		effectKinds[effect.ID] = semanticEffectKind(effect)
 	}
+	// Only a send to the first reverb, return slot B, is the legacy send B.
+	firstReverb := firstReverbName(&p)
 	for i := range p.Tracks {
 		for _, send := range p.Tracks[i].Mixer.Sends {
 			if send.Level.Number == nil {
@@ -522,13 +526,15 @@ func DecodeJSON(data []byte) (*Project, error) {
 			}
 			gain := *send.Level.Number
 			if send.Level.Unit == "db" {
-				gain = math.Pow(10, gain/20)
+				gain = detmath.Pow(10, gain/20)
 			}
 			switch effectKinds[send.To] {
 			case "delay", "tape":
 				p.Tracks[i].Mixer.SendA = gain
 			case "reverb":
-				p.Tracks[i].Mixer.SendB = gain
+				if send.To == firstReverb {
+					p.Tracks[i].Mixer.SendB = gain
+				}
 			}
 		}
 	}

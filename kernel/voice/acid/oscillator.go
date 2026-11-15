@@ -5,6 +5,8 @@ import (
 	"math"
 	"sync"
 	"unsafe"
+
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 )
 
 // Each table is limited to harmonics below the top of its semitone bin.
@@ -169,7 +171,7 @@ func buildOscillatorBank(sampleRate float64) *oscillatorBank {
 	bank := new(oscillatorBank)
 	byHarmonics := make(map[int]*oscillatorTable)
 	for bin := range bank.tables {
-		upperFrequency := math.Exp2(oscillatorMinPitchLog + float64(bin+1)/12)
+		upperFrequency := detmath.Exp2(oscillatorMinPitchLog + float64(bin+1)/12)
 		harmonics := int((float64(sampleRate/2) - 100) / upperFrequency)
 		if harmonics > oscillatorTableSize/4 {
 			harmonics = oscillatorTableSize / 4
@@ -220,7 +222,7 @@ func inverseOscillatorFFT(data []complex128) {
 	}
 	for span := 2; span <= n; span <<= 1 {
 		angle := 2 * math.Pi / float64(span)
-		root := complex(math.Cos(angle), math.Sin(angle))
+		root := complex(detmath.Cos(angle), detmath.Sin(angle))
 		for base := 0; base < n; base += span {
 			rotation := complex(1, 0)
 			for i := 0; i < span/2; i++ {

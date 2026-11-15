@@ -4,6 +4,7 @@ import (
 	"math"
 
 	"m31labs.dev/cicada/kernel/dsp/detmath"
+	"m31labs.dev/cicada/kernel/dsp/subnormal"
 
 	"m31labs.dev/cicada/kernel/dsp/fastmath"
 )
@@ -151,6 +152,7 @@ type Delay struct {
 	highpass                 EchoHighpass
 	fault                    bool
 	excited                  bool
+	frames                   uint32 // Process calls since New or Reset, for flushControls
 }
 
 func NewDelay(sampleRate int, bpmMilli int64) (*Delay, error) {
@@ -262,6 +264,18 @@ func (d *Delay) Reset() {
 	if EchoHighpassEnabled {
 		d.highpass.Reset()
 	}
+	d.frames = 0
+}
+
+// flushControls replaces a subnormal smoothed control with a zero of the same
+// sign (kernel/dsp/subnormal). Feedback, ping-pong, width and mix can glide to
+// a target of exactly zero; there each stalls at a subnormal number, and every
+// frame's products with it run slowly from then on. Each reaches the output
+// only through sums with normal values and the float32 conversion, which
+// absorb it. The damping coefficient's target is never zero.
+func (d *Delay) flushControls() {
+	d.feedback, d.ping = subnormal.Flush64(d.feedback), subnormal.Flush64(d.ping)
+	d.width, d.mix = subnormal.Flush64(d.width), subnormal.Flush64(d.mix)
 }
 
 func (d *Delay) read(frames float64) stereo {
@@ -300,6 +314,10 @@ func (d *Delay) Process(left, right float32) (float32, float32) {
 	d.mix += float64((d.targetMix - d.mix) * d.smooth)
 	if EchoHighpassEnabled {
 		d.highpass.Advance(d.smooth)
+	}
+	d.frames++
+	if d.frames%subnormal.SweepFrames == 0 {
+		d.flushControls()
 	}
 	if left == 0 && right == 0 && !d.excited {
 		// Both read heads and the feedback filter contain exact zeros.

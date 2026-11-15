@@ -1,6 +1,10 @@
 package modal
 
-import "math"
+import (
+	"math"
+
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+)
 
 type Profile uint8
 
@@ -157,7 +161,7 @@ func NewVoice(profile Profile, sampleRate int) (*Voice, error) {
 		return nil, Error("modal sample rate must be 44100, 48000, or 96000")
 	}
 	v := &Voice{profile: profile, rate: float64(sampleRate)}
-	v.damper = math.Exp(-math.Log(1000) / (.07 * v.rate))
+	v.damper = detmath.Exp(-detmath.Log(1000) / (.07 * v.rate))
 	v.Reset()
 	return v, nil
 }
@@ -187,9 +191,9 @@ func (v *Voice) pitch(note uint8) float64 {
 	if v.profile == Shaker {
 		// A shaker's vessel colour changes slowly with the authored pitch;
 		// its grain modes are not an equal-tempered musical fundamental.
-		return 330 * math.Exp2((float64(note)-60)/48)
+		return 330 * detmath.Exp2((float64(note)-60)/48)
 	}
-	return 440 * math.Exp2((float64(note)-69)/12)
+	return 440 * detmath.Exp2((float64(note)-69)/12)
 }
 
 // NoteOn starts a finite strike. Velocity zero is a key-up, and cannot excite
@@ -246,8 +250,8 @@ func (v *Voice) NoteOn(note, velocity uint8, slide bool) {
 	s.excitation = s.contact
 	s.force, s.noiseMix = 2/float64(s.contact), r.noise
 	angle := 2 * math.Pi / float64(s.contact)
-	s.pulseS, s.pulseC = math.Sincos(angle)
-	s.pulseY, s.pulseX = math.Sincos(angle / 2)
+	s.pulseS, s.pulseC = detmath.Sincos(angle)
+	s.pulseY, s.pulseX = detmath.Sincos(angle / 2)
 	frequency := v.pitch(note)
 	weightSum := 0.0
 	for m := 0; m < r.count; m++ {
@@ -262,8 +266,8 @@ func (v *Voice) NoteOn(note, velocity uint8, slide bool) {
 		}
 		mode := &s.modes[s.count]
 		mode.freq, mode.active = freq, true
-		mode.radius = math.Exp(-math.Log(1000) / (r.t60[m] * v.rate))
-		mode.s, mode.c = math.Sincos(2 * math.Pi * freq / v.rate)
+		mode.radius = detmath.Exp(-detmath.Log(1000) / (r.t60[m] * v.rate))
+		mode.s, mode.c = detmath.Sincos(2 * math.Pi * freq / v.rate)
 		mode.c, mode.s = mode.c*mode.radius, mode.s*mode.radius
 		brightness := 1.0
 		if m != 0 {
@@ -271,7 +275,7 @@ func (v *Voice) NoteOn(note, velocity uint8, slide bool) {
 		}
 		// Different virtual contact positions give four timbres. Frequencies
 		// and decay poles remain identical for every strike position.
-		position := 1 + float64(.055*math.Sin(float64((m+1)*int(variation+1))*1.7))
+		position := 1 + float64(.055*detmath.Sin(float64((m+1)*int(variation+1))*1.7))
 		mode.gain = level * r.weight[m] / weightSum * brightness * position
 		s.count++
 	}
@@ -303,7 +307,7 @@ func (v *Voice) retune(s *strike, note uint8) {
 			m.active, m.x, m.y = false, 0, 0
 			continue
 		}
-		sin, cos := math.Sincos(2 * math.Pi * m.freq / v.rate)
+		sin, cos := detmath.Sincos(2 * math.Pi * m.freq / v.rate)
 		m.dc = (float64(m.radius*cos) - m.c) / float64(s.glide)
 		m.ds = (float64(m.radius*sin) - m.s) / float64(s.glide)
 	}

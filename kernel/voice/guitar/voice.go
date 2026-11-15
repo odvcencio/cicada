@@ -5,6 +5,8 @@ package guitar
 import (
 	"math"
 
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+
 	"m31labs.dev/cicada/experimental/expressive"
 	"m31labs.dev/cicada/kernel"
 )
@@ -94,13 +96,13 @@ func New(sampleRate int, params Params) (*Voice, error) {
 }
 
 func (v *Voice) expression() expressive.Expression {
-	return expressive.Expression{PitchHz: v.pitch * math.Exp2(v.params.Bend/12),
+	return expressive.Expression{PitchHz: v.pitch * detmath.Exp2(v.params.Bend/12),
 		Vibrato: v.params.Vibrato, Brightness: v.params.Brightness,
 		Damping: v.params.Damping, Position: v.params.Pickup, Drive: v.params.Drive}
 }
 
 func (v *Voice) NoteOn(note, velocity uint8, _ bool, slide bool) {
-	v.pitch = 440 * math.Exp2((float64(note)-69)/12)
+	v.pitch = 440 * detmath.Exp2((float64(note)-69)/12)
 	e := v.expression()
 	v.model.SetExpression(e)
 	if !slide || !v.gate {

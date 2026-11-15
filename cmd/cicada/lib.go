@@ -19,6 +19,29 @@ func libCommand(args []string, output io.Writer) error {
 	if len(args) == 0 {
 		return fmt.Errorf("%s", libUsage)
 	}
+	if (args[0] == "list" || args[0] == "show") && hasJSONFlag(args) {
+		var rest []string
+		for _, arg := range args[1:] {
+			if arg != "--json" && arg != "--json=true" {
+				rest = append(rest, arg)
+			}
+		}
+		path := ""
+		if args[0] == "show" && len(rest) == 1 {
+			path = rest[0]
+		} else if len(rest) != 0 || args[0] == "show" {
+			writeAgentJSON(output, libraryDocument{Schema: librarySchema, Error: &jsonError{Code: "usage", Message: libUsage}})
+			return fmt.Errorf("%s", libUsage)
+		}
+		document, code, err := libraryJSON(path)
+		if err != nil {
+			document.Error = &jsonError{Code: code, Message: err.Error()}
+		}
+		if writeErr := writeAgentJSON(output, document); writeErr != nil {
+			return writeErr
+		}
+		return err
+	}
 	if args[0] == "new" {
 		return libNewCommand(args[1:], output)
 	}
@@ -36,12 +59,7 @@ func libCommand(args []string, output io.Writer) error {
 			fmt.Fprintln(output)
 		}
 		fmt.Fprintln(output, "\nDeclarations:")
-		var names []string
-		for name := range notation.DeclarationNames(lib.Files) {
-			names = append(names, name)
-		}
-		sort.Strings(names)
-		for _, name := range names {
+		for _, name := range libraryDeclarations(lib) {
 			fmt.Fprintln(output, "  "+name)
 		}
 		fmt.Fprintln(output, "\nAssets:")
@@ -183,4 +201,14 @@ func libNewCommand(args []string, output io.Writer) error {
 	}
 	fmt.Fprintf(output, "created library %s in %s\n", name, dir)
 	return nil
+}
+
+// libraryDeclarations are the names a library declares, sorted.
+func libraryDeclarations(lib *project.Library) []string {
+	names := []string{}
+	for name := range notation.DeclarationNames(lib.Files) {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }

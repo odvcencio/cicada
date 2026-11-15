@@ -16,7 +16,8 @@ import (
 // false only when the service accepted the work or the user discarded it. The
 // refresh asks this registry plus the edited-controls check below, and nothing
 // else. An engine that holds unsaved work and does not register is a bug.
-var unsavedWork sync.Map // map[string]func() bool
+var unsavedWork sync.Map   // map[string]func() bool
+var heldLiveNotes sync.Map // map[string]func() bool
 
 // holdUnsavedWork registers an engine's check and returns its removal.
 func holdUnsavedWork(name string, dirty func() bool) (release func()) {
@@ -134,7 +135,13 @@ func controlsDirty() bool {
 }
 
 func hasUnsavedWork() bool {
-	dirty := controlsDirty()
+	return controlsDirty() || hasEngineUnsavedWork()
+}
+
+// hasEngineUnsavedWork excludes ordinary form drafts; rename can preserve
+// those, but an unfinished performance may still name the old track.
+func hasEngineUnsavedWork() bool {
+	dirty := false
 	unsavedWork.Range(func(_, check any) bool {
 		if check.(func() bool)() {
 			dirty = true

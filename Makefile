@@ -1,5 +1,5 @@
 .PHONY: test-gosx-worklet test-director build-worklets test grammar test-kernel test-golden test-alloc test-timing grammar-check probe-wasm build build-kernel-wasm build-loudness-wasm test-kernel-wasm test-parity test-loudness build-phrase-wasm test-phrase-wasm test-midi-virtual test-wasm test-browser test-browser-soak budget-size budget-browser release-cpu-report engine-metrics test-engine-measurements test-chord-wasm test-worklet-negotiation
-.PHONY: build-keys-wasm test-keys-wasm build-vocals-wasm build-modular-wasm build-keys-modular-wasm
+.PHONY: build-keys-wasm test-keys-wasm build-vocals-wasm build-modular-wasm build-keys-modular-wasm test-tinygo-digests
 
 export GOWORK := off
 
@@ -47,9 +47,10 @@ test: test-build-tools
 .PHONY: test-ci-core test-cmd-shard test-cmd-shard-check
 
 # CI runs ./cmd/cicada in parallel shards (see scripts/cmdshard), so the core
-# target covers every other package. `make test` still runs everything.
+# target covers every other package. It skips TestRenderPathsAgree, which CI
+# runs in its own job (make test-render-paths). `make test` still runs everything.
 test-ci-core: test-build-tools
-	go test $$(go list ./... | grep -v '^m31labs.dev/cicada/cmd/cicada$$') -count=1
+	go test $$(go list ./... | grep -v '^m31labs.dev/cicada/cmd/cicada$$') -skip '^TestRenderPathsAgree$$' -count=1
 	node --test cmd/cicada/studio-chord-grid.test.cjs cmd/cicada/browser_cpu_node.test.cjs scripts/demo-browser/soak-timing.test.cjs scripts/demo-browser/server-url.test.cjs cmd/cicada/state-poll.test.cjs cmd/cicada/source-written.test.cjs cmd/cicada/audio-sync-client.test.cjs
 	node host/web/chord_capability_test.cjs
 	node --test host/web/render-quantum.test.cjs host/web/scene-tempo.test.cjs
@@ -100,7 +101,9 @@ build-core:
 
 # Times an agent's loop with build/cicada on the reference scores and checks
 # the speed gates in cmd/cicada-bench/gates.go; BENCH_ARGS=--enforce fails on
-# a gate. The large song's render and audition cover its first 8 bars.
+# a gate. The large song's render and audition cover its first 8 bars. It also
+# renders a piano chord held through a reverb and the large song with every
+# track off (render:held, render:silent), reported without a gate.
 .PHONY: bench-agent-loop test-render-identity
 BENCH_ARGS ?=
 bench-agent-loop: build-core
@@ -110,6 +113,44 @@ bench-agent-loop: build-core
 # and compares the bytes: plain, normalized, and at -14 and -9 LUFS.
 test-render-identity:
 	CICADA_RENDER_IDENTITY_SWEEP=1 go test ./cmd/cicada -run '^TestRenderCacheIdentity$$' -count=1 -timeout=110m -v
+
+# Checks that flushing subnormal numbers (kernel/dsp/subnormal) leaves the
+# 24-bit files cicada render writes unchanged: renders the WAV parity subset
+# and the flush cases (cmd/cicada/testdata/flush) in a build with the tag
+# cicada_noflush, where Flush returns its argument, and requires the same
+# bytes as the ordinary build in every mode. FLUSH_REFERENCE names hashes the
+# ordinary build already wrote (CICADA_WAV_PARITY_OUT), as CI's amd64 parity
+# job does; without it the target renders them first.
+.PHONY: test-flush-identity
+FLUSH_REFERENCE ?=
+test-flush-identity:
+	mkdir -p build/flush-identity
+	bash -o pipefail -c 'set -e; reference="$(FLUSH_REFERENCE)"; \
+	  if [ -z "$$reference" ]; then \
+	    reference="$$PWD/build/flush-identity/flush.txt"; \
+	    CICADA_WAV_PARITY_OUT="$$reference" go test -timeout=20m ./cmd/cicada -run "^TestExampleWAVParity$$" -count=1; \
+	  fi; \
+	  CICADA_WAV_PARITY_REFERENCE="$$reference" go test -tags cicada_noflush -timeout=20m ./cmd/cicada -run "^TestExampleWAVParity$$" -count=1 -v | tee build/flush-identity/report.txt; \
+	  grep -q -- "^--- PASS: TestExampleWAVParity " build/flush-identity/report.txt'
+
+# Regenerates the committed agent front door (llms.txt, AGENTS.md's generated
+# region, the quick start the binary embeds, examples/first-song/AGENTS.md),
+# whose only inputs are the quick start and stable text, and builds
+# llms-full.txt from the manual, which is not committed.
+.PHONY: agent-front-door
+agent-front-door:
+	CICADA_UPDATE_AGENT_FRONT_DOOR=1 CICADA_LLMS_FULL_OUT=$(CURDIR)/llms-full.txt go test ./internal/agentguide -run '^(TestAgentFrontDoorIsCurrent|TestLLMsFullFitsItsBudget)$$' -count=1
+
+# The two render paths (the direct mixer and the scheduled engine) must play the
+# same notes and write the same float32 bytes at 44.1 kHz (TestRenderPathsAgree;
+# CI job "M0 render paths agree"). The audio target compares whole songs at
+# 48 kHz and only reports (nightly).
+.PHONY: test-render-paths test-render-paths-audio
+test-render-paths:
+	go test ./render -run '^TestRenderPathsAgree$$' -count=1 -v
+
+test-render-paths-audio:
+	CICADA_PATHS_AUDIO=full go test ./render -run '^TestRenderPathsAudio$$' -count=1 -timeout=60m -v
 
 # The agent task suite (internal/agentsuite) drives build/cicada through one
 # scripted task that reads only JSON: help, intents, symbols, check, apply,
@@ -142,6 +183,14 @@ build-workstation-release:
 test-workstation:
 	cd workstation && go generate ./... && go test -race ./... -count=1
 
+.PHONY: engine-size-report
+# What fills the UI engine WebAssembly, by section, runtime table, package and
+# module, with the linker's reason for each large package and two floor
+# programs. Writes workstation/build/engine-size.json; see workstation/README.md.
+ENGINE_SIZE_ARGS ?=
+engine-size-report:
+	cd workstation && go run ./internal/enginesize -o build/engine-size.json $(ENGINE_SIZE_ARGS)
+
 .PHONY: test-collaboration
 test-collaboration:
 	cd workstation && GOWORK=off go test -race ./collab ./ -run 'Test(Concurrent|Undo|Transactional|SeededOffline|Collaboration)' -count=1 -v
@@ -167,6 +216,11 @@ test-studio-latency:
 # Requires a fresh Studio process, disposable score, and proof directory.
 test-studio-modulation-source:
 	node --test workstation/browser/modulation-source.test.cjs
+
+.PHONY: test-studio-add-insert
+# Requires a fresh Studio process and disposable score.
+test-studio-add-insert:
+	node --test workstation/browser/add-insert.test.cjs
 
 .PHONY: test-studio-chorus
 # Requires a fresh Studio process, disposable score, and proof directory.
@@ -315,6 +369,39 @@ test-timing:
 test-golden:
 	go run ./cmd/cicada golden
 
+# Renders every example score with --jobs 1 and with 2, 4, 8 and the automatic
+# job count, plain and at -14 LUFS, and compares the bytes (render lanes).
+.PHONY: test-parallel-identity
+test-parallel-identity:
+	CICADA_PARALLEL_IDENTITY_SWEEP=1 go test ./cmd/cicada -run '^TestParallelRenderIdentity$$' -count=1 -timeout=110m -v
+
+# Runs the render lanes under the race detector with the lanestress hook. At
+# each hand-off point of the lane protocol the hook sleeps 1 ms (five times a
+# lane's spin window) at about 1 in 32 hand-offs and yields at about 1 in 4 of
+# the rest, chosen by a hash of the seed and the hand-off (site, segment,
+# lane, chunk), with no state shared between goroutines. Each test binary
+# prints its seed; CICADA_LANE_STRESS_SEED=<seed> gives every hand-off the same
+# delay again. It runs the forced-lane tests and the identity subset with every
+# segment on every lane, once per GOMAXPROCS value in LANE_STRESS_PROCS ("all"
+# is every CPU), so the job counts 4 and 8 exceed the processors.
+# LANE_STRESS_COUNT repeats the quick sets (renderlanes, render) and
+# LANE_STRESS_HEAVY_COUNT the slow ones (the engine tests, the identity subset).
+# The nightly CI job runs 10 and 10 at 2, 3 and all; pull requests that touch
+# the lanes run LANE_STRESS_PROCS=2 LANE_STRESS_COUNT=3 LANE_STRESS_HEAVY_COUNT=1.
+LANE_STRESS_PROCS ?= 2 3 all
+LANE_STRESS_COUNT ?= 10
+LANE_STRESS_HEAVY_COUNT ?= 10
+.PHONY: test-lane-stress
+test-lane-stress:
+	@set -e; for procs in $(LANE_STRESS_PROCS); do \
+		if [ "$$procs" = all ]; then run="env -u GOMAXPROCS"; else run="env GOMAXPROCS=$$procs"; fi; \
+		echo "== lane stress: GOMAXPROCS $$procs, -count=$(LANE_STRESS_COUNT), heavy -count=$(LANE_STRESS_HEAVY_COUNT)"; \
+		$$run go test -race -tags lanestress ./internal/renderlanes -run '^Test(RunRendersEveryTrackOnce|LightSegmentsStaySerial|PanicInALaneReachesTheCaller|PanicInTheCallersLane|BudgetLimitsConcurrentPools|LaneCountChangesBetweenSegments|ForcedLanesRenderEachSegmentOnce)$$' -count=$(LANE_STRESS_COUNT) -timeout=30m -v; \
+		$$run go test -race -tags lanestress ./render -run '^Test(DirectLanes|AudioClipLanes)' -count=$(LANE_STRESS_COUNT) -timeout=30m -v; \
+		$$run go test -race -tags lanestress ./kernel/engine -run '^TestOfflineParallel' -count=$(LANE_STRESS_HEAVY_COUNT) -timeout=60m -v; \
+		$$run CICADA_PARALLEL_IDENTITY_STRESS=1 go test -race -tags lanestress ./cmd/cicada -run '^TestParallelRenderIdentity$$' -count=$(LANE_STRESS_HEAVY_COUNT) -timeout=100m -v; \
+	done
+
 test-midi-virtual: build-core
 	GOWORK=off PULSE_SERVER=unix:/nonexistent node ./cmd/cicada/test-midi-virtual.cjs
 
@@ -394,6 +481,21 @@ test-kernel-wasm: build-kernel-wasm build-vocals-wasm build-loudness-wasm
 	go test -timeout=20m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestAudioWASM' -count=1
 	go test -timeout=3m -tags stream_wasm ./kernel/stream -run '^TestStreamNativeWASMParity$$' -count=1 -v
 	go test -timeout=3m -tags modulate_wasm ./kernel/modulate -run '^TestModulateNativeWASMParity$$' -count=1 -v
+
+# The kernel WASM is compiled by TinyGo (LLVM), not by the Go compiler. This
+# runs the deterministic-math and processor digests compiled by TinyGo for
+# WebAssembly (under Node), so a TinyGo code-generation difference fails here as
+# it would on arm64 or with GOAMD64=v3. go test exits 0 when -run matches
+# nothing, so every digest must print a PASS line.
+TINYGO_DIGEST_PACKAGES = ./kernel/dsp/detmath ./kernel/fx ./kernel/fx/ampcab ./kernel/fx/chorus ./kernel/fx/convolution ./kernel/fx/tape ./kernel/fx/pro ./kernel/mix ./kernel/loudness
+TINYGO_DIGEST_TESTS = TestIdentityDigest TestSinPiDigest TestAtanDigest TestTanh32Digest TestLog1pDigest TestNearDigest TestFilterCoefficientDigest TestExp2F32Digest \
+	TestCompressorDigest TestDeesserDigest TestDelayDigest TestDriveDigest TestReverbDigest TestAmpcabDigest TestAmpcabOutputDigest TestChorusDigest \
+	TestConvolutionDigest TestTapeDigest TestLimiterDigest TestTransientDigest TestWidthDigest TestRoomDigest TestChainDigest TestNormalizeDigest \
+	TestEQDigestIsIdenticalOnEveryTarget TestMixDigest TestMeterDigestIsIdenticalOnEveryTarget
+test-tinygo-digests:
+	mkdir -p build
+	bash -o pipefail -c 'GOWORK=off GOFLAGS=-buildvcs=false tinygo test -target=wasm -v -run Digest $(TINYGO_DIGEST_PACKAGES) | tee build/tinygo-digests.txt'
+	@missing=0; for name in $(TINYGO_DIGEST_TESTS); do grep -q -- "^--- PASS: $$name " build/tinygo-digests.txt || { echo "No PASS line for $$name under TinyGo" >&2; missing=1; }; done; exit $$missing
 
 test-chord-wasm: build-kernel-wasm test-worklet-negotiation
 	node host/web/chord_capability_test.cjs

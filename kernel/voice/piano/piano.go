@@ -2,7 +2,12 @@
 // One audio owner must serialize note, pedal and render calls.
 package piano
 
-import "math"
+import (
+	"math"
+
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+	"m31labs.dev/cicada/kernel/dsp/subnormal"
+)
 
 const (
 	MinNote      = 21
@@ -73,6 +78,7 @@ type Instrument struct {
 	tailL, tailR, tailDecay                     float32
 	tailFrames, stealFrames                     int
 	excited                                     bool
+	frames                                      uint32 // excited samples since New or Reset, for flushSubnormals
 }
 
 func New(sampleRate int) (*Instrument, error) {
@@ -82,17 +88,17 @@ func New(sampleRate int) (*Instrument, error) {
 	p := &Instrument{rate: sampleRate}
 	fs := float64(sampleRate)
 	p.hammerStep = float32(1 / (fs * contactSteps))
-	p.pedalAlpha = float32(1 - math.Exp(-1/(.004*fs)))
-	p.damperAlpha = float32(1 - math.Exp(-1/(.006*fs)))
-	p.dcPole = float32(math.Exp(-2 * math.Pi * 12 / fs))
-	p.lowAlpha = float32(1 - math.Exp(-2*math.Pi*9000/fs))
+	p.pedalAlpha = float32(1 - detmath.Exp(-1/(.004*fs)))
+	p.damperAlpha = float32(1 - detmath.Exp(-1/(.006*fs)))
+	p.dcPole = float32(detmath.Exp(-2 * math.Pi * 12 / fs))
+	p.lowAlpha = float32(1 - detmath.Exp(-2*math.Pi*9000/fs))
 	p.stealFrames = sampleRate / 250
-	p.tailDecay = float32(math.Exp(-8 / float64(p.stealFrames)))
+	p.tailDecay = float32(detmath.Exp(-8 / float64(p.stealFrames)))
 	for i := range p.keys {
 		p.prepareKey(i)
 		f := noteFrequency(i + MinNote)
 		p.sympathetic[i] = newResonator(f, 1.8+2.2/(1+f/400), fs, .000045)
-		p.sympathetic[i].damped = float32(math.Exp(-1 / (.025 * fs)))
+		p.sympathetic[i].damped = float32(detmath.Exp(-1 / (.025 * fs)))
 	}
 	frequencies := [...]float64{73, 109, 164, 233, 349, 523, 784, 1174, 1760, 2640, 3960, 5940}
 	for i, f := range frequencies {
@@ -102,16 +108,16 @@ func New(sampleRate int) (*Instrument, error) {
 	return p, nil
 }
 
-func noteFrequency(note int) float64 { return 440 * math.Exp2(float64(note-69)/12) }
+func noteFrequency(note int) float64 { return 440 * detmath.Exp2(float64(note-69)/12) }
 
 // Stiffness returns the dimensionless bending-stiffness coefficient B. The
 // bass and treble curves are design parameters, not a fit to a sampled grand.
 func Stiffness(note uint8) float64 {
 	n := float64(note)
 	if n < 48 {
-		return .00012 + float64(.00018*math.Exp2((36-n)/12))
+		return .00012 + float64(.00018*detmath.Exp2((36-n)/12))
 	}
-	return .00012 + float64(.00016*math.Exp2((n-60)/12))
+	return .00012 + float64(.00016*detmath.Exp2((n-60)/12))
 }
 
 // PartialFrequency is the normalized stiff-string dispersion law. Partial 1
@@ -136,17 +142,17 @@ func (p *Instrument) prepareKey(index int) {
 	} else if note < 48 {
 		strings = 2
 	}
-	position := .115 + .025*math.Exp2(float64(48-note)/24)/(1+math.Exp2(float64(48-note)/24))
+	position := .115 + .025*detmath.Exp2(float64(48-note)/24)/(1+detmath.Exp2(float64(48-note)/24))
 	// String/hammer masses scale through the keyboard. These are deliberately
 	// smooth design curves, avoiding sample-key discontinuities.
-	mass := .0045 * math.Exp2(float64(60-note)/18)
+	mass := .0045 * detmath.Exp2(float64(60-note)/18)
 	hammerMass := .012 - .007*float64(index)/float64(keyCount-1)
 	k.inverseHammerMass = float32(1 / hammerMass)
-	k.stiffness = float32(3.5e11 * math.Exp2(float64(note-60)/24))
+	k.stiffness = float32(3.5e11 * detmath.Exp2(float64(note-60)/24))
 	k.velocity = float32(.7 + .6*float64(index)/float64(keyCount-1))
 	k.pan = float32(.18 * float64(note-64) / 44)
-	t60 := 8.0 * math.Exp2(float64(60-note)/28)
-	k.damper = float32(math.Exp(-6.907755 / (.14 * fs)))
+	t60 := 8.0 * detmath.Exp2(float64(60-note)/28)
+	k.damper = float32(detmath.Exp(-6.907755 / (.14 * fs)))
 	k.lifetime = int(min(28., t60*1.5) * fs)
 	k.compliance = float32(float32(p.hammerStep*p.hammerStep) * k.inverseHammerMass)
 	for partial := 1; partial <= MaxModes/strings; partial++ {
@@ -155,7 +161,7 @@ func (p *Instrument) prepareKey(index int) {
 			if strings > 1 {
 				detune = (float64(stringIndex) - float64(float64(strings-1)*.5)) * 1.4
 			}
-			hz := PartialFrequency(uint8(note), partial) * math.Exp2(detune/1200)
+			hz := PartialFrequency(uint8(note), partial) * detmath.Exp2(detune/1200)
 			if hz >= .42*fs {
 				continue
 			}
@@ -163,16 +169,16 @@ func (p *Instrument) prepareKey(index int) {
 			// Higher partials lose energy sooner; unison beating survives into
 			// the aftersound. The loss is applied to the exact modal rotation.
 			tau := t60 / 6.907755 / (1 + float64(.025*float64(partial*partial)) + hz/16000)
-			rho := math.Exp(-1 / (tau * fs))
+			rho := detmath.Exp(-1 / (tau * fs))
 			angle := omega / fs
-			strike := math.Sin(math.Pi * float64(partial) * position)
+			strike := detmath.Sin(math.Pi * float64(partial) * position)
 			sign := 1.
 			if partial%2 == 0 {
 				sign = -1
 			}
 			k.modes[k.count] = modeCoefficients{
-				c: float32(math.Cos(angle)), s: float32(math.Sin(angle)), decay: float32(rho),
-				subC: float32(math.Cos(angle / contactSteps)), subS: float32(math.Sin(angle / contactSteps)), subDecay: float32(math.Exp(-1 / (tau * fs * contactSteps))),
+				c: float32(detmath.Cos(angle)), s: float32(detmath.Sin(angle)), decay: float32(rho),
+				subC: float32(detmath.Cos(angle / contactSteps)), subS: float32(detmath.Sin(angle / contactSteps)), subDecay: float32(detmath.Exp(-1 / (tau * fs * contactSteps))),
 				strike: float32(strike), impulse: float32(2 * strike / (mass * omega * fs * contactSteps)),
 				// Finite plate radiation falls below its first broad modes. This
 				// suppresses subsonic/very low bridge force without removing the
@@ -188,7 +194,7 @@ func (p *Instrument) prepareKey(index int) {
 
 func newResonator(f, tau, rate, gain float64) resonator {
 	angle := 2 * math.Pi * f / rate
-	return resonator{c: float32(math.Cos(angle)), s: float32(math.Sin(angle)), decay: float32(math.Exp(-1 / (tau * rate))), gain: float32(gain * 48000 / rate)}
+	return resonator{c: float32(detmath.Cos(angle)), s: float32(detmath.Sin(angle)), decay: float32(detmath.Exp(-1 / (tau * rate))), gain: float32(gain * 48000 / rate)}
 }
 
 func (p *Instrument) NoteOn(note, velocity uint8) error {
@@ -374,6 +380,9 @@ func (p *Instrument) NextStereo() (float32, float32) {
 		right += float32(bridge * (1 + k.pan))
 		v.age++
 		if v.age > k.lifetime || !v.held && v.note < 89 && p.pedal < .001 && v.age > p.rate && abs(bridge) < 1e-7 {
+			// The next note in this slot starts from the state it keeps, which
+			// the sweep no longer visits: flush it once here.
+			flushStrings(v, k.count)
 			v.key = nil
 		}
 	}
@@ -414,7 +423,66 @@ func (p *Instrument) NextStereo() (float32, float32) {
 	left = p.lowL - p.dcInL + float32(p.dcPole*p.dcOutL)
 	right = p.lowR - p.dcInR + float32(p.dcPole*p.dcOutR)
 	p.dcInL, p.dcInR, p.dcOutL, p.dcOutR = p.lowL, p.lowR, left, right
+	p.frames++
+	if p.frames%flushFrames == 0 {
+		p.flushSubnormals()
+	}
 	return left, right
+}
+
+// flushFrames is how often, in excited samples, the recursive state is swept
+// for subnormal numbers. A string or resonator that decays into them stays
+// there at most this long before it becomes zero, and stays zero while it gets
+// no new input, so the sweep keeps a long decay cheap. Flushing every sample
+// instead cost about 580 compares per sample with four keys held, 60% more on
+// amd64 for the common, still-ringing case, and every sweep is pure cost on
+// arm64, where subnormal arithmetic runs at full speed; 256 keeps the sweep
+// under 3 compares per sample. The sweep falls on the same samples on every
+// architecture and block size: it counts the instrument's own samples since
+// New or Reset.
+const flushFrames = 256
+
+// flushStrings flushes the first count string modes of a voice.
+func flushStrings(v *voice, count int) {
+	for j := range count {
+		s := &v.state[j]
+		s.q, s.p = subnormal.Flush(s.q), subnormal.Flush(s.p)
+	}
+}
+
+// flushSubnormals replaces every subnormal state value with a signed zero
+// (kernel/dsp/subnormal). The gain from any of them to the output is below
+// 2^7: 88 sympathetic resonators of resonant gain under 9 (0.000045*48000*4 s)
+// at 0.06, 12 board resonators under 6 at 0.16, and the bridge.
+//
+// The pedal is a smoothed control value, not a signal: after a release it
+// decays toward zero and stalls at about 1.4e-43, where it would make all 88
+// sympathetic resonators and every released voice's damper multiply by a
+// subnormal number each sample (12 to 19 times the cost of the same tail
+// without a pedal, on amd64). It reaches the output only through
+// r.damped + (r.decay-r.damped)*lift and k.damper + (1-k.damper)*pedal, sums
+// of a value near 1 that absorb anything below 2^-25, and through the test
+// pedal < .001, which zero and a subnormal pass alike, so flushing it changes
+// no output bit.
+func (p *Instrument) flushSubnormals() {
+	p.pedal = subnormal.Flush(p.pedal)
+	for i := range p.voices {
+		if v := &p.voices[i]; v.key != nil {
+			flushStrings(v, v.key.count)
+		}
+	}
+	for i := range p.sympathetic {
+		r := &p.sympathetic[i]
+		r.q, r.p = subnormal.Flush(r.q), subnormal.Flush(r.p)
+	}
+	for i := range p.board {
+		r := &p.board[i]
+		r.q, r.p = subnormal.Flush(r.q), subnormal.Flush(r.p)
+	}
+	p.tailL, p.tailR = subnormal.Flush(p.tailL), subnormal.Flush(p.tailR)
+	p.lowL, p.lowR = subnormal.Flush(p.lowL), subnormal.Flush(p.lowR)
+	p.dcInL, p.dcInR = subnormal.Flush(p.dcInL), subnormal.Flush(p.dcInR)
+	p.dcOutL, p.dcOutR = subnormal.Flush(p.dcOutL), subnormal.Flush(p.dcOutR)
 }
 
 func abs(x float32) float32 {
@@ -438,4 +506,5 @@ func (p *Instrument) Reset() {
 	p.dcInL, p.dcInR, p.dcOutL, p.dcOutR, p.lowL, p.lowR = 0, 0, 0, 0, 0, 0
 	p.tailL, p.tailR, p.tailFrames = 0, 0, 0
 	p.excited = false
+	p.frames = 0
 }
