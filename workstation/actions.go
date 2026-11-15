@@ -219,6 +219,7 @@ func (s *studioApp) actions() map[string]action.Handler {
 	edit := func(f map[string]string) map[string]any { return map[string]any{"revision": f["revision"]} }
 	return map[string]action.Handler{
 		"split-placement": s.splitPlacement,
+		"add-effect":      s.addEffect,
 		"midi-learn":      s.learnPortableMIDI,
 		"midi-bind":       s.bindPortableMIDI,
 		"preset-save": s.mutation("/api/library/save", func(f map[string]string) (any, error) {

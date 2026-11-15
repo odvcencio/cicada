@@ -40,6 +40,7 @@ func newBackend(address string) (*backend, error) {
 type backendError struct {
 	Status  int
 	Message string
+	Data    json.RawMessage
 }
 
 type expectedProjectSourcesKey struct{}
@@ -141,7 +142,7 @@ func (b *backend) call(ctx context.Context, method, path string, input, output a
 		if failure.Error == "" {
 			failure.Error = strings.TrimSpace(string(data))
 		}
-		return &backendError{response.StatusCode, failure.Error}
+		return &backendError{Status: response.StatusCode, Message: failure.Error, Data: json.RawMessage(data)}
 	}
 	if method == http.MethodPost {
 		if receipt, ok := ctx.Value(workspaceWriteReceiptKey{}).(*workspaceWriteReceipt); ok {

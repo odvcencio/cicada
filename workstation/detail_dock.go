@@ -115,6 +115,7 @@ func (s *studioApp) deviceDock(ctx *server.Context, v workspace, csrf string) go
 			controls = append(controls, note("No mixer controls are available for this channel."))
 		}
 		inserts := s.stripInsertChain(v, csrf, channel)
+		inserts = append(inserts, s.addInsert(v, csrf, channel))
 		if channel.Kind == "track" {
 			inserts = append(inserts, ampAutomationLinks(ctx, v.Project, channel.ID))
 		}
@@ -126,7 +127,7 @@ func (s *studioApp) deviceDock(ctx *server.Context, v workspace, csrf string) go
 				}
 			}
 		}
-		if _, has := channel.Strip.Fields["insert"]; !has && len(channel.Strip.Inserts) == 0 && !channel.Audio {
+		if _, has := channel.Strip.Fields["insert"]; !has && len(channel.Strip.Inserts) == 0 && !channel.Audio && len(insertKinds(channel)) == 0 && channel.ID != "sfx" {
 			inserts = append(inserts, note("This channel has no insert chain. Add EQ, compression or drive effects in the score to make them available here."))
 		}
 		groups = append(groups, group("Mix and routing", controls), group("Insert effects", inserts))

@@ -103,7 +103,7 @@ func mixerChannels(mixer mixerState, p *project.Project) (strips, effects []mixe
 	}
 	for _, effect := range mergeMixerReturns(mixer.Returns, mixer.Effects) {
 		// The service meters the delay return and the first reverb return.
-		if returns[effect.Name] || effect.Meter != "" {
+		if returns[effect.Name] || effect.Kind == "tape" || effect.Meter != "" {
 			meter := ""
 			if effect.Meter != "" {
 				meter = "return:" + effect.Meter
@@ -280,7 +280,7 @@ func (s *studioApp) mixer(ctx *server.Context, v workspace, csrf string) gosx.No
 		view("mixer-meter", "Meter", option("both", "Peak and RMS"), option("peak", "Peak"), option("rms", "RMS")),
 		gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-mixer-reset-peaks", ""), gosx.Attr("title", "Clear the held peaks and clip marks on every meter")), gosx.Text("Reset peaks")),
 		gosx.El("details", gosx.Attrs(gosx.Attr("class", "mixer-add-effect")), gosx.El("summary", gosx.Text("Add effect")),
-			gosx.El("div", gosx.Attrs(gosx.Attr("class", "mixer-add-effect__body")), addChorus, unplaced)))
+			gosx.El("div", gosx.Attrs(gosx.Attr("class", "mixer-add-effect__body")), addChorus, s.addReturn(v, csrf, mixer), unplaced)))
 	// The strips' forms return to "/?panel=mixer", which the shell turns into
 	// this view with the Device selection kept (shellDestination).
 	return ui.Panel(ui.PanelProps{ID: "mixer", Title: "Mixer", Description: description}, tools, gosx.El("div", gosx.Attrs(gosx.Attr("class", "strips")), gosx.Fragment(strips...)))
