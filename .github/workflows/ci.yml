@@ -973,7 +973,8 @@ jobs:
 
   # Holds every job of this run to its time budget in scripts/ci-job-budgets.tsv:
   # a warning above the budget, a failure above 20 minutes, the project's rule
-  # for pull-request jobs. It waits for every hosted job, so it is not part of
+  # for pull-request jobs. It waits for its hosted and self-hosted dependencies,
+  # so it is not part of
   # the required check, which would then finish only when CI does: a slow job
   # shows here, in red when it broke the rule, without holding up a merge. The
   # self-hosted M2 AudioWorklet gates are judged when they have finished.
@@ -1127,13 +1128,14 @@ jobs:
     name: Studio browser suites (shard ${{ matrix.shard }}/4)
     needs: [changes, studio-build]
     if: ${{ needs.changes.outputs.studio_browser == 'true' }}
-    # The shards run on the tailnet pool (self-hosted runners labelled
-    # tailnet-pool) when the repository variable CI_TAILNET_POOL is "on" and
-    # the code comes from this repository. A pull request from a fork never
-    # runs on a self-hosted machine. Unset the variable to go back to hosted
-    # runners. The shard script brings its own Playwright and Chrome, and
-    # picks a free port, so several shards can share one machine.
-    runs-on: ${{ (vars.CI_TAILNET_POOL == 'on' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON('["self-hosted","linux","x64","tailnet-pool"]') || 'ubuntu-24.04' }}
+    # With CI_TAILNET_POOL on, pushes and same-repository pull requests use
+    # the pool. A fork's unchanged workflow routes to hosted runners, but a
+    # fork can edit it: repository settings require approval for every outside
+    # contributor run, and reviewers must read .github/ changes before approval.
+    # Each shard has its own state and scratch folders. Before enabling the
+    # variable, the pool must pass all four shards repeatedly and the job budget
+    # must be re-measured on the pool. Unset it to return to hosted runners.
+    runs-on: ${{ (vars.CI_TAILNET_POOL == 'on' && (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository))) && fromJSON('["tailnet-pool"]') || 'ubuntu-24.04' }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -1144,6 +1146,9 @@ jobs:
       CHROME_VERSION: 152.0.7977.64
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        id: checkout
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: '1.27.3'
@@ -1165,7 +1170,7 @@ jobs:
         shell: bash
         run: bash scripts/ci-studio-browser.sh run ${{ matrix.shard }}
       - name: Save Studio continuity reports
-        if: always()
+        if: ${{ always() && steps.checkout.outcome == 'success' }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: studio-continuity-reports-${{ matrix.shard }}
@@ -1936,12 +1941,10 @@ jobs:
     # scripts/ci-changes.sh); pushes to main always run it.
     if: ${{ (github.event_name == 'pull_request' || github.event_name == 'push') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && needs.changes.outputs.m2_gates == 'true' }}
     # This job runs on the self-hosted reference machine, so a pull request from
-    # a fork must not run it. The machine has one runner: every queued run waits
-    # for the one before it, so this job holds only the CPU budget, which a
-    # hosted runner cannot measure (it measured 1.296 ms against 0.67 ms).
-    # The reference machine only: these jobs measure CPU and timing, so they
-    # must not land on a pool runner.
-    runs-on: [self-hosted, linux, x64, buildbox]
+    # a fork must not run it. Its label pins it to the reference runner; pool
+    # runners cannot take it. It holds only the CPU budget, which a hosted
+    # runner cannot measure (it measured 1.296 ms against 0.67 ms).
+    runs-on: [self-hosted, linux, x64, audio-soak]
     timeout-minutes: 20
     env:
       GOWORK: off
@@ -1987,7 +1990,7 @@ jobs:
     # A hosted runner measured 1.296 ms, so this job stays on the self-hosted one.
     # The reference machine only: these jobs measure CPU and timing, so they
     # must not land on a pool runner.
-    runs-on: [self-hosted, linux, x64, buildbox]
+    runs-on: [self-hosted, linux, x64, audio-soak]
     timeout-minutes: 55
     env:
       GOWORK: off
