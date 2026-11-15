@@ -1276,11 +1276,11 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 		} else {
 			gain += target.LoudnessTarget - measurement.IntegratedLUFS
 		}
-		next := math.Max(-120, math.Min(gainMax, gain))
-		if next == passOptions.MasterGainDB && !pendingDC {
-			break
-		}
-		gain = next
+		// When the next gain equals the last one (a capped gain at the
+		// maximum, for example), the remaining passes are not rendered again:
+		// the search counts them as repeated passes (see Repeats), so the
+		// pass count stays what readers of the report expect.
+		gain = math.Max(-120, math.Min(gainMax, gain))
 	}
 	if !hasBest {
 		if math.IsInf(peakFallbackExcess, 1) {
