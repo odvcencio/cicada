@@ -92,8 +92,12 @@ type checkDiagnosticReport struct {
 	Start    *checkPosition `json:"start,omitempty"`
 	End      *checkPosition `json:"end,omitempty"`
 	Related  *checkPosition `json:"related,omitempty"`
-	Hint     string         `json:"hint,omitempty"`
-	Fix      *checkFix      `json:"fix,omitempty"`
+	// Expected and Found, when the checker knows them, are the value it
+	// wanted and the value it found, as short text.
+	Expected string    `json:"expected,omitempty"`
+	Found    string    `json:"found,omitempty"`
+	Hint     string    `json:"hint,omitempty"`
+	Fix      *checkFix `json:"fix,omitempty"`
 }
 
 // checkFix is a repair the checker knows for one diagnostic: intents for
@@ -154,7 +158,8 @@ func checkPathsJSON(paths []string, options checkOptions, stdout io.Writer) erro
 }
 
 // checkScoreJSON checks one score in the order checkPathsWith does: the
-// validator, then the sampler packs, then the browser profile.
+// validator, then the sampler packs and the rest of what render refuses
+// (checkBeyondValidator), then the browser profile.
 func checkScoreJSON(path string, options checkOptions) checkScoreReport {
 	report := checkScoreReport{File: jsonPath(path), Diagnostics: []checkDiagnosticReport{}}
 	add := func(source []byte, diagnostic notation.Diagnostic, inspection *scoreInspection) {
@@ -181,7 +186,7 @@ func checkScoreJSON(path string, options checkOptions) checkScoreReport {
 		add(inspection.source, diagnostic, &inspection)
 	}
 	if !hasDiagnosticErrors(inspection.diagnostics) {
-		packDiagnostics, packs := checkSamplerPacks(path, inspection, options.maxResidentPCM)
+		packDiagnostics, packs := checkBeyondValidator(path, inspection, options.maxResidentPCM)
 		report.Packs = packs
 		for _, diagnostic := range packDiagnostics {
 			add(inspection.source, diagnostic, &inspection)
@@ -217,7 +222,7 @@ func checkDiagnosticJSON(path string, source []byte, d notation.Diagnostic, insp
 			source = data
 		}
 	}
-	report := checkDiagnosticReport{Code: d.Code, Severity: d.Severity, Message: d.Message, File: jsonPath(file), Hint: checkSuggestion(d)}
+	report := checkDiagnosticReport{Code: d.Code, Severity: d.Severity, Message: d.Message, File: jsonPath(file), Expected: d.Expected, Found: d.Found, Hint: checkSuggestion(d)}
 	if d.Position.Line > 0 {
 		start := sourcePosition(source, d.Position.Line, d.Position.Column)
 		end := start

@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"m31labs.dev/cicada/instrument"
+	"m31labs.dev/cicada/internal/applycount"
 	"m31labs.dev/cicada/internal/paramdefs"
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/dsp/detmath"
@@ -57,6 +58,9 @@ const (
 )
 
 func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAsset, prepared []engine.StereoVoiceFactory, purpose engineCompilePurpose) (engine.Config, error) {
+	if applycount.Enabled {
+		applycount.EngineBuild()
+	}
 	var cfg engine.Config
 	if err := ValidateProject(p); err != nil {
 		return cfg, err
