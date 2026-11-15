@@ -299,9 +299,9 @@ func (u *workspaceUI) shellRegions(job workspaceJob, mode int) string {
 // refreshStale queues a cancellable read of the stale regions: only the
 // visible ones when a region opens, all of them when the queue is idle.
 func (u *workspaceUI) refreshStale(mode int) {
-	if u.reading || u.closed.Load() {
-		// One read at a time: it covers what is stale when it runs, and an
-		// edit cancels it. A region that opens meanwhile is read after it.
+	if u.reading || u.busy.Load() || u.closed.Load() {
+		// Retry a reveal after the current read or job finishes, when its
+		// region patches have settled.
 		u.revealWanted = u.revealWanted || mode == regionsVisibleStale
 		return
 	}
@@ -352,7 +352,7 @@ func shellEnginesKept(wrapper js.Value, markup string) bool {
 // applyRegions applies an edit or read response under rule R1. The region the
 // server lists first is patched first; the regions that need no HTML advance
 // before the rest are patched one per task, so input keeps flowing. Regions
-// on an older revision are marked stale before patching begins.
+// on another revision are marked stale before patching begins.
 func (u *workspaceUI) applyRegions(projection workspaceProjection, job workspaceJob) (err error) {
 	defer func() {
 		if recover() != nil {
@@ -382,7 +382,7 @@ func (u *workspaceUI) applyRegions(projection workspaceProjection, job workspace
 			return nil
 		}
 	}
-	// Mark old regions before the first patch can yield to the browser.
+	// Mark old regions before yielding between patches.
 	// A read that returns a revision this tab did not write reveals another
 	// change. A region it did not render still shows the song from before
 	// that change, whatever this tab saves next, until it is rendered again.

@@ -222,53 +222,68 @@ test('a piano-roll draw paints at once and is confirmed without a navigation', a
     observer.observe(document.querySelector('#studio-shell'), {subtree: true, attributes: true, attributeFilter: ['data-region-revision', 'data-region-stale']});
     window.__stopRegionRevisionObserver = () => observer.disconnect();
   }, before);
-  const grid = await page.evaluateHandle(() => document.querySelector('#detail-panel-clip .piano-roll'));
-  assert.equal(await page.locator(cell(15)).getAttribute('data-active'), 'false');
-  const release = hold();
-  await page.locator(cell(15)).click();
-  // The answer is held, so this state can only be the pending paint.
-  await page.waitForFunction(selector => {
-    const el = document.querySelector(selector);
-    return el.getAttribute('data-active') === 'true' && el.hasAttribute('data-workspace-pending') && el.textContent === '●';
-  }, cell(15));
-  assert.equal(await revisionOf('dock-clip'), before, 'the pending paint advanced the region revision');
-  release();
-  await settled(1);
-  const record = posts[0];
-  assert.equal(record.status, 200, record.result?.message);
-  assert.match(record.payload.__cicada_regions, /(^|,)dock-clip:[0-9a-f]{16}(,|$)/, 'the edit names the visible Clip region with its digest');
-  assert.doesNotMatch(record.payload.__cicada_regions, /(^|,)center-session:/, 'a hidden tab is not visible');
-  const revision = record.result.data.revision;
-  assert.ok(revision && revision !== original.revision);
-  await confirmed(cell(15), true, revision);
-  assert.notEqual((await state('/api/state')).source, original.source, 'the draw was not saved');
-  assert.equal(await grid.evaluate(node => node.isConnected && node === document.querySelector('#detail-panel-clip .piano-roll')), true, 'the piano roll was replaced instead of patched');
-  // Rule R1: every region the response confirmed carries the new revision in
-  // its forms; a hidden region the response did not render keeps its own.
-  const fields = await page.evaluate(() => [...document.querySelectorAll('[data-update-region]')].map(wrapper => ({
-    id: wrapper.dataset.updateRegion, stale: wrapper.hasAttribute('data-region-stale'), revision: wrapper.dataset.regionRevision,
-    inputs: [...wrapper.querySelectorAll('input[type=hidden][name=revision]')].map(input => input.value),
-  })));
-  for (const field of fields) {
-    if (field.stale) continue;
-    assert.equal(field.revision, revision, `region ${field.id} is fresh but carries another revision`);
-    for (const value of field.inputs) assert.equal(value, revision, `region ${field.id} kept an old revision field`);
+  try {
+    const grid = await page.evaluateHandle(() => document.querySelector('#detail-panel-clip .piano-roll'));
+    assert.equal(await page.locator(cell(15)).getAttribute('data-active'), 'false');
+    const release = hold();
+    await page.locator(cell(15)).click();
+    // The answer is held, so this state can only be the pending paint.
+    await page.waitForFunction(selector => {
+      const el = document.querySelector(selector);
+      return el.getAttribute('data-active') === 'true' && el.hasAttribute('data-workspace-pending') && el.textContent === '●';
+    }, cell(15));
+    assert.equal(await revisionOf('dock-clip'), before, 'the pending paint advanced the region revision');
+    release();
+    await settled(1);
+    const record = posts[0];
+    assert.equal(record.status, 200, record.result?.message);
+    assert.match(record.payload.__cicada_regions, /(^|,)dock-clip:[0-9a-f]{16}(,|$)/, 'the edit names the visible Clip region with its digest');
+    assert.doesNotMatch(record.payload.__cicada_regions, /(^|,)center-session:/, 'a hidden tab is not visible');
+    const revision = record.result.data.revision;
+    assert.ok(revision && revision !== original.revision);
+    await confirmed(cell(15), true, revision);
+    assert.notEqual((await state('/api/state')).source, original.source, 'the draw was not saved');
+    assert.equal(await grid.evaluate(node => node.isConnected && node === document.querySelector('#detail-panel-clip .piano-roll')), true, 'the piano roll was replaced instead of patched');
+    // Rule R1: every region the response confirmed carries the new revision in
+    // its forms; a hidden region the response did not render keeps its own.
+    const fields = await page.evaluate(() => [...document.querySelectorAll('[data-update-region]')].map(wrapper => ({
+      id: wrapper.dataset.updateRegion, stale: wrapper.hasAttribute('data-region-stale'), revision: wrapper.dataset.regionRevision,
+      inputs: [...wrapper.querySelectorAll('input[type=hidden][name=revision]')].map(input => input.value),
+    })));
+    for (const field of fields) {
+      if (field.stale) continue;
+      assert.equal(field.revision, revision, `region ${field.id} is fresh but carries another revision`);
+      for (const value of field.inputs) assert.equal(value, revision, `region ${field.id} kept an old revision field`);
+    }
+    await page.waitForFunction(() => !document.querySelector('#studio-shell').hasAttribute('aria-busy'));
+    const visible = await page.evaluate(() => [...document.querySelectorAll('[data-update-region]')].filter(wrapper => {
+      for (let node = wrapper.parentElement; node; node = node.parentElement) {
+        if (node.hidden || (node.tagName === 'DETAILS' && !node.open)) return false;
+      }
+      return wrapper.parentElement?.getClientRects().length > 0;
+    }).map(wrapper => ({id: wrapper.dataset.updateRegion, stale: wrapper.hasAttribute('data-region-stale'), revision: wrapper.dataset.regionRevision})));
+    for (const field of visible) {
+      assert.equal(field.stale, false, `visible region ${field.id} is stale`);
+      assert.equal(field.revision, revision, `visible region ${field.id} has another revision`);
+    }
+    assert.deepEqual(await page.evaluate(() => window.__regionRevisionGaps), [], 'a region was fresh at an older revision during the patch');
+    assert.equal(new URL(page.url()).searchParams.get('step'), '15', 'the inspected step follows the drawn cell');
+    await noNavigation();
+  } finally {
+    await page.evaluate(() => window.__stopRegionRevisionObserver());
   }
-  await page.evaluate(() => window.__stopRegionRevisionObserver());
-  assert.deepEqual(await page.evaluate(() => window.__regionRevisionGaps), [], 'a region was fresh at an older revision during the patch');
-  assert.equal(new URL(page.url()).searchParams.get('step'), '15', 'the inspected step follows the drawn cell');
-  await noNavigation();
 });
 
-test('a cancelled background read cannot restore an old revision', async () => {
-  const {page, posts, cell, confirmed, settled, caughtUp} = await studio();
+test('an edit aborts the background read in flight', async () => {
+  const {page, posts, cell, confirmed, settled, caughtUp, refused} = await studio();
   await caughtUp();
-  let release, heldResponse, finished, claimed = false;
+  let release, heldResponse, heldURL, finished, claimed = false;
   const gate = new Promise(resolve => { release = resolve; });
   const done = new Promise(resolve => { finished = resolve; });
   const handler = async route => {
     if (claimed) return route.continue();
     claimed = true;
+    heldURL = route.request().url();
     try {
       const response = await route.fetch();
       heldResponse = await response.json();
@@ -289,19 +304,62 @@ test('a cancelled background read cannot restore an old revision', async () => {
     assert.equal(heldResponse.revision, oldRevision);
 
     start = posts.length;
+    const refusedStart = refused.length;
     await page.locator(cell(15)).click();
+    await until(() => refused.slice(refusedStart).some(url => url.href === heldURL), 'the in-flight region read was not aborted');
     await settled(start + 1);
     const revision = posts[start].result.data.revision;
     assert.notEqual(revision, oldRevision);
     await confirmed(cell(15), true, revision);
     release();
     await done;
+    await page.waitForFunction(() => !document.querySelector('#studio-shell').hasAttribute('aria-busy'));
     const freshOld = await page.evaluate(old => [...document.querySelectorAll('[data-update-region]:not([data-region-stale])')]
       .filter(node => node.dataset.regionRevision === old).map(node => node.dataset.updateRegion), oldRevision);
     assert.deepEqual(freshOld, [], 'the released read left regions fresh at the old revision');
   } finally {
     release();
     await page.unroute('**/__studio/regions**', handler);
+  }
+});
+
+test('a submit between region patches is sent once', async () => {
+  const {page, posts, sent, cell, settled, caughtUp} = await studio();
+  await caughtUp();
+  const before = await page.locator('#update-dock-clip').getAttribute('data-region-revision');
+  const start = posts.length, undoCount = sent('/__actions/undo');
+  await page.evaluate(before => {
+    window.__submitDuringApply = null;
+    const observer = new MutationObserver(() => {
+      if (document.querySelector('#update-dock-clip').dataset.regionRevision === before) return;
+      observer.disconnect();
+      const region = document.querySelector('#update-actions');
+      const form = document.querySelector('#undo-form');
+      const button = form.querySelector('button[type=submit]');
+      const stale = region.hasAttribute('data-region-stale');
+      form.requestSubmit(button);
+      window.__submitDuringApply = {stale, held: button.hasAttribute('data-workspace-held')};
+    });
+    observer.observe(document.querySelector('#update-dock-clip'), {attributes: true, attributeFilter: ['data-region-revision']});
+    window.__stopSubmitObserver = () => observer.disconnect();
+  }, before);
+  try {
+    await page.locator(cell(15)).click();
+    await settled(start + 2);
+    // Whether the submit is held or queued depends on which region was patched
+    // first; what must hold either way is that it was made during the apply
+    // and is sent exactly once.
+    assert.notEqual(await page.evaluate(() => window.__submitDuringApply), null, 'the submit was not made during the apply');
+    assert.deepEqual(posts.slice(start, start + 2).map(record => record.action), ['pattern', 'undo']);
+    assert.equal(posts[start + 1].status, 200, posts[start + 1].result?.message);
+    await page.waitForFunction(() => !document.querySelector('#studio-shell').hasAttribute('aria-busy'));
+    assert.equal(sent('/__actions/undo') - undoCount, 1, 'the held Undo was not sent exactly once');
+    const revision = posts[start + 1].result.data.revision;
+    const freshOld = await page.evaluate(revision => [...document.querySelectorAll('[data-update-region]:not([data-region-stale])')]
+      .filter(node => node.dataset.regionRevision !== revision).map(node => node.dataset.updateRegion), revision);
+    assert.deepEqual(freshOld, [], 'a region remained fresh at another revision');
+  } finally {
+    await page.evaluate(() => window.__stopSubmitObserver());
   }
 });
 
