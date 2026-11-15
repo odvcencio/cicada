@@ -60,8 +60,12 @@ test('sound choice follows phrase editing without replacing drafts',{timeout:240
   const hold=async route=>{arrived();await held;await route.continue();};await page.route('**/studio?*',hold);
   await page.evaluate(()=>{window.__sceneClipNavigationComplete=false;document.addEventListener('gosx:navigate',()=>{const q=new URL(location.href).searchParams;if(q.get('pattern')==='played'&&q.get('track')==='upper')window.__sceneClipNavigationComplete=true;});});
   try {
-   await page.locator('#arrangement a.timeline-clip[title="main / upper"]').click({noWaitAfter:true});
-   await Promise.race([requested,new Promise((_,reject)=>setTimeout(()=>reject(new Error('clip navigation did not start')),10000))]);
+   // The restored draft stops counting as unsaved only once its recovery
+   // checkpoint settles, so an open can still be refused for a moment. Click
+   // until the request starts, within the same ten seconds.
+   {const clip=page.locator('#arrangement a.timeline-clip[title="main / upper"]'),deadline=Date.now()+10000;let started=false;
+    while(!started&&Date.now()<deadline){await clip.click({noWaitAfter:true});started=await Promise.race([requested.then(()=>true),new Promise(resolve=>setTimeout(()=>resolve(false),500))]);}
+    assert.equal(started,true,'clip navigation did not start');}
    await page.locator('#detail-tab-automation').click({noWaitAfter:true});release();
    await page.waitForFunction(()=>window.__sceneClipNavigationComplete&&document.documentElement.getAttribute('data-gosx-navigation-state')==='idle');
    await page.waitForFunction(()=>document.querySelector('#detail-tab-automation')?.getAttribute('aria-selected')==='true');

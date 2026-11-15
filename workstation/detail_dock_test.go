@@ -92,7 +92,7 @@ func TestShellDeviceFollowsPlacementAndSharesWorkingParameterControls(t *testing
 	address, client, edits := detailDockApp(t)
 	location := "/studio?placement=bass-intro"
 	body := getPage(t, client, address+location)
-	for _, want := range []string{`id="device-editor"`, `data-device-track="bass"`, `name="deviceTrack"`, "Inspect track", "brightness · track override", `name="value" value="1200.25"`, `name="path" value="bass.pan"`, "Use default", "Insert effects", `id="device-effect-tone"`, `href="#device-effect-tone"`, `name="path" value="tone.hp"`} {
+	for _, want := range []string{`id="device-editor"`, `data-device-track="bass"`, `data-device-channel="bass"`, `name="deviceTrack"`, "Inspect channel", `<option value="bass" selected>bass</option>`, "brightness · track override", `name="value" value="1200.25"`, `name="path" value="bass.pan"`, "Use default", "Insert effects", `id="device-effect-tone"`, `href="#device-effect-tone"`, `name="path" value="tone.hp"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("Device lacks %q", want)
 		}
@@ -228,5 +228,241 @@ func TestDeviceBuiltinSoundControlsUseCatalogAndSavedActions(t *testing.T) {
 				t.Errorf("%s missing %q: %s", path, text, row)
 			}
 		}
+	}
+}
+
+// mixerShellApp serves the Studio shell over the mixer fixture: the tracks keys
+// (acid) and bass (audio), the music bus, the master, two returns and a chorus
+// on no insert chain. It records the edits the mixer action sends.
+func mixerShellApp(t *testing.T, edition int) (string, *http.Client, *[]map[string]any) {
+	t.Helper()
+	source := "cicada 2\ntrack keys acid {}\ntrack bass audio {}\npattern p notes { c4 . }\nscene main { keys=p }\nsong { main*4 }\n"
+	score, ds := notation.Parse([]byte(source))
+	if len(ds) != 0 {
+		t.Fatal(ds)
+	}
+	p, ds := project.FromScore(score)
+	if len(ds) != 0 {
+		t.Fatal(ds)
+	}
+	state := mixerFixture(edition)
+	var mu sync.Mutex
+	var edits []map[string]any
+	audio := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/api/workspace":
+			_ = json.NewEncoder(w).Encode(workspace{Source: source, Filename: "test.cicada", Revision: state.Revision, Valid: true, Project: p})
+		case r.URL.Path == "/api/mixer" && r.Method == http.MethodGet:
+			_ = json.NewEncoder(w).Encode(state)
+		case r.URL.Path == "/api/mixer":
+			var edit map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&edit); err != nil {
+				t.Error(err)
+			}
+			if edit["revision"] != state.Revision {
+				w.WriteHeader(409)
+				_, _ = io.WriteString(w, `{"error":"score changed"}`)
+				return
+			}
+			edits = append(edits, edit)
+			_, _ = io.WriteString(w, `{"revision":"r2","valid":true}`)
+		default:
+			_, _ = io.WriteString(w, `{}`)
+		}
+	}))
+	t.Cleanup(audio.Close)
+	backend, err := newBackend(audio.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := newApp(backend)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := httptest.NewServer(handler)
+	t.Cleanup(app.Close)
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	return app.URL, client, &edits
+}
+
+// deviceRegion cuts the Device dock's region out of a shell page.
+func deviceRegion(t *testing.T, body string) string {
+	t.Helper()
+	start := strings.Index(body, `id="update-dock-device"`)
+	end := strings.Index(body, `id="update-dock-automation"`)
+	if start < 0 || end < start {
+		t.Fatal("page lacks the Device region")
+	}
+	return body[start:end]
+}
+
+func TestMixerStripOpensBusMasterReturnAndEffectInDevice(t *testing.T) {
+	address, client, edits := mixerShellApp(t, 2)
+	open := func(ref string) (string, string) {
+		body := getPage(t, client, address+"/studio?tab=mixer&dock=device&deviceTrack="+url.QueryEscape(ref))
+		return body, deviceRegion(t, body)
+	}
+	has := func(name, device string, wants ...string) {
+		t.Helper()
+		for _, want := range wants {
+			if !strings.Contains(device, want) {
+				t.Errorf("%s in Device lacks %s", name, want)
+			}
+		}
+	}
+
+	// A bus: exact level with its saved choices, mute and solo, and the
+	// controls the service does not support, each named with a plain reason.
+	body, device := open("bus:music")
+	has("the music bus", device, `data-device-channel="bus:music"`, "<h2>music · Bus</h2>", `aria-label="Mix and routing"`, `aria-label="Insert effects"`,
+		// The bus level takes the values the score writes, so it posts them as text.
+		`<input type="hidden" name="path" value="music.level" /><input type="hidden" name="valueType" value="text" />`, `<select name="value"><option value="-3dB" selected>-3dB</option><option value="off">off</option></select>`,
+		`name="path" value="music.mute"`, `name="path" value="music.solo"`,
+		`data-reason="CICADA-UNSUPPORTED: bus music pan is not implemented"`, "<span>pan</span> <strong>Not available</strong>", "Bus music pan is not implemented.",
+		`data-reason="CICADA-UNSUPPORTED: bus music output routing is not implemented"`, "<span>out</span> <strong>Not available</strong>", "Bus music output routing is not implemented.",
+		`name="__gosx_return_to" value="/studio?deviceTrack=bus%3Amusic&amp;dock=device&amp;tab=mixer"`,
+		`<optgroup label="Tracks"><option value="keys">keys</option><option value="bass">bass</option></optgroup>`,
+		`<optgroup label="Buses and master"><option value="bus:music" selected>music</option><option value="master:master">Master</option></optgroup>`,
+		`<optgroup label="Returns"><option value="return:echo">echo</option><option value="return:room">room</option></optgroup>`,
+		`<optgroup label="Effects on no channel"><option value="effect:wide">wide</option></optgroup>`, "Inspect channel")
+	if strings.Contains(device, `aria-label="Sound"`) || strings.Contains(device, "data-device-track") {
+		t.Error("a bus has no instrument controls")
+	}
+	// The diagnostic code stays in data-reason; the sentence a person reads has none.
+	if visible := regexp.MustCompile(`data-reason="[^"]*"`).ReplaceAllString(device, ""); strings.Contains(visible, "CICADA-UNSUPPORTED") {
+		t.Error("Device prints the raw refusal code")
+	}
+	// The dock header names the bus and the Mixer marks its strip.
+	if !strings.Contains(body, `data-dock-selection="track"><span>music · Bus</span>`) {
+		t.Error("the dock header should name the bus")
+	}
+	if strip := mixerStripHTML(t, body, "bus:music"); !strings.Contains(strip, `data-mixer-selected="true"`) || strings.Count(body, `data-mixer-selected="true"`) != 1 {
+		t.Error("only the bus strip is marked selected")
+	}
+
+	// A Device form for the bus saves one value and returns to the bus in Device.
+	returnTo := "/studio?deviceTrack=bus%3Amusic&dock=device&tab=mixer"
+	form := url.Values{"csrf_token": {tokenFromPage(t, body)}, "revision": {"r1"}, "path": {"music.level"}, "value": {"off"}, "valueType": {"text"}, "__gosx_return_to": {returnTo}}
+	response := shellPost(t, client, address, "/__actions/mixer", form, address+"/studio?tab=mixer&dock=device&deviceTrack=bus%3Amusic")
+	if response.StatusCode != 303 || response.Header.Get("Location") != returnTo || len(*edits) != 1 || (*edits)[0]["path"] != "music.level" || (*edits)[0]["value"] != "off" {
+		t.Fatalf("bus level: status=%d return=%s edits=%+v", response.StatusCode, response.Header.Get("Location"), *edits)
+	}
+	// A strip's own save (here M on keys) also keeps the bus in Device: the
+	// form names the mixer panel, and the shell adds the channel from the page.
+	face := "/studio?deviceTrack=bus%3Amusic&dock=device&tab=mixer"
+	if !strings.Contains(mixerStripHTML(t, body, "keys"), `name="__gosx_return_to" value="/?panel=mixer"`) {
+		t.Error("strip forms should name the mixer panel destination")
+	}
+	form = url.Values{"csrf_token": {tokenFromPage(t, body)}, "revision": {"r1"}, "path": {"keys.mute"}, "value": {"false"}, "valueType": {"bool"}, "__gosx_return_to": {"/?panel=mixer"}}
+	response = shellPost(t, client, address, "/__actions/mixer", form, address+face+"&pattern=p")
+	if response.StatusCode != 303 || response.Header.Get("Location") != face || len(*edits) != 2 || (*edits)[1]["path"] != "keys.mute" {
+		t.Fatalf("strip mute: status=%d return=%s edits=%+v", response.StatusCode, response.Header.Get("Location"), *edits)
+	}
+
+	// The master: exact level, which also takes "off".
+	body, device = open("master:master")
+	has("the master", device, `data-device-channel="master:master"`, "<h2>Master</h2>", `name="path" value="master.level"`, "level (dB) · off or -60 to 6", `name="valueType" value="text"`,
+		`name="path" value="master.mute"`, `<option value="master:master" selected>Master</option>`)
+	if !strings.Contains(body, `data-dock-selection="track"><span>Master</span>`) {
+		t.Error("the dock header should name the master")
+	}
+
+	// A return: the effect's parameters, each once.
+	_, device = open("return:echo")
+	has("the echo return", device, `data-device-channel="return:echo"`, "<h2>echo · Return</h2>", `id="device-effect-echo"`, `aria-label="Return effect"`, `<option value="return:echo" selected>echo</option>`)
+	for _, path := range []string{"echo.time", "echo.feedback"} {
+		if got := strings.Count(device, `name="path" value="`+path+`"`); got != 1 {
+			t.Errorf("%s has %d forms in Device", path, got)
+		}
+	}
+
+	// An effect on no insert chain: its parameters and where to put it.
+	_, device = open("effect:wide")
+	has("the loose chorus", device, `data-device-channel="effect:wide"`, "<h2>wide · chorus</h2>", `id="device-effect-wide"`, `name="path" value="wide.mix"`, "This effect is on no channel.", `<option value="effect:wide" selected>wide</option>`)
+
+	for _, ref := range []string{"master", "master:master"} {
+		_, device = open(ref)
+		has(ref, device, `data-device-channel="master:master"`)
+	}
+	for _, ref := range []string{"bus:nowhere", "return:gone", "track:gone", "effect:gone"} {
+		_, device = open(ref)
+		if !strings.Contains(device, "This channel no longer exists. Select a strip in the Mixer.") || strings.Contains(device, `name="path"`) {
+			t.Errorf("%s should show the empty state without forms", ref)
+		}
+	}
+	if _, device = open("missing"); !strings.Contains(device, `data-device-track="keys"`) {
+		t.Error("an unknown plain track ID should fall back to the first track")
+	}
+}
+
+func TestDeviceHoldsEveryControlThatLeftTheStripFace(t *testing.T) {
+	address, client, _ := mixerShellApp(t, 2)
+	device := deviceRegion(t, getPage(t, client, address+"/studio?tab=mixer&dock=device&deviceTrack=keys"))
+	for _, want := range []string{`data-device-track="keys"`, "<h2>keys · acid</h2>", `aria-label="Sound"`,
+		// Exact level (a text field, so it takes "off"), exact pan, routing and the send level.
+		`name="path" value="keys.level"`, "level (dB) · off or -60 to 6", `name="path" value="keys.pan"`, `type="number"`,
+		`name="path" value="keys.out"`, `<option value="music" selected>music</option>`, `<option value="sfx">sfx</option>`,
+		`name="path" value="keys.send.echo"`, "send to echo (ratio)", `name="path" value="keys.mute"`,
+		// The insert chain editor and each insert's parameters.
+		`aria-label="keys insert chain"`, `aria-label="Move squash earlier"`, `aria-label="Remove tone"`, `href="#device-effect-tone"`,
+		`id="device-effect-tone"`, `name="path" value="tone.hp"`, "tone.hp (Hz)", `id="device-effect-squash"`, `name="path" value="squash.ratio"`,
+	} {
+		if !strings.Contains(device, want) {
+			t.Errorf("Device for keys lacks %s", want)
+		}
+	}
+	if strings.Contains(device, "Add vocal chain") || strings.Contains(device, "Upgrade score to edition 2") {
+		t.Error("keys is not an audio track, and edition 2 needs no upgrade")
+	}
+	if !strings.Contains(device, `class="device-groups" data-gosx-key="device-keys"`) {
+		t.Error("keys Device groups lack their channel key")
+	}
+	// An audio track keeps the vocal chain action.
+	device = deviceRegion(t, getPage(t, client, address+"/studio?tab=mixer&dock=device&deviceTrack=bass"))
+	if !strings.Contains(device, `class="device-groups" data-gosx-key="device-bass"`) {
+		t.Error("bass Device groups lack their distinct channel key")
+	}
+	if !regexp.MustCompile(`(?s)<form[^>]*>(?:<input[^>]*>)*<input type="hidden" name="action" value="vocal-chain" /><input type="hidden" name="track" value="bass" /><button[^>]*>Add vocal chain</button></form>`).MatchString(device) {
+		t.Errorf("Device for an audio track lacks the vocal chain action")
+	}
+}
+
+// An edition 1 score has no faders or one-click buttons, so its exact-value
+// forms in Device, each with the upgrade confirmation, are the way to mix.
+func TestDeviceKeepsEdition1SetFormsWithTheUpgradeConfirmation(t *testing.T) {
+	address, client, edits := mixerShellApp(t, 1)
+	body := getPage(t, client, address+"/studio?tab=mixer&dock=device&deviceTrack=bus%3Amusic")
+	mixer := body[strings.Index(body, `id="update-center-mixer"`):strings.Index(body, `id="update-dock-header"`)]
+	if strings.Contains(mixer, `type="range"`) || strings.Contains(mixer, `name="path"`) {
+		t.Error("an edition 1 strip face has no direct controls")
+	}
+	for _, channel := range []string{"keys", "bus:music", "master:master", "return:echo"} {
+		device := deviceRegion(t, getPage(t, client, address+"/studio?tab=mixer&dock=device&deviceTrack="+url.QueryEscape(channel)))
+		if channel == "keys" {
+			for _, path := range []string{"keys.level", "keys.pan", "keys.mute"} {
+				if !strings.Contains(device, `name="path" value="`+path+`"`) {
+					t.Errorf("edition 1 Device lacks the %s form", path)
+				}
+			}
+		}
+		forms := regexp.MustCompile(`(?s)<form[^>]*action="/__actions/mixer".*?</form>`).FindAllString(device, -1)
+		if len(forms) == 0 {
+			t.Fatalf("%s has no mixer forms in Device", channel)
+		}
+		for _, form := range forms {
+			if strings.Contains(form, `name="path"`) && !strings.Contains(form, `name="confirmUpgrade" required`) {
+				t.Errorf("%s: an edition 1 Set form lacks the upgrade confirmation: %s", channel, form)
+			}
+		}
+	}
+	returnTo := "/studio?deviceTrack=bus%3Amusic&dock=device&tab=mixer"
+	form := url.Values{"csrf_token": {tokenFromPage(t, body)}, "revision": {"r1"}, "path": {"music.mute"}, "value": {"true"}, "valueType": {"bool"}, "confirmUpgrade": {"on"}, "__gosx_return_to": {returnTo}}
+	response := shellPost(t, client, address, "/__actions/mixer", form, address+returnTo)
+	if response.StatusCode != 303 || len(*edits) != 1 || (*edits)[0]["path"] != "music.mute" || (*edits)[0]["confirmUpgrade"] != true {
+		t.Fatalf("edition 1 mute: status=%d edits=%+v", response.StatusCode, *edits)
 	}
 }
