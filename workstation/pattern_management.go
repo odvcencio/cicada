@@ -91,9 +91,10 @@ func (s *studioApp) patternManagement(ctx *server.Context, v workspace, csrf str
 		}
 		destination = form("pattern", hidden("action", "bind"), hidden("pattern", pattern.ID), field("Scene", selectInput("scene", value("bind", "scene", q.Get("scene")), scenes)), field("Track", selectInput("track", value("bind", "track", preferred), tracks)), submit("binding", "play", "Assign to scene"), submit("binding", "off", "Stop in this scene"), submit("binding", "keep", "Carry previous pattern"), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Assign replaces this track’s pattern wherever the scene is used. Scene choices carry forward until changed or stopped. Stop releases this track; Carry keeps its earlier selection. Undo restores the previous assignment.")))
 	}
-	attrs := gosx.Attrs(gosx.Attr("class", "pattern-management"), gosx.Attr("data-pattern-management", pattern.ID), gosx.Attr("data-gosx-key", "pattern-management-"+pattern.ID), gosx.Attr("open", failed || strings.Contains(pattern.ID, ".")))
+	isToolbar := len(toolbar) > 0 && toolbar[0]
+	attrs := gosx.Attrs(gosx.Attr("class", "pattern-management"), gosx.Attr("data-pattern-management", pattern.ID), gosx.Attr("data-gosx-key", "pattern-management-"+pattern.ID), gosx.Attr("open", failed || (!isToolbar && strings.Contains(pattern.ID, "."))))
 	summary := "Use this pattern"
-	if len(toolbar) > 0 && toolbar[0] {
+	if isToolbar {
 		attrs = append(attrs, gosx.Attr("name", "clip-toolbar"))
 		summary = "More"
 	}

@@ -10,9 +10,12 @@
   const selected=()=>new URL(location.href).searchParams.get('pattern');
   const fill=(field,value)=>{field.value=value;field.dispatchEvent(new Event('input',{bubbles:true}));field.dispatchEvent(new Event('change',{bubbles:true}));};
   const variation=id=>document.querySelector('[data-pattern-variation="'+id+'"]');
+  // The Clip toolbar keeps its More panel closed until it is asked for.
+  const show=id=>{const details=variation(id)?.closest('details');if(details&&!details.open)details.querySelector('summary').click();};
   async function chooseUpper(id){
     await ready();await wait(()=>document.querySelector('#cicada-pattern-preview[data-sounds-ready=true]'),'sound selector ready');const select=document.querySelector('#cicada-pattern-preview [data-pattern-preview-track]');fill(select,'upper');
     await wait(()=>variation(id)?.querySelector('[name=track]').value==='upper','chosen sound reaches variation');
+    show(id);
   }
   async function audition(name){const button=document.querySelector('#cicada-pattern-preview [data-sound-preview]');await wait(()=>!button.disabled,'preview ready');button.click();await wait(()=>button.getAttribute('aria-pressed')==='true'&&button.getAttribute('aria-busy')==='false','preview '+name);button.click();await wait(()=>button.getAttribute('aria-pressed')==='false'&&button.getAttribute('aria-busy')==='false','preview stopped');}
   async function copy(id,name){

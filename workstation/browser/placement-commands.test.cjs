@@ -229,9 +229,19 @@ test('Studio views, Record entry and Mac placement commands retain drafts and Un
     await sameClipContext('after Undo');
     if(proof) await page.screenshot({path:path.join(proof,'draw-undone.png')});
 
+    const newPanel=page.locator('#detail-panel-clip details[name="clip-toolbar"][aria-label="Create pattern"]');
+    await newPanel.locator('summary').click();
+    const newName=newPanel.locator('input[name=newName]');
+    const renderedName=await newName.inputValue();
+    await newName.fill('discard-this-draft');
+    await newPanel.locator('summary').click();
+    await until(async()=>!(await newName.evaluate(node=>node.hasAttribute('data-edited'))),'closed panel did not discard its draft');
     await page.locator('#detail-panel-clip .clip-picker summary').click();
     await page.locator('#detail-panel-clip .pattern-choice').filter({hasText:'pulse'}).click();
     await until(()=>new URL(page.url()).searchParams.get('pattern')==='pulse','different pattern did not open');await ready();
+    await newPanel.locator('summary').click();
+    assert.equal(await newName.inputValue(),renderedName,'reopening New must restore its rendered name');
+    await newPanel.locator('summary').click();
     assert.equal(new URL(page.url()).searchParams.has('placement'),false,'a different pattern inherited the old placement');
     assert.notEqual(new URL(page.url()).searchParams.get('track'),'lead','a different pattern inherited the old audition track: '+page.url());
 
