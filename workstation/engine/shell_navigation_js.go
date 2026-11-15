@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"syscall/js"
 
@@ -109,7 +110,7 @@ func checkArrangeSection(root js.Value) {
 // belong in the URL so saved forms, refreshes and modified clicks keep context.
 func bindShellNavigation(host enginewasm.Context, root js.Value) (func(), error) {
 	var releases []enginewasm.HandleFunc
-	for name, choices := range map[string][]string{"view": {"arrange", "session", "mixer"}, "dock": {"clip", "device", "automation"}, "layout.libraryTab": {"sounds", "samples", "takes"}} {
+	for name, choices := range map[string][]string{"view": {"arrange", "session", "mixer"}, "dock": {"clip", "device", "automation", "takes"}, "layout.libraryTab": {"sounds", "samples", "takes"}} {
 		release, err := host.SubscribeSignal("$"+name, func(raw json.RawMessage) {
 			var value string
 			if json.Unmarshal(raw, &value) != nil || !root.Get("isConnected").Bool() {
@@ -308,7 +309,10 @@ func bindShellNavigation(host enginewasm.Context, root js.Value) (func(), error)
 		jump := target.Call("closest", ".arrange-workspace-nav a[href]")
 		if workspacePresent(jump) {
 			href := workspaceAttr(jump, "href")
-			if href == "#arrangement" || href == "#vocals" {
+			if workspacePresent(domCall(jump, "closest", "[data-reveal-vocals]")) {
+				event.Call("preventDefault")
+				go revealVocalWorkspace(context.Background(), host, root, event.Get("detail").Int() == 0)
+			} else if href == "#arrangement" {
 				pane := root.Call("querySelector", href)
 				if workspacePresent(pane) {
 					event.Call("preventDefault")
@@ -476,6 +480,9 @@ func syncShellLocation(root, url js.Value) {
 		if link.Call("hasAttribute", "data-mixer-select").Bool() {
 			target.Get("searchParams").Call("set", "tab", "mixer")
 			target.Get("searchParams").Call("set", "dock", "device")
+		}
+		if link.Call("hasAttribute", "data-reveal-vocals").Bool() {
+			target.Get("searchParams").Call("set", "dock", "takes")
 		}
 		// A scene clip opens its pattern in the Clip dock, whichever dock or
 		// phone region is showing now.
