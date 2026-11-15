@@ -449,7 +449,7 @@ func TestMixerToolStripFiltersInTheTabAndKeepsTheChorusForm(t *testing.T) {
 	}
 	for i, wants := range [][]string{
 		{`action="/__actions/mixer"`, `name="action" value="add-chorus"`, `<span>Chorus name</span><input name="name" value="chorus"`, `>Create chorus</button>`},
-		{`action="/__actions/add-effect"`, `<select name="effectkind"`, `value="reverb"`, `<span>Name</span><input name="name" value="reverb"`, `>Add return</button>`},
+		{`action="/__actions/add-effect"`, `<select name="effectkind"`, `value="reverb"`, `<span>Name (optional)</span><input name="name" value=""`, `>Add return</button>`},
 	} {
 		for _, want := range wants {
 			if !strings.Contains(forms[i], want) {

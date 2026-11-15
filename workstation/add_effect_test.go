@@ -31,6 +31,10 @@ func TestAddEffectAction(t *testing.T) {
 			_, _ = io.WriteString(w, `{"revision":"next"}`)
 			return
 		}
+		if r.URL.Path == "/api/mixer" {
+			_, _ = io.WriteString(w, `{"effects":[{"name":"comp","kind":"comp"}]}`)
+			return
+		}
 		_, _ = io.WriteString(w, `{}`)
 	}))
 	defer audio.Close()
@@ -57,6 +61,14 @@ func TestAddEffectAction(t *testing.T) {
 	if intent["kind"] != "addeffect" || intent["effectkind"] != "comp" || intent["name"] != "glue" || intent["inserton"] != "bass" || intent["confirmupgrade"] != true {
 		t.Fatalf("intent %v", intent)
 	}
+	// An empty name is filled in from the kind, past the names already in use.
+	form.Set("name", "")
+	response = post(t, client, server.URL+"/__actions/add-effect", form, true, server.URL)
+	response.Body.Close()
+	if name := envelope["intents"].([]any)[0].(map[string]any)["name"]; response.StatusCode >= 400 || name != "comp2" {
+		t.Fatalf("an empty name should become comp2: status %d name %v", response.StatusCode, name)
+	}
+	form.Set("name", "glue")
 	refuse = true
 	response = post(t, client, server.URL+"/__actions/add-effect", form, true, server.URL)
 	body, _ := io.ReadAll(response.Body)
