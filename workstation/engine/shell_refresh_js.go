@@ -16,7 +16,8 @@ import (
 // false only when the service accepted the work or the user discarded it. The
 // refresh asks this registry plus the edited-controls check below, and nothing
 // else. An engine that holds unsaved work and does not register is a bug.
-var unsavedWork sync.Map // map[string]func() bool
+var unsavedWork sync.Map   // map[string]func() bool
+var heldLiveNotes sync.Map // map[string]func() bool
 
 // holdUnsavedWork registers an engine's check and returns its removal.
 func holdUnsavedWork(name string, dirty func() bool) (release func()) {

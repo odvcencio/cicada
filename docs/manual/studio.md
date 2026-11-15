@@ -450,17 +450,17 @@ It checks the original revision; it cannot overwrite another editor's save.
 
 ![GoSX Live performance with scene launches, note input, and MIDI learning.](screenshots/studio-live-1440.png)
 
-**Live** plays the **Pitched track** you choose from the A/W/S/E/D/F/T/G/Y/H/U/J/K
+**Live** plays the track you choose under **Keys play** from the A/W/S/E/D/F/T/G/Y/H/U/J/K
 keys or the onscreen keyboard. That list offers the piano, the modeled
 keyboards, authored instrument tracks, and acid tracks; audio and sampler tracks
-are not offered. The drum pads play the **Drum track** you choose and use General MIDI
-notes. Press **Play** first; changing tracks, leaving the panel, or losing focus
+are not offered. The named drum pads play the track you choose under **Pads play** and show their General MIDI
+note numbers. The live input header shows the selected destinations and MIDI state. Press **Play** first; changing tracks, leaving the panel, or losing focus
 releases held notes, and **Release notes** releases them on demand.
 The launch matrix queues scenes or individual slots with the selected timing;
 mint marks a playing slot and amber marks a queued slot. Its forms also work
 without browser scripting.
 
-**Enable MIDI** connects the macOS app directly to CoreMIDI when Web MIDI is
+Select **Enable MIDI** and use **MIDI setup** to choose expression and launch timing, learn mappings, or bind score ports to devices. **Enable MIDI** connects the macOS app directly to CoreMIDI when Web MIDI is
 unavailable. Inputs appear automatically when connected and disappear when
 unplugged; their held notes are released. **Disconnect MIDI** closes the input
 port. Leaving Live or closing the app also closes it. Bluetooth MIDI inputs
@@ -496,7 +496,7 @@ launch matrix also offers the score default and timing overrides. Mapping and
 track selections are saved in this browser. **Clear mappings**
 removes them. Browsers without Web MIDI can still use keyboard and drum pads.
 
-Choose the **Pitched pattern** and **Drum pattern** destinations. Each picker
+Choose the pattern destinations after **Keys play** and **Pads play**. Each picker
 lists patterns on that track first, then unused compatible local patterns marked
 **library**. Use **Create pattern** in Live to make an empty library pattern
 without assigning a scene. A pattern used only by another track is not offered
