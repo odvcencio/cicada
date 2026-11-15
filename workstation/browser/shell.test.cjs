@@ -384,6 +384,22 @@ test('changing a select and changing it back is clean', async () => {
   await page.close();
 });
 
+test('Takes dock keeps the vocal surface mounted across tab and view changes', async () => {
+  const {page, errors} = await openShell('?dock=takes');
+  assert.deepEqual(await page.locator('#detail-tabs > [role=tablist] [role=tab]').allTextContents(), ['Clip', 'Device', 'Automation', 'Takes']);
+  assert.equal(await page.locator('#detail-tab-takes').getAttribute('aria-selected'), 'true');
+  assert.equal(await page.locator('#cicada-vocals').count(), 1);
+  assert.equal(await page.locator('#detail-panel-takes #cicada-vocals').count(), 1);
+  await page.evaluate(() => { window.__vocalMount = document.querySelector('#cicada-vocals'); });
+  await page.locator('#detail-tab-clip').click();
+  await page.locator('#view-tab-mixer').click();
+  await page.locator('#detail-tab-takes').click();
+  assert.equal(await page.evaluate(() => window.__vocalMount === document.querySelector('#cicada-vocals')), true);
+  assert.equal(new URL(page.url()).searchParams.get('dock'), 'takes');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 // Capture state has one publisher for the page. On /studio the Takes engine
 // starts it; without it the status would stay on its initial line forever.
 test('a fresh shell load publishes native capture status', async () => {
@@ -632,14 +648,21 @@ test('shell Space toggles actual playback, Home returns to start, and Audio unlo
 test('Mac record shortcut starts and finishes the chosen vocal take', async () => {
   const {page} = await openShell('', undefined, 'MacIntel');
   await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
+  await page.locator('#detail-tab-takes').click();
+  await page.locator('#detail-tab-takes[aria-selected="true"]').waitFor();
   if (!(await page.locator('.vocal-record select[name=track] option[value=keyboard-vocal]').count())) {
     const addTrack = page.locator('.vocal-setup form[action="/__actions/clip"]');
     await addTrack.locator('input[name=newName]').fill('keyboard-vocal');
     await addTrack.locator('button[type=submit]').click();
     await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
+    await page.locator('#detail-tab-takes').click();
+    await page.locator('#detail-tab-takes[aria-selected="true"]').waitFor();
   }
   await page.locator('.vocal-record select[name=track] option[value=keyboard-vocal]').waitFor({state: 'attached'});
-  await page.locator('.vocal-record select[name=track]').selectOption('keyboard-vocal');
+  // Set up the chosen track without creating an unrelated unsaved form draft.
+  await page.locator('.vocal-record select[name=track]').evaluate(node => { node.value = 'keyboard-vocal'; });
+  await page.locator('#detail-tab-clip').click();
+  await page.locator('#detail-tab-clip[aria-selected="true"]').waitFor();
   let active = '';
   await page.route('**/api/capture', route => route.fulfill({contentType: 'application/json', body: JSON.stringify({activeCapture: active, capture: active ? {recording: true} : null})}));
   await page.route('**/__actions/take', route => route.fulfill({status: 409, contentType: 'application/json', body: '{"ok":false,"message":"Keyboard dispatch checked."}'}));
@@ -653,8 +676,21 @@ test('Mac record shortcut starts and finishes the chosen vocal take', async () =
     await page.keyboard.press('Meta+Shift+r');
     const data = await actionValues(await sent);
     assert.equal(data.action, action);
-    if (action === 'record') assert.equal(data.track, 'keyboard-vocal');
+    if (action === 'record') {
+      assert.equal(data.track, 'keyboard-vocal');
+      await page.locator('#detail-tab-takes[aria-selected="true"]').waitFor();
+    }
   }
+  // Model the take returned by the server in the next document after capture ends.
+  await page.route('**/studio**', async route => {
+    if (!route.request().isNavigationRequest()) return route.continue();
+    const response = await route.fetch();
+    const body = (await response.text()).replace('Choose the best phrases</h3>', 'Choose the best phrases</h3><p data-test-take>keyboard-active</p>');
+    await route.fulfill({response, body});
+  });
+  active = '';
+  await page.locator('#detail-panel-takes [data-test-take]').waitFor();
+  assert.equal(await page.locator('#detail-panel-takes [data-test-take]').textContent(), 'keyboard-active');
   await page.close();
 });
 

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -126,9 +127,9 @@ func (s *studioApp) storeFileDraft(source, revision, owner, kind, file string) (
 // closeCopiesOfFile closes the owner's recovery copies of file that hold
 // exactly text, the file's text as just read or written, and returns the
 // copies that differ. A copy edited after it was listed is kept. If the file
-// no longer holds text once they are closed, or its revision cannot be read,
-// they are reopened. Closing is housekeeping: a copy that cannot be read or
-// closed is left as it is, and the caller's work goes on.
+// no longer holds text once they are closed, or cannot be read, they are
+// reopened and returned too. Closing is housekeeping: a copy that cannot be
+// read or closed is left as it is, and the caller's work goes on.
 func (s *studioApp) closeCopiesOfFile(ctx context.Context, owner, file, text string, copies []savedSource) []savedSource {
 	kept := make([]savedSource, 0, len(copies))
 	var closed []savedSource
@@ -137,15 +138,22 @@ func (s *studioApp) closeCopiesOfFile(ctx context.Context, owner, file, text str
 			kept = append(kept, copy)
 			continue
 		}
-		if ok, err := s.notes.closeSourceCopy(owner, copy); ok && err == nil {
+		if ok, err := s.notes.closeSourceCopy(owner, copy, revisionOf(text).revision); ok && err == nil {
 			closed = append(closed, copy)
 		}
 	}
 	if len(closed) > 0 {
-		if revision, ok := s.fileRevision(ctx, file); !ok || !sameSourceRevision(text, revision) {
+		if now, ok := s.readFileRevision(ctx, file); !ok || !now.holds(text) {
 			for _, copy := range closed {
-				_ = s.notes.reopenSourceCopy(owner, copy)
+				if reopened, err := s.notes.reopenSourceCopy(owner, copy); reopened && err == nil {
+					// Its window may have written since it was listed: offer
+					// the copy as it is now, not the listed text.
+					if current, err := s.notes.getSource(owner, copy.ID); err == nil && current.State == "ready" {
+						kept = append(kept, current)
+					}
+				}
 			}
+			sort.SliceStable(kept, func(i, j int) bool { return kept[i].Updated.After(kept[j].Updated) })
 		}
 	}
 	return kept

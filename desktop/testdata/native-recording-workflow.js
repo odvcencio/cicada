@@ -70,7 +70,13 @@
     await wait(() => document.querySelector('#studio-shell[data-shell-actions=ready]') &&
       document.querySelector('#cicada-vocals[data-capture-active=false]'), 'recording engines');
   }
+  async function showTakes() {
+    const tab = document.querySelector('#detail-tab-takes');
+    if (tab && document.querySelector('#detail-panel-takes')?.hidden) tab.click();
+    if (tab) await wait(() => { const panel = document.querySelector('#detail-panel-takes'); return panel && !panel.hidden; }, 'Takes dock visible');
+  }
   async function addTrack(name) {
+    await showTakes();
     const form = document.querySelector('.vocal-setup form[action$="/__actions/clip"]');
     if (!form) throw new Error('Add vocal track form missing');
     const input = form.querySelector('input[name=newName]');
@@ -82,6 +88,7 @@
     if (!(await state('state')).source.includes('track ' + name + ' audio')) throw new Error(name + ' was not saved');
   }
   async function selectTrack(name) {
+    await showTakes();
     const link = [...document.querySelectorAll('nav[aria-label="Vocal tracks"] a')]
       .find(node => node.textContent === name);
     if (!link) throw new Error(name + ' selection link missing');
@@ -93,6 +100,7 @@
     if (document.querySelector('.vocal-record input[name=revision]')?.value !== revision) throw new Error('Stale recording revision');
   }
   async function recordShortcut(name) {
+    await showTakes();
     await wait(() => !document.querySelector('.vocal-record [data-capture-control=record]')?.disabled, 'Record take enabled');
     const revision = (await state('state')).revision;
     const count = submissions.length;
@@ -136,8 +144,7 @@
     await ready();
     checks.push('edition 2 vocal workspace appears after actual Code save');
 
-    // The DAW calls the song arrangement Arrange; its vocal Session surface
-    // stays mounted there while the Session tab displays the launch matrix.
+    // The vocal controls stay mounted in the Takes dock across center views.
     document.querySelector('#view-tab-arrange').click();
     await wait(() => !document.querySelector('#view-panel-arrange').hidden, 'Arrange vocal workspace');
     await addTrack('native-vocal');

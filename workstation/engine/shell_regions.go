@@ -40,7 +40,7 @@ func ruleR1(id string, held, rendered, unchanged, write bool) int {
 // the one the user acted in: the editors first, the Code lens and the hidden
 // browser sections and dialogs last.
 var shellPatchOrder = []string{
-	"dock-clip", "center-arrange", "center-session", "center-mixer", "dock-device", "dock-automation",
+	"dock-clip", "center-arrange", "center-session", "center-mixer", "dock-device", "dock-automation", "dock-takes",
 	"dock-header", "status", "actions", "transport", "tempo", "project",
 	"browser-instruments", "browser-generate", "browser-takes", "browser-sampler",
 	"code", "dialog-history", "dialog-audio", "dialog-export",
