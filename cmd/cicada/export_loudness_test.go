@@ -129,7 +129,7 @@ func TestExportLoudnessInputGainCapReportsShortfall(t *testing.T) {
 	if shortfall.reason != "loudness_shortfall_at_input_gain_cap" || shortfall.limiterCeiling != nil {
 		t.Fatalf("limiter shortfall: %+v", shortfall)
 	}
-	if !strings.Contains(err.Error(), "raise the master level, or the level of the inserts ahead of the last limiter, by about") || !strings.Contains(err.Error(), "or lower the target to") {
+	if !strings.Contains(err.Error(), "raise track levels, or the master level (up to +6 dB), by about") || !strings.Contains(err.Error(), "or lower the target to") {
 		t.Fatalf("shortfall gives no remedy: %v", err)
 	}
 	if failure := renderErrorFor(err, quiet, inspection); failure.Limit != "+12dB" {
@@ -791,14 +791,86 @@ func TestExportLoudnessChainedLimitersFullSong(t *testing.T) {
 			t.Fatal(err)
 		}
 		result, err := renderLoudnessFileReport(inspection.score, filepath.Join(t.TempDir(), "full.wav"), opts, target, nil)
-		t.Logf("METRIC EXPORT-CHAINED-FULL scheduled=%v lufs=%.3f gain=%+.2f last_limiter=%.3f largest=%.3f err=%v", scheduled, result.AchievedLUFS, result.AppliedGainDB, result.MasterLimiterReductionDB, result.LargestLimiterReductionDB, err)
+		t.Logf("METRIC EXPORT-CHAINED-FULL scheduled=%v lufs=%.3f gain=%+.2f last_limiter=%.3f largest=%.3f err=%v", scheduled, result.AchievedLUFS, result.AppliedGainDB, result.LastLimiterReductionDB, result.LargestLimiterReductionDB, err)
 		// The first limiter (-12 dBTP) runs ahead of the gain, as in
 		// playback, and reduces 6.5 dB whatever the gain; the 6 dB maximum
 		// bounds the last limiter, the one the gain drives, so the export
 		// reaches its quiet target. The largest reduction still reports the
 		// first limiter.
-		if err != nil || result.MasterLimiterReductionDB > maxExportLimiterReductionDB || result.LargestLimiterReductionDB <= maxExportLimiterReductionDB || math.Abs(result.AchievedLUFS-target.LoudnessTarget) > target.Tolerance {
+		if err != nil || result.LastLimiterReductionDB > maxExportLimiterReductionDB || result.MasterLimiterReductionDB <= maxExportLimiterReductionDB || result.LargestLimiterReductionDB < result.MasterLimiterReductionDB || math.Abs(result.AchievedLUFS-target.LoudnessTarget) > target.Tolerance {
 			t.Fatalf("full-song chained limiter export: %v (%+v)", err, result)
+		}
+	}
+}
+
+func TestExportLoudnessLastLimiterCeilingNote(t *testing.T) {
+	path := writeScoreVariant(t, chainedLimiterReplacements(false, "fx last limiter { ceiling = -1dBTP", "fx last limiter { ceiling = 0dBTP")...)
+	inspection, err := inspectScore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := render.Options{SampleRate: 48000, Bits: 24, Bars: 2, TailSec: 1}
+	target := renderTargetOptions{LoudnessTarget: -22, TruePeakMaxDBTP: -1, Tolerance: .5, Loudness: true}
+	result, _ := renderLoudnessFileReport(inspection.score, filepath.Join(t.TempDir(), "out.wav"), opts, target, nil)
+	if len(result.Notes) == 0 || !strings.Contains(result.Notes[0], "ceiling 0 dBTP is above") {
+		t.Fatalf("missing last limiter ceiling note: %v", result.Notes)
+	}
+}
+
+func TestExportLoudnessFirstLimiterReportsMasterInput(t *testing.T) {
+	path := writeScoreVariant(t, "tone -> ceiling", "ceiling -> tone")
+	inspection, err := inspectScore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := render.Options{SampleRate: 48000, Bits: 24, Bars: 2, TailSec: 1}
+	target := renderTargetOptions{LoudnessTarget: -14, TruePeakMaxDBTP: -1, Tolerance: .5, Loudness: true}
+	result, _ := renderLoudnessFileReport(inspection.score, filepath.Join(t.TempDir(), "out.wav"), opts, target, nil)
+	if result.GainStage != "master_input" {
+		t.Fatalf("gain stage %q", result.GainStage)
+	}
+}
+
+func TestExportLoudnessCompressorBeforeIdleLimiter(t *testing.T) {
+	source, err := os.ReadFile(filepath.Join("testdata", "export-loudness", "punchy-nolimiter.cicada"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, scheduled := range []bool{false, true} {
+		text := strings.Replace(string(source), "master { level = 6dB insert = tone }", "fx glue comp { threshold = -30dB ratio = 4 }\nfx ceiling limiter { ceiling = 0dBTP }\nmaster { level = -30dB insert = glue -> ceiling }", 1)
+		if scheduled {
+			text = strings.Replace(text, "track bass acid {", "fx cleanup eq { type = highpass frequency = 30Hz q = 0.707 }\ntrack bass acid { insert = cleanup ", 1)
+		}
+		path := filepath.Join(t.TempDir(), "score.cicada")
+		if err := os.WriteFile(path, []byte(text), 0600); err != nil {
+			t.Fatal(err)
+		}
+		inspection, err := inspectScore(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if render.UsesScheduledEngine(inspection.score, render.Options{}) != scheduled {
+			t.Fatalf("wrong renderer: scheduled=%v", scheduled)
+		}
+		var samples [2][]float32
+		for i, gain := range []float64{0, 6} {
+			var out bytes.Buffer
+			r, err := render.WAV(inspection.score, render.Options{SampleRate: 48000, Bits: 32, Bars: 2, TailSec: .5, MasterGainDB: gain}, &out)
+			if err != nil || r.MaxExportLimiterReductionDB != 0 {
+				t.Fatalf("limiter not idle: %+v %v", r, err)
+			}
+			samples[i] = float32WAVSamples(t, out.Bytes())
+		}
+		if len(samples[0]) != len(samples[1]) {
+			t.Fatal("different sample lengths")
+		}
+		peak, worst := 0.0, 0.0
+		for i, v := range samples[0] {
+			peak = math.Max(peak, math.Abs(float64(v)))
+			worst = math.Max(worst, math.Abs(float64(samples[1][i])-float64(v)*math.Pow(10, 6.0/20)))
+		}
+		if peak < .0001 || worst > 1e-5 {
+			t.Fatalf("scheduled=%v peak=%g difference=%g", scheduled, peak, worst)
 		}
 	}
 }

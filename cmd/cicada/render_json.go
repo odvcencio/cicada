@@ -86,6 +86,7 @@ type renderLoudnessJSON struct {
 	Repeats                   int            `json:"repeats"`
 	PassLog                   []loudnessPass `json:"pass_log"`
 	GainStage                 string         `json:"gain_stage,omitempty"`
+	LastLimiterReductionDB    float64        `json:"last_limiter_reduction_db"`
 	MasterLimiterReductionDB  float64        `json:"master_limiter_reduction_db"`
 	LargestLimiterReductionDB float64        `json:"largest_limiter_reduction_db"`
 	DCCorrectionLeftFS        float64        `json:"dc_correction_left_fs"`
@@ -297,6 +298,7 @@ func renderJSONCommand(command, path, output string, opts render.Options, target
 			loudness.AppliedGainDB = finiteValue(report.AppliedGainDB)
 			loudness.GainStage = report.GainStage
 			loudness.MasterLimiterReductionDB = report.MasterLimiterReductionDB
+			loudness.LastLimiterReductionDB = report.LastLimiterReductionDB
 			loudness.LargestLimiterReductionDB = report.LargestLimiterReductionDB
 			loudness.DCCorrectionLeftFS, loudness.DCCorrectionRightFS = report.DCCorrection.LeftFS, report.DCCorrection.RightFS
 			loudness.TargetMet = err == nil

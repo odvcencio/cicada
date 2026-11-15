@@ -651,7 +651,9 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	authoredGainDB, hasLevel := authoredMasterLevelDB(semantic)
 	masterGainDB, masterGain, chainGain, outputGain := directMasterGains(opts, authoredGainDB, hasLevel, masterProcessor != nil, project.MasterExportGainPoint(semantic))
 	if chainGain != 1 {
-		project.SetMasterExportGain(masterProcessor, chainGain)
+		if !project.SetMasterExportGain(masterProcessor, chainGain) {
+			return report, fmt.Errorf("cannot set master export gain")
+		}
 	}
 	for _, bus := range semantic.Buses {
 		switch bus.ID {

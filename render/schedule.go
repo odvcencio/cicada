@@ -53,7 +53,9 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 	}
 	authoredGainDB := cfg.MasterGainDB
 	if chainGain := scheduledChainGain(p, cfg.MasterProcessor, opts); chainGain != 1 {
-		project.SetMasterExportGain(cfg.MasterProcessor, chainGain)
+		if !project.SetMasterExportGain(cfg.MasterProcessor, chainGain) {
+			return report, fmt.Errorf("cannot set master export gain")
+		}
 	} else if !scheduledGainInChain(p, cfg.MasterProcessor) {
 		cfg.MasterGainDB = scheduledMasterGainDB(authoredGainDB, opts)
 	}

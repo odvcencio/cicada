@@ -26,8 +26,7 @@ func MasterHasInsert(p *Project, id string) bool {
 }
 
 // MasterHasLimiter reports whether the score's master insert chain contains a
-// limiter. Export loudness targeting applies its gain before such a chain so
-// the declared limiter enforces the true-peak ceiling.
+// limiter. Export loudness gain enters immediately before the last limiter.
 func MasterHasLimiter(p *Project) bool {
 	if p == nil || p.Master == nil {
 		return false
@@ -65,6 +64,26 @@ func MasterLimiterCeilingDBTP(p *Project) (float64, bool) {
 		}
 	}
 	return lowest, found
+}
+
+// LastMasterLimiterCeilingDBTP returns the ceiling of the last master limiter.
+func LastMasterLimiterCeilingDBTP(p *Project) (float64, bool) {
+	if p == nil || p.Master == nil {
+		return 0, false
+	}
+	ceiling, found := 0.0, false
+	for _, name := range p.Master.Mixer.Inserts {
+		for _, effect := range p.Effects {
+			if effect.ID == name && semanticEffectKind(effect) == "limiter" {
+				ceiling = pro.DefaultParams().Limiter.CeilingDBTP
+				if v, ok := effect.Params["ceiling"]; ok && v.Number != nil {
+					ceiling = *v.Number
+				}
+				found = true
+			}
+		}
+	}
+	return ceiling, found
 }
 
 type masterChain struct {

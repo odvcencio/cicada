@@ -853,18 +853,10 @@ type loudnessFileReport struct {
 	Repeats                   int            `json:"repeats"`
 	PassLog                   []loudnessPass `json:"pass_log,omitempty"`
 	LargestLimiterReductionDB float64        `json:"largest_limiter_reduction_db"`
-	// MasterLimiterReductionDB is the largest gain reduction of the score's
-	// last master limiter, the one the export gain drives and the 6 dB
-	// maximum bounds; LargestLimiterReductionDB also counts any limiter ahead
-	// of it and the safety limiter. GainStage is "before_last_limiter" when the
-	// master chain has a limiter: the export gain enters after the inserts
-	// ahead of the last limiter, which run as in playback. It is "post_chain"
-	// when the chain has no limiter, or there is no chain: the gain enters
-	// after the chain, ahead of the safety limiter. Both renderers place the
-	// gain the same way.
-	MasterLimiterReductionDB float64 `json:"master_limiter_reduction_db"`
-	GainStage                string  `json:"gain_stage"`
-	limiterMode              bool
+	MasterLimiterReductionDB  float64        `json:"master_limiter_reduction_db"`
+	LastLimiterReductionDB    float64        `json:"last_limiter_reduction_db"`
+	GainStage                 string         `json:"gain_stage"`
+	limiterMode               bool
 	// Notes lists conditions that affect how to read the result.
 	Notes        []string `json:"notes,omitempty"`
 	DCCorrection struct {
@@ -1035,9 +1027,17 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 	gain := 0.0
 	var biasL, biasR float32
 	limiterMode := false
+	gainPoint := project.GainAtMasterInput
+	gainMax := maxExportGainDB
 	if p, _ := project.FromScore(score); p != nil {
+		gainPoint = project.MasterExportGainPoint(p)
+		if p.Master != nil {
+			if level := p.Master.Mixer.Level; level != nil && level.Unit == "db" && level.Number != nil && *level.Number > 0 {
+				gainMax -= *level.Number
+			}
+		}
 		limiterMode = project.MasterHasLimiter(p)
-		if ceiling, ok := project.MasterLimiterCeilingDBTP(p); ok && ceiling > target.TruePeakMaxDBTP {
+		if ceiling, ok := project.LastMasterLimiterCeilingDBTP(p); ok && ceiling > target.TruePeakMaxDBTP {
 			report.Notes = append(report.Notes, fmt.Sprintf("master limiter ceiling %.4g dBTP is above the export true-peak ceiling %.4g dBTP; the limiter cannot enforce the export ceiling, so the input gain is cut below the limiter threshold", ceiling, target.TruePeakMaxDBTP))
 		}
 	}
@@ -1276,7 +1276,11 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 		} else {
 			gain += target.LoudnessTarget - measurement.IntegratedLUFS
 		}
-		gain = math.Max(-120, math.Min(maxExportGainDB, gain))
+		next := math.Max(-120, math.Min(gainMax, gain))
+		if next == passOptions.MasterGainDB && !pendingDC {
+			break
+		}
+		gain = next
 	}
 	if !hasBest {
 		if math.IsInf(peakFallbackExcess, 1) {
@@ -1307,14 +1311,14 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 			// All the gain reaches the last limiter, which still has room, so
 			// the level ahead of it is what is short. The chain already has a
 			// limiter, so adding one is not the fix.
-			shortfallErr.message += fmt.Sprintf("; raise the master level, or the level of the inserts ahead of the last limiter, by about %.1f dB, or lower the target to %.2f LUFS", target.LoudnessTarget-bestMeasure.IntegratedLUFS, bestMeasure.IntegratedLUFS)
+			shortfallErr.message += fmt.Sprintf("; raise track levels, or the master level (up to +6 dB), by about %.1f dB, or lower the target to %.2f LUFS", target.LoudnessTarget-bestMeasure.IntegratedLUFS, bestMeasure.IntegratedLUFS)
 		}
 	} else if bestDelta > target.Tolerance {
 		shortfall := target.LoudnessTarget - bestMeasure.IntegratedLUFS
 		if shortfall > target.Tolerance && bestMeasure.TruePeakDBTP >= target.TruePeakMaxDBTP-0.1 {
 			shortfallErr = &loudnessShortfallError{reason: "loudness_shortfall_at_true_peak_ceiling", message: fmt.Sprintf("loudness target shortfall %.2f LU: achieved %.2f LUFS at true-peak ceiling %.2f dBTP (target %.2f LUFS)", shortfall, bestMeasure.IntegratedLUFS, bestMeasure.TruePeakDBTP, target.LoudnessTarget)}
 		} else {
-			shortfallErr = missedLoudnessTarget(loudnessMiss{target: target, limiterMode: limiterMode, passes: passes, bestLUFS: bestMeasure.IntegratedLUFS, bestGain: bestGain, bestReduction: bestChainReduction, nearestUnsafe: nearestUnsafe, bracketClosed: bracketClosed})
+			shortfallErr = missedLoudnessTarget(loudnessMiss{target: target, limiterMode: limiterMode, passes: passes, bestLUFS: bestMeasure.IntegratedLUFS, bestGain: bestGain, bestReduction: bestChainReduction, gainMax: gainMax, nearestUnsafe: nearestUnsafe, bracketClosed: bracketClosed})
 		}
 		if shortfallErr.reason == "loudness_shortfall_at_true_peak_ceiling" && !limiterMode && target.TruePeakMaxDBTP >= -12 && target.TruePeakMaxDBTP <= 0 {
 			// Without a limiter the static gain stops at the ceiling; with one,
@@ -1330,6 +1334,9 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 	}
 	if shortfallErr != nil {
 		shortfallErr.limit = shortfallLimit(shortfallErr.reason, target)
+		if shortfallErr.reason == "loudness_shortfall_at_gain_maximum" {
+			shortfallErr.limit = "+" + strconv.FormatFloat(gainMax, 'f', -1, 64) + "dB"
+		}
 	}
 	destination := path
 	if shortfallErr != nil && shortfallPath != "" {
@@ -1351,11 +1358,15 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 	report.AppliedGainDB = bestGain
 	report.Passes = passes
 	report.LargestLimiterReductionDB = math.Max(bestRender.MaxLimiterGainReductionDB, bestRender.MaxMasterChainLimiterReductionDB)
-	report.MasterLimiterReductionDB = bestRender.MaxExportLimiterReductionDB
-	report.GainStage = "post_chain"
+	report.MasterLimiterReductionDB = bestRender.MaxMasterChainLimiterReductionDB
+	report.LastLimiterReductionDB = bestRender.MaxExportLimiterReductionDB
+	report.GainStage = "master_input"
 	report.limiterMode = limiterMode
-	if limiterMode {
+	switch gainPoint {
+	case project.GainBeforeLastLimiter:
 		report.GainStage = "before_last_limiter"
+	case project.GainAfterChain:
+		report.GainStage = "post_chain"
 	}
 	report.DCCorrection.LeftFS, report.DCCorrection.RightFS = float64(bestBiasL), float64(bestBiasR)
 	report.Bars, report.From, report.Frames, report.SampleRate = bestRender.Bars, bestRender.From, bestRender.Frames, bestRender.SampleRate
@@ -1390,7 +1401,7 @@ func shortfallLimit(reason string, target renderTargetOptions) string {
 	case "true_peak_over_ceiling", "loudness_shortfall_at_true_peak_ceiling":
 		return formatDBTP(target.TruePeakMaxDBTP) + "dBTP"
 	case "loudness_target_missed_at_pass_limit":
-		return strconv.Itoa(loudnessPassLimit)
+		return strconv.Itoa(loudnessPassLimit) + " passes"
 	}
 	return ""
 }
@@ -1431,6 +1442,7 @@ type loudnessMiss struct {
 	limiterMode                       bool
 	passes                            int
 	bestLUFS, bestGain, bestReduction float64
+	gainMax                           float64
 	nearestUnsafe                     *unsafeLoudnessPass
 	bracketClosed                     bool
 }
@@ -1455,8 +1467,12 @@ func missedLoudnessTarget(m loudnessMiss) *loudnessShortfallError {
 	if louder != nil && louder.gain <= m.bestGain {
 		louder = nil
 	}
-	if below && !m.limiterMode && m.bestGain >= maxExportGainDB {
-		return &loudnessShortfallError{reason: "loudness_shortfall_at_gain_maximum", message: fmt.Sprintf("loudness target shortfall %.2f LU: achieved %.2f LUFS at the +%.0f dB maximum export gain (target %.2f LUFS); the mix is too quiet for the target: raise the master level or the track levels by at least %.1f dB", shortfall, m.bestLUFS, maxExportGainDB, target, shortfall)}
+	gainMax := m.gainMax
+	if gainMax == 0 {
+		gainMax = maxExportGainDB
+	}
+	if below && !m.limiterMode && m.bestGain >= gainMax {
+		return &loudnessShortfallError{reason: "loudness_shortfall_at_gain_maximum", message: fmt.Sprintf("loudness target shortfall %.2f LU: achieved %.2f LUFS at the +%s dB maximum export gain (target %.2f LUFS); the mix is too quiet for the target: raise the master level or the track levels by at least %.1f dB", shortfall, m.bestLUFS, strconv.FormatFloat(gainMax, 'f', -1, 64), target, shortfall)}
 	}
 	if below && louder != nil && (m.bracketClosed || louder.lufs < band) {
 		if louder.overLimiter {

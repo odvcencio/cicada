@@ -121,5 +121,34 @@ func TestExportLoudnessGainMaximumReportsShortfall(t *testing.T) {
 	if result.AppliedGainDB != maxExportGainDB || result.TruePeakDBTP > -6 {
 		t.Fatalf("gain %+.2f dB, true peak %.2f dBTP: want the +24 dB maximum well under the ceiling", result.AppliedGainDB, result.TruePeakDBTP)
 	}
+	if result.Passes >= loudnessPassLimit {
+		t.Fatalf("repeated capped gain: %d passes", result.Passes)
+	}
 	t.Logf("METRIC EXPORT-GAIN-MAXIMUM lufs=%.3f gain=%+.2f passes=%d err=%v", result.AchievedLUFS, result.AppliedGainDB, result.Passes, err)
+}
+
+func TestExportLoudnessPositiveMasterGainMaximum(t *testing.T) {
+	source, err := os.ReadFile(filepath.Join("testdata", "export-loudness", "punchy-nolimiter.cicada"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := strings.Replace(string(source), "track bass acid {", "track bass acid { level = -40dB ", 1)
+	text = strings.Replace(text, "track drums drums {", "track drums drums { level = -40dB ", 1)
+	path := filepath.Join(t.TempDir(), "quiet.cicada")
+	if err := os.WriteFile(path, []byte(text), 0600); err != nil {
+		t.Fatal(err)
+	}
+	inspection, err := inspectScore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wav := filepath.Join(t.TempDir(), "quiet.wav")
+	result, err := renderLoudnessFileReport(inspection.score, wav, render.Options{SampleRate: 48000, Bits: 24, Bars: 4, TailSec: 3}, renderTargetOptions{LoudnessTarget: -14, TruePeakMaxDBTP: -1, Tolerance: .5, Loudness: true}, nil)
+	var shortfall *loudnessShortfallError
+	if !errors.As(err, &shortfall) || shortfall.reason != "loudness_shortfall_at_gain_maximum" || shortfall.limit != "+18dB" || result.AppliedGainDB != 18 {
+		t.Fatalf("result=%+v error=%v", result, err)
+	}
+	if _, err := os.Stat(wav); err != nil {
+		t.Fatal(err)
+	}
 }

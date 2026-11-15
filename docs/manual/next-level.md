@@ -237,8 +237,8 @@ Bar numbers start at 1, so `--from 1` selects the first bar. The old
 `--from 0` input still selects bar 1 and prints a deprecation warning.
 Studio's Master panel also measures integrated loudness and exports at a
 target level. If the score's `master` chain contains a limiter, the loudness
-target applies its gain before that chain so your limiter holds the true-peak
-ceiling; see [Export loudness targets](../audio/mix-chain.md#export-loudness-targets).
+target applies its gain immediately before the last limiter; earlier inserts
+run at their playback level. Without a limiter, gain follows the master chain; see [Export loudness targets](../audio/mix-chain.md#export-loudness-targets).
 Use `--normalize` for peak normalization when you do not request
 a loudness target.
 

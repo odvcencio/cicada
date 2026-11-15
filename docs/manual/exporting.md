@@ -30,7 +30,7 @@ that names the bars.
 target. The gain it finds is makeup gain into the master chain's last limiter,
 not gain into the mix: every master insert ahead of that limiter, such as a glue
 compressor, an EQ or a transient shaper, runs exactly as in playback, so the
-export has the dynamics you hear in Studio. Until November 2026 the gain went in
+export has the dynamics you hear in Studio. Inserts after the last limiter also receive the export gain, so a compressor there works harder than in playback. Until November 2026 the gain went in
 ahead of the whole chain, so a master compressor worked up to 12 dB harder in
 the export than in playback. What that changes for a song exported at a target:
 
