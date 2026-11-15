@@ -108,6 +108,18 @@ test('scene headers open guarded block controls and Undo restores the song', {ti
   assert.equal(await page.locator('#song-block-0 input[name=bars]').inputValue(), '4');
   await page.locator('#arrangement .timeline-clip[data-scene-pattern-open]').first().click();
   await until(async () => !(await page.locator('[data-scene-open-status]').textContent()).includes('Save or discard'), 'hidden draft blocked the clip');
+  await page.locator('#detail-tab-device').click();
+  await page.locator('#detail-tab-device[aria-selected="true"]').waitFor();
+  const addPanel = page.locator('details[name="arrange-tools"]').filter({has: page.getByText('Add section', {exact:true})});
+  await addPanel.locator('summary').click();
+  const addBars = addPanel.locator('input[name=bars]');
+  const originalBars = await addBars.inputValue();
+  await addBars.fill('9');
+  await addBars.press('Escape');
+  await until(async () => !(await addPanel.evaluate(el => el.open)) && await addBars.inputValue() === originalBars, 'closing Add section did not discard the draft');
+  await page.locator('#arrangement .timeline-clip[data-scene-pattern-open]').first().click();
+  await until(async () => !(await page.locator('[data-scene-open-status]').textContent()).includes('Save or discard'), 'Add section draft blocked the clip');
+  await page.locator('#detail-tab-clip[aria-selected="true"]').waitFor();
   const beforeMute = (await state()).revision;
   await page.locator('#arrangement button[aria-label="Mute bass"]').click();
   await until(async () => (await state()).revision !== beforeMute, 'mute was not saved');

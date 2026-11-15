@@ -1084,6 +1084,7 @@ test('Remove block after another client inserted a block earlier is not sent', a
     await until(async () => anotherChange.test(await status()), 'the held removal was not reported');
     await page.waitForTimeout(300);
     assert.equal(sent('/__actions/song'), songs, 'Remove block was sent after another client changed the song');
+    assert.equal(await page.locator('#update-center-arrange details[data-song-index]').count(), 3, 'the page does not show the copied block');
     assert.equal(await page.locator('#update-center-arrange details.arrangement-block[open]').count(), 0, 'the inspector closes when its block changes');
     assert.equal(await page.locator('#update-center-arrange [data-scene-open-status]').textContent(), 'The song changed. Choose Edit on a block to continue editing it.');
     assert.equal((await state('/api/state')).source, theirs.source, 'the song changed');

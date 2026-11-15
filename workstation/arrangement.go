@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"net/url"
 	"slices"
@@ -52,6 +53,12 @@ func (s *studioApp) arrangementView(ctx *server.Context, v workspace, csrf, sele
 	var ruler []gosx.Node
 	ruler = append(ruler, gosx.El("span", gosx.Attrs(gosx.Attr("class", "timeline-track")), gosx.Text("Tracks")))
 	var blocks []gosx.Node
+	generationParts := []string{v.Filename}
+	for index := range p.Song {
+		generationParts = append(generationParts, songBlockKey(p.Song, index))
+	}
+	generationHash := sha256.Sum256([]byte(strings.Join(generationParts, "\n")))
+	generation := fmt.Sprintf("%x", generationHash[:6])
 	bar := 1
 	for index, entry := range p.Song {
 		i, block := strconv.Itoa(index), targetField(songBlockKey(p.Song, index))
@@ -85,7 +92,7 @@ func (s *studioApp) arrangementView(ctx *server.Context, v workspace, csrf, sele
 		if len(p.Song) > 1 {
 			controls = append(controls, s.form(v, csrf, "session", "song", hidden("index", i), block, submit("action", "delete", "Remove block")))
 		}
-		attrs := gosx.Attrs(gosx.Attr("class", "arrangement-block"), gosx.Attr("data-song-index", i), gosx.Attr("data-song-key", songBlockKey(p.Song, index)), gosx.Attr("id", "song-block-"+i))
+		attrs := gosx.Attrs(gosx.Attr("class", "arrangement-block"), gosx.Attr("data-song-index", i), gosx.Attr("data-song-key", songBlockKey(p.Song, index)), gosx.Attr("data-song-generation", generation), gosx.Attr("id", "song-block-"+i))
 		if index == selectedBlock {
 			attrs = append(attrs, gosx.BoolAttr("open"), gosx.BoolAttr("data-song-selected"))
 		}
@@ -161,7 +168,7 @@ func (s *studioApp) arrangementView(ctx *server.Context, v workspace, csrf, sele
 	settings := s.form(v, csrf, "session", "project", field("Title", textInput("title", p.Title)), field("Tempo (BPM)", numberInput("tempo", strconv.FormatFloat(float64(p.TempoMilli)/1000, 'f', -1, 64), "20", "300")), field("Key", selectInput("root", phraseKeys[p.Key.Root], phraseKeys)), field("Scale", selectInput("scale", p.Key.Scale, phraseScales)), submit("", "", "Save project settings"))
 	if shell {
 		panel := func(label string, content ...gosx.Node) gosx.Node {
-			return gosx.El("details", gosx.Attrs(gosx.Attr("class", "arrange-popover"), gosx.Attr("name", "arrange-tools")), gosx.El("summary", gosx.Text(label)), gosx.El("div", gosx.Attrs(gosx.Attr("class", "arrange-popover-panel")), gosx.Fragment(content...)))
+			return gosx.El("details", gosx.Attrs(gosx.Attr("class", "arrange-popover"), gosx.Attr("name", "arrange-tools"), gosx.BoolAttr("data-discard-on-close"), gosx.BoolAttr("data-dismiss-outside")), gosx.El("summary", gosx.Text(label)), gosx.El("div", gosx.Attrs(gosx.Attr("class", "arrange-popover-panel")), gosx.Fragment(content...)))
 		}
 		end := p.MeterMap().BarStart(int64(bar - 1))
 		exact := s.listeningForm(v, csrf, selected, hidden("action", "loop"), field("Loop start", textInput("start", placementLiteral(p.MeterMap(), 0, true))), field("Loop end", textInput("end", placementLiteral(p.MeterMap(), min(end, p.MeterMap().BarStart(4)), true))), submit("", "", "Loop range"))

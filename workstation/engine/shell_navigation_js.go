@@ -29,23 +29,26 @@ func arrangeSectionStorageValue(action, value string) (result string) {
 }
 
 func arrangeSectionKey(block js.Value) string {
-	return workspaceAttr(block, "data-song-index") + "|" + workspaceAttr(block, "data-song-key")
+	return workspaceAttr(block, "data-song-index") + "|" + workspaceAttr(block, "data-song-key") + "|" + workspaceAttr(block, "data-song-generation")
+}
+
+func discardArrangeSection(root, blocks js.Value) {
+	for i := 0; i < blocks.Length(); i++ {
+		block := blocks.Index(i)
+		block.Set("open", false)
+		block.Call("removeAttribute", "data-song-selected")
+	}
+	if status := root.Call("querySelector", "#arrangement [data-scene-open-status]"); workspacePresent(status) {
+		status.Set("textContent", "The song changed. Choose Edit on a block to continue editing it.")
+	}
+	arrangeSectionStorageValue("clear", "")
 }
 
 func restoreArrangeSection(root js.Value) {
-	blocks := root.Call("querySelectorAll", "#arrangement details.arrangement-block[data-song-key]")
-	if blocks.Length() == 0 {
-		if workspacePresent(root.Call("querySelector", "#arrangement")) {
-			arrangeSectionStorageValue("clear", "")
-		}
+	if !workspacePresent(root.Call("querySelector", "#arrangement")) {
 		return
 	}
-	for i := 0; i < blocks.Length(); i++ {
-		if block := blocks.Index(i); block.Get("open").Bool() {
-			arrangeSectionStorageValue("set", arrangeSectionKey(block))
-			return
-		}
-	}
+	blocks := root.Call("querySelectorAll", "#arrangement details.arrangement-block[data-song-key]")
 	if saved := arrangeSectionStorageValue("get", ""); saved != "" {
 		for i := 0; i < blocks.Length(); i++ {
 			block := blocks.Index(i)
@@ -55,16 +58,23 @@ func restoreArrangeSection(root js.Value) {
 				return
 			}
 		}
-		arrangeSectionStorageValue("clear", "")
+		discardArrangeSection(root, blocks)
+		return
+	}
+	for i := 0; i < blocks.Length(); i++ {
+		if block := blocks.Index(i); block.Get("open").Bool() {
+			arrangeSectionStorageValue("set", arrangeSectionKey(block))
+			return
+		}
 	}
 }
 
 func checkArrangeSection(root js.Value) {
 	if saved := arrangeSectionStorageValue("get", ""); saved != "" {
-		blocks := root.Call("querySelectorAll", "#arrangement details.arrangement-block[data-song-key]")
 		if !workspacePresent(root.Call("querySelector", "#arrangement")) {
 			return
 		}
+		blocks := root.Call("querySelectorAll", "#arrangement details.arrangement-block[data-song-key]")
 		found := false
 		for i := 0; i < blocks.Length(); i++ {
 			block := blocks.Index(i)
@@ -75,17 +85,8 @@ func checkArrangeSection(root js.Value) {
 				break
 			}
 		}
-		if found {
-			return
-		}
-		for i := 0; i < blocks.Length(); i++ {
-			block := blocks.Index(i)
-			block.Set("open", false)
-			block.Call("removeAttribute", "data-song-selected")
-		}
-		arrangeSectionStorageValue("clear", "")
-		if status := root.Call("querySelector", "#arrangement [data-scene-open-status]"); workspacePresent(status) {
-			status.Set("textContent", "The song changed. Choose Edit on a block to continue editing it.")
+		if !found {
+			discardArrangeSection(root, blocks)
 		}
 	}
 }

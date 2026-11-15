@@ -32,6 +32,37 @@ func assertSongBlock(t *testing.T, body string, index int, selected bool) {
 	t.Errorf("missing song block %d", index)
 }
 
+func TestSceneBlockGenerationChangesWithSong(t *testing.T) {
+	p := &project.Project{Scenes: []project.Scene{{ID: "main"}}, Song: []project.SongEntry{{Scene: "main", Bars: 4}, {Scene: "main", Bars: 2}}}
+	view := &workspace{Revision: "current", Filename: "main.cicada", Valid: true, Project: p}
+	address, client, _ := testAppWorkspace(t, view)
+	generation := func() string {
+		t.Helper()
+		body := getPage(t, client, address+"/?panel=session")
+		tags := regexp.MustCompile(`<details\b[^>]*class="arrangement-block"[^>]*>`).FindAllString(body, -1)
+		if len(tags) != 2 {
+			t.Fatalf("got %d blocks, want 2", len(tags))
+		}
+		var result string
+		for _, tag := range tags {
+			match := regexp.MustCompile(`data-song-generation="([0-9a-f]{12})"`).FindStringSubmatch(tag)
+			if len(match) != 2 {
+				t.Fatalf("missing generation: %s", tag)
+			}
+			if result != "" && result != match[1] {
+				t.Fatalf("block generations differ")
+			}
+			result = match[1]
+		}
+		return result
+	}
+	before := generation()
+	p.Song[1].Bars++
+	if after := generation(); after == before {
+		t.Fatal("generation did not change with block length")
+	}
+}
+
 func TestSceneBlockSelectionUsesDisplayedTarget(t *testing.T) {
 	p := &project.Project{Scenes: []project.Scene{{ID: "main"}, {ID: "alternate"}}, Song: []project.SongEntry{{Scene: "main", Bars: 4}, {Scene: "alternate", Bars: 2}}}
 	address, client, _ := testAppWorkspace(t, &workspace{Revision: "current", SourceRevision: "sources", Valid: true, Project: p})
@@ -107,6 +138,20 @@ func TestShellSceneArrangementControls(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("missing %q", want)
 		}
+	}
+	for _, tag := range regexp.MustCompile(`<details\b[^>]*>`).FindAllString(body, -1) {
+		if strings.Contains(tag, `name="arrange-tools"`) || strings.Contains(tag, `class="rail-rename"`) {
+			if !strings.Contains(tag, "data-discard-on-close") {
+				t.Errorf("missing discard attribute: %s", tag)
+			}
+			// Floating tool panels close on an outside press; the in-flow rename form does not.
+			if floats := strings.Contains(tag, `name="arrange-tools"`); floats != strings.Contains(tag, "data-dismiss-outside") {
+				t.Errorf("outside-press dismissal is wrong on: %s", tag)
+			}
+		}
+	}
+	if got := strings.Count(body, "data-discard-on-close"); got != 4 {
+		t.Errorf("got %d discardable panels, want 4", got)
 	}
 	assertSongBlock(t, body, 0, false)
 	assertSongBlock(t, body, 1, true)
