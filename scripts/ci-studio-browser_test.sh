@@ -18,6 +18,12 @@ chmod +x "$scratch/build/cicada"
 for suite in "$repo"/workstation/browser/*.test.cjs; do
 	: > "$scratch/workstation/browser/$(basename "$suite")"
 done
+# The local-first walkthrough's row check reads the real suite and its
+# expectation file; check also looks for the workflow job that runs it.
+cp "$repo/workstation/browser/local-first.test.cjs" "$repo/workstation/browser/local-first.expected.json" "$scratch/workstation/browser/"
+mkdir -p "$scratch/.github/workflows"
+workflow_line='        run: bash scripts/ci-studio-browser.sh local-first'
+printf '%s\n' "$workflow_line" > "$scratch/.github/workflows/ci.yml"
 
 # run_check NAME EXPECT(pass|fail) MESSAGE_PATTERN SED_EXPR...
 # Runs "check" and a dry run of every shard on a mutated copy of the script.
@@ -37,6 +43,10 @@ $(cd "$scratch" && CICADA_STUDIO_DRY_RUN=1 CICADA_STUDIO_DRY_ROOT="$scratch/dry"
 		if grep -q '^FAIL' <<<"$output"; then status=1; fi
 		rm -rf "$scratch/dry"
 	done
+	output="$output
+$(cd "$scratch" && CICADA_STUDIO_DRY_RUN=1 CICADA_STUDIO_DRY_ROOT="$scratch/dry" bash scripts/ci-studio-browser.sh local-first 2>&1)" || status=$?
+	if grep -q '^FAIL' <<<"$output"; then status=1; fi
+	rm -rf "$scratch/dry"
 	if [[ "$expect" == pass && "$status" != 0 ]] || [[ "$expect" == fail && "$status" == 0 ]]; then
 		echo "FAIL: $name: expected $expect, exit status $status" >&2
 		echo "$output" >&2
@@ -48,7 +58,7 @@ $(cd "$scratch" && CICADA_STUDIO_DRY_RUN=1 CICADA_STUDIO_DRY_ROOT="$scratch/dry"
 	fi
 }
 
-run_check "the real script passes" pass "ran all"
+run_check "the real script passes" pass "local-first ran all 4 recorded parts"
 
 # A segment dropped from every shard leaves its suite in no shard.
 run_check "segment in no shard" fail "segment shell is in no shard" 's/ shell / /'
@@ -89,6 +99,17 @@ run_check "excused suite that runs" fail "suite shell is listed in not_run_by_ci
 # A listed suite with no file on disk.
 run_check "listed suite without a file" fail "no file workstation/browser/ghost.test.cjs" \
 	's|^\tchorus) echo chorus ;;|\tchorus) echo chorus ghost ;;|'
+
+# The walkthrough: a CI run dropped from local_first_runs leaves its rows in
+# no run, a part whose command is gone leaves no record, and a workflow
+# without the job fails check.
+run_check "local-first run dropped" fail "runs in no CI run" \
+	's#^local_first_runs="scene:1/3 scene:2/3 scene:3/3 placement:1/1"#local_first_runs="scene:1/3 scene:3/3 placement:1/1"#'
+run_check "local-first part not recorded" fail "did not run local-first@scene-1of3" \
+	's#run_suite "local-first@$tag" true#[[ $tag == scene-1of3 ]] || run_suite "local-first@$tag" true#'
+: > "$scratch/.github/workflows/ci.yml"
+run_check "no local-first job" fail "no workflow job runs scripts/ci-studio-browser.sh local-first"
+printf '%s\n' "$workflow_line" > "$scratch/.github/workflows/ci.yml"
 
 # A suite that outlives the time limit must fail with its name in the output,
 # and one that finishes in time must pass with its output intact.
