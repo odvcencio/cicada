@@ -172,7 +172,7 @@ func (s *studioApp) arrangementView(ctx *server.Context, v workspace, csrf, sele
 		}
 		end := p.MeterMap().BarStart(int64(bar - 1))
 		exact := s.listeningForm(v, csrf, selected, hidden("action", "loop"), field("Loop start", textInput("start", placementLiteral(p.MeterMap(), 0, true))), field("Loop end", textInput("end", placementLiteral(p.MeterMap(), min(end, p.MeterMap().BarStart(4)), true))), submit("", "", "Loop range"))
-		tools := gosx.El("section", gosx.Attrs(gosx.Attr("class", "arrange-tools"), gosx.Attr("aria-label", "Arrangement tools")),
+		tools := gosx.El("section", gosx.Attrs(gosx.Attr("class", "arrange-tools"), gosx.Attr("aria-label", "Arrangement tools"), gosx.BoolAttr("data-dismiss-scope")),
 			s.listeningForm(v, csrf, selected, submit("action", "fullSong", "Play full song")),
 			s.listeningForm(v, csrf, selected, submit("action", "stop", "Stop listening")),
 			panel("Loop an exact range", exact, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("A section runs from its marker to the next marker, or the song end. Loop end is exclusive. Playback controls keep your arrangement unchanged."))),

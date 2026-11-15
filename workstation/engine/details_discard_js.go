@@ -14,7 +14,15 @@ func bindDetailsDiscard(root js.Value) func() {
 		}
 		forms := target.Call("querySelectorAll", "form")
 		for i := 0; i < forms.Length(); i++ {
-			forms.Index(i).Call("reset")
+			form := forms.Index(i)
+			form.Call("reset")
+			// A refusal shown beside the discarded values would describe values that are gone.
+			if form.Call("getAttribute", "data-gosx-form-state").String() == "error" {
+				form.Call("setAttribute", "data-gosx-form-state", "idle")
+			}
+			if status := form.Call("querySelector", ".form-status"); workspacePresent(status) {
+				status.Set("textContent", "")
+			}
 		}
 		controls := target.Call("querySelectorAll", "[data-edited], [data-baseline]")
 		for i := 0; i < controls.Length(); i++ {
@@ -45,6 +53,13 @@ func bindDetailsDiscard(root js.Value) func() {
 	// and the click would miss what the user pressed.
 	pointerdown := js.FuncOf(func(_ js.Value, args []js.Value) any {
 		target := args[0].Get("target")
+		// A press inside the strip that holds the panels ([data-dismiss-scope]) or
+		// on a message (the refusal toast and its close button) belongs to the same
+		// task, so it keeps the draft. Another panel's summary still closes this
+		// one, through the shared name of the details group.
+		if workspacePresent(target) && target.Get("closest").Type() == js.TypeFunction && workspacePresent(target.Call("closest", "[data-dismiss-scope], [data-gosx-toast-host]")) {
+			return nil
+		}
 		panels := root.Call("querySelectorAll", selector+"[data-dismiss-outside][open]")
 		for i := 0; i < panels.Length(); i++ {
 			panel := panels.Index(i)

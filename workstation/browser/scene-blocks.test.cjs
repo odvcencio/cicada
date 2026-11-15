@@ -115,6 +115,11 @@ test('scene headers open guarded block controls and Undo restores the song', {ti
   const addBars = addPanel.locator('input[name=bars]');
   const originalBars = await addBars.inputValue();
   await addBars.fill('9');
+  // A press on the strip itself is part of the same task: the panel and its draft stay.
+  await page.locator('#arrangement .arrange-tools').getByRole('button', {name: 'Stop listening', exact: true}).click();
+  await page.waitForTimeout(150);
+  assert.equal(await addPanel.evaluate(el => el.open), true, 'a press on the tool strip closed Add section');
+  assert.equal(await addBars.inputValue(), '9', 'a press on the tool strip discarded the Add section draft');
   await addBars.press('Escape');
   await until(async () => !(await addPanel.evaluate(el => el.open)) && await addBars.inputValue() === originalBars, 'closing Add section did not discard the draft');
   await page.locator('#arrangement .timeline-clip[data-scene-pattern-open]').first().click();
