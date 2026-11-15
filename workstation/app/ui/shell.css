@@ -327,9 +327,12 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
 
 /* Detail dock: tabs and the selection they edit share one 38px bar. */
 .shell #studio-detail { background:var(--panel); }
-.shell #detail-tabs { display:grid; grid-template-columns:minmax(0,1fr) auto; grid-template-rows:auto minmax(0,1fr); }
-.shell #detail-tabs > .gsx-tabs__list { grid-column:1; grid-row:1; min-height:38px; background:var(--panel); border-bottom:1px solid var(--border); }
-.shell #detail-tabs .shell-dock-selection { grid-column:2; grid-row:1; display:flex; align-items:baseline; gap:8px; margin:0; padding:0 12px; align-self:stretch; align-items:center; border-bottom:1px solid var(--border); white-space:nowrap; overflow:hidden; }
+/* The tabs keep their width and stay on one row; the selection label takes what is left and truncates. */
+.shell #detail-tabs { display:grid; grid-template-columns:auto minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); }
+.shell #detail-tabs > .gsx-tabs__list { grid-column:1; grid-row:1; flex-wrap:nowrap; min-height:38px; background:var(--panel); border-bottom:1px solid var(--border); }
+.shell #detail-tabs .shell-dock-selection { grid-column:2; grid-row:1; display:flex; justify-content:flex-end; gap:8px; min-width:0; margin:0; padding:0 12px; align-self:stretch; align-items:center; border-bottom:1px solid var(--border); white-space:nowrap; overflow:hidden; }
+.shell #detail-tabs .shell-dock-selection > * { flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.shell #detail-tabs .shell-dock-selection > strong { flex-shrink:0; max-width:100%; }
 .shell #detail-tabs .shell-dock-selection strong { color:var(--amber); font-size:14px; font-weight:650; }
 .shell #detail-tabs .shell-dock-selection span { color:var(--muted); font:11px var(--mono); }
 .shell #detail-tabs .shell-dock-selection:has(> strong:empty) { visibility:hidden; }
