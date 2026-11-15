@@ -225,6 +225,11 @@ func AssetRateFindings(p *project.Project, rates []int) []AssetFinding {
 			}
 		}
 	}
+	if p.Arrange != nil {
+		for _, placement := range p.Arrange.Placements {
+			played["clip\x00"+placement.Content] = true
+		}
+	}
 	var findings []AssetFinding
 	for _, sampler := range p.Samplers {
 		asset, ok := assets[sampler.Asset]

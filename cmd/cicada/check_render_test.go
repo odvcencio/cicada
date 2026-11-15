@@ -59,7 +59,9 @@ func TestCheckRefusesAnAssetTheSampleVoiceCannotRead(t *testing.T) {
 	}{
 		{"sampler at 384 kHz", "asset hi \"a.wav\" { sha256 = \"{{a.wav}}\" format = wav frames = 9600 rate = 384000Hz channels = 1 }\nsampler s { asset = hi root = c4 mode = oneshot voices = 2 }\ntrack t s {}\npattern p { c4 . }\nscene m { t = p }\nsong { m }\n", 384_000, "error", "8000 to 192000 Hz"},
 		{"clip at 384 kHz", "asset hi \"a.wav\" { sha256 = \"{{a.wav}}\" format = wav frames = 9600 rate = 384000Hz channels = 1 }\nclip c hi { start = 0frames end = 9600frames }\ntrack v audio {}\nscene m { v = c }\nsong { m }\n", 384_000, "error", "12000 to 192000 Hz"},
+		{"arranged clip at 384 kHz", "asset hi \"a.wav\" { sha256 = \"{{a.wav}}\" format = wav frames = 9600 rate = 384000Hz channels = 1 }\nclip c hi { start = 0frames end = 9600frames }\ntrack v audio {}\narrange { place one v c { at = @1.1.1 length = 1bars } }\n", 384_000, "error", "12000 to 192000 Hz"},
 		{"clip at 8 kHz", "asset lo \"a.wav\" { sha256 = \"{{a.wav}}\" format = wav frames = 8000 rate = 8000Hz channels = 1 }\nclip c lo { start = 0frames end = 8000frames }\ntrack v audio {}\nscene m { v = c }\nsong { m }\n", 8_000, "warning", "12000 to 192000 Hz"},
+		{"arranged clip at 8 kHz", "asset lo \"a.wav\" { sha256 = \"{{a.wav}}\" format = wav frames = 8000 rate = 8000Hz channels = 1 }\nclip c lo { start = 0frames end = 8000frames }\ntrack v audio {}\narrange { place one v c { at = @1.1.1 length = 1bars } }\n", 8_000, "warning", "12000 to 192000 Hz"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			frames := 9600
@@ -117,19 +119,57 @@ song { m }
 		t.Fatalf("check: %+v", report.Diagnostics)
 	}
 	d := report.Diagnostics[0]
-	if d.Code != "CICADA-LIMIT" || !strings.Contains(d.Message, "64 MiB resident PCM budget") || d.Expected != "at most 64.0 MiB of resident PCM" || d.Found != "64.1 MiB" {
+	if d.Code != "CICADA-LIMIT" || d.Start == nil || d.Start.Line != 4 || !strings.Contains(d.Message, "64 MiB resident PCM budget") || d.Expected != "at most 64.0 MiB of resident PCM" || d.Found != "64.1 MiB" {
 		t.Fatalf("diagnostic %+v", d)
 	}
 }
 
 // engineDiagnostic files the engine compile's refusals under their codes.
 func TestEngineDiagnosticCodes(t *testing.T) {
-	budget := engineDiagnostic(fmt.Errorf("compile: %w", &rules.ResidentBudgetError{Name: "asset a", Bytes: 40 << 20, Used: 30 << 20}))
+	budget := engineDiagnostic(fmt.Errorf("compile: %w", &rules.ResidentBudgetError{Name: "asset a", Bytes: 40 << 20, Used: 30 << 20}), nil)
 	if budget.Code != "CICADA-LIMIT" || budget.Found != "70.0 MiB" || budget.Position != (notation.Position{Line: 1, Column: 1}) {
 		t.Fatalf("budget: %+v", budget)
 	}
-	if other := engineDiagnostic(fmt.Errorf("track t: something else")); other.Code != "CICADA-PARAM" || other.Expected != "" {
+	if other := engineDiagnostic(fmt.Errorf("track t: something else"), nil); other.Code != "CICADA-PARAM" || other.Expected != "" {
 		t.Fatalf("other: %+v", other)
+	}
+	frame := engineDiagnostic(&rules.ResidentBudgetError{Name: "asset a", Bytes: 32 << 20, Frames: 9 << 20, FrameLimit: 8 << 20}, &notation.Score{Assets: []notation.Asset{{Name: "a", Position: notation.Position{Line: 3, Column: 1}}}})
+	if frame.Position.Line != 3 || frame.Expected != "" || frame.Found != "" || !strings.Contains(frame.Message, "8388608 frames") {
+		t.Fatalf("frame limit: %+v", frame)
+	}
+}
+
+func TestCheckWarnsWhenOnlyScheduledEngineExceedsAssetBudget(t *testing.T) {
+	const played = 30 << 20 / 4
+	const unused = 40 << 20 / 8
+	path := writeCheckProject(t, map[string][3]int{"a.wav": {48000, 1, played}, "b.wav": {48000, 2, unused}}, fmt.Sprintf(`cicada 2
+tempo 300
+asset a "a.wav" { sha256 = "{{a.wav}}" format = wav frames = %d rate = 48000Hz channels = 1 }
+asset b "b.wav" { sha256 = "{{b.wav}}" format = wav frames = %d rate = 48000Hz channels = 2 }
+sampler sa { asset = a root = c4 mode = oneshot voices = 1 }
+track ta sa {}
+pattern p { c4 . }
+scene m { ta = p }
+song { m }
+`, played, unused))
+	report, err := checkAndRender(t, path, 48000)
+	if err != nil || !report.Valid || len(report.Diagnostics) != 1 || report.Diagnostics[0].Severity != "warning" || !strings.Contains(report.Diagnostics[0].Message, "scheduled engine") {
+		t.Fatalf("render %v; check %+v", err, report)
+	}
+}
+
+func TestCheckRefusesUnusedHighRateAssetOnScheduledPath(t *testing.T) {
+	path := writeCheckProject(t, map[string][3]int{"a.wav": {384000, 1, 9600}}, `cicada 2
+tempo 120
+asset a "a.wav" { sha256 = "{{a.wav}}" format = wav frames = 9600 rate = 384000Hz channels = 1 }
+sampler s { asset = a root = c4 mode = oneshot voices = 1 }
+track t acid {}
+pattern p { c4 . }
+arrange { place one t p { at = @1.1.1 length = 1bars } }
+`)
+	report, err := checkAndRender(t, path, 48000)
+	if err == nil || report.Valid || len(report.Diagnostics) != 1 || report.Diagnostics[0].Code != "CICADA-ASSET-FORMAT" || report.Diagnostics[0].Start == nil || report.Diagnostics[0].Start.Line != 3 {
+		t.Fatalf("render %v; check %+v", err, report)
 	}
 }
 
@@ -142,7 +182,7 @@ func TestCheckReportsTheLimitsOfAWholeSongRender(t *testing.T) {
 	if renderErr == nil || len(report.Diagnostics) != 1 {
 		t.Fatalf("render %v; check %+v", renderErr, report.Diagnostics)
 	}
-	if d := report.Diagnostics[0]; d.Code != "CICADA-LIMIT" || d.Start == nil || d.Start.Line != 6 || d.Expected != "at most 256 bars" || d.Found != "300 bars" || !strings.Contains(d.Hint, "--from") {
+	if d := report.Diagnostics[0]; d.Code != "CICADA-LIMIT" || d.Severity != "warning" || !report.Valid || d.Start == nil || d.Start.Line != 6 || d.Expected != "at most 256 bars" || d.Found != "300 bars" || !strings.Contains(d.Hint, "--from") {
 		t.Fatalf("diagnostic %+v", d)
 	}
 	inspection, err := inspectScore(direct)
@@ -163,7 +203,7 @@ func TestCheckReportsTheLimitsOfAWholeSongRender(t *testing.T) {
 	if renderErr == nil || len(report.Diagnostics) != 1 {
 		t.Fatalf("render %v; check %+v", renderErr, report.Diagnostics)
 	}
-	if d := report.Diagnostics[0]; d.Code != "CICADA-LIMIT" || d.Start == nil || d.Start.Line != 5 || d.Expected != "at most 256 tempo changes" || d.Found != "299 tempo changes" {
+	if d := report.Diagnostics[0]; d.Code != "CICADA-LIMIT" || d.Severity != "warning" || !report.Valid || d.Start == nil || d.Start.Line != 5 || d.Expected != "at most 256 tempo changes" || d.Found != "299 tempo changes" {
 		t.Fatalf("diagnostic %+v", d)
 	}
 }

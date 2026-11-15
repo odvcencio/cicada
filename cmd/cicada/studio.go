@@ -750,7 +750,9 @@ func compileStudioSourceDetailed(path string, source []byte, overrides map[strin
 	// rules without reading the project's audio; the engine that plays the score
 	// decodes it, once, when it builds its plan.
 	if err := schedule.Validate(p, sources.Root, 48000, 128, schedule.Options{}); err != nil {
-		return nil, sources, diagnostics, err
+		d := engineDiagnostic(err, score)
+		diagnostics = append(diagnostics, d)
+		return nil, sources, diagnostics, &scoreDiagnosticError{d}
 	}
 	// A note that a single-asset sampler cannot play at 48 kHz, or an asset a
 	// sampler or clip cannot read there, is refused here as cicada check

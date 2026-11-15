@@ -26,6 +26,9 @@ import (
 func TestCheckedExamplesRender(t *testing.T) {
 	root := repositoryRoot()
 	scores := exampleScores(t, root)
+	if len(scores) == 0 {
+		t.Fatal("no example scores found")
+	}
 	var mu sync.Mutex
 	rendered, refused := 0, 0
 	t.Run("examples", func(t *testing.T) {
@@ -34,6 +37,10 @@ func TestCheckedExamplesRender(t *testing.T) {
 				t.Parallel()
 				path := filepath.Join(root, filepath.FromSlash(score))
 				if report := checkScoreJSON(path, checkOptions{profile: profileDesktop}); !report.Valid {
+					// The sampled keys need packs downloaded on demand.
+					if !strings.HasPrefix(filepath.ToSlash(score), "examples/keys/sampled/") {
+						t.Fatalf("check refuses %s: %+v", score, report.Diagnostics)
+					}
 					mu.Lock()
 					refused++
 					mu.Unlock()
@@ -54,10 +61,4 @@ func TestCheckedExamplesRender(t *testing.T) {
 		}
 	})
 	t.Logf("%d example scores: %d accepted by check and rendered, %d refused by check", len(scores), rendered, refused)
-	// The sampled keys need packs that are downloaded on demand; every other
-	// example must pass check, so a check that wrongly refuses scores cannot
-	// make this test pass by rendering nothing.
-	if rendered < len(scores)-30 {
-		t.Fatalf("check accepted only %d of %d examples", rendered, len(scores))
-	}
 }

@@ -33,11 +33,15 @@ func FrameLimit(asset project.Asset) int64 {
 // ResidentBudgetError describes an asset or sampler that exceeds the resident
 // PCM budget or the per-asset frame limit. Bytes are needed on top of Used.
 type ResidentBudgetError struct {
-	Name        string
-	Bytes, Used int64
+	Name               string
+	Bytes, Used        int64
+	Frames, FrameLimit int64
 }
 
 func (e *ResidentBudgetError) Error() string {
+	if e.FrameLimit > 0 {
+		return fmt.Sprintf("%s exceeds the resident limit of %d frames (found %d)", e.Name, e.FrameLimit, e.Frames)
+	}
 	if e.Used == 0 {
 		return fmt.Sprintf("project audio exceeds the 64 MiB resident PCM budget: %s needs %s", e.Name, mib(e.Bytes))
 	}
@@ -61,7 +65,10 @@ func PlaceAsset(a project.Asset, streamable bool, resident int64) (stream bool, 
 	if streamable && (bytes > 1<<20 || a.Frames > FrameLimit(a) || bytes > ResidentBudget-resident) {
 		return true, bytes, nil
 	}
-	if a.Frames > FrameLimit(a) || bytes <= 0 || bytes > ResidentBudget-resident {
+	if a.Frames > FrameLimit(a) {
+		return false, bytes, &ResidentBudgetError{Name: "asset " + a.Name, Bytes: bytes, Used: resident, Frames: a.Frames, FrameLimit: FrameLimit(a)}
+	}
+	if bytes <= 0 || bytes > ResidentBudget-resident {
 		return false, bytes, NewResidentBudgetError("asset "+a.Name, bytes, resident)
 	}
 	return false, bytes, nil

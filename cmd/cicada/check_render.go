@@ -41,7 +41,13 @@ func checkBeyondValidator(path string, inspection scoreInspection, limit int64) 
 	diagnostics = append(diagnostics, assetRateDiagnostics(p, score)...)
 	if !hasDiagnosticErrors(diagnostics) && p.NeedsSampleEngine() {
 		if err := schedule.Validate(p, inspection.root(path), 48_000, 128, schedule.Options{MaxResidentPCM: limit}); err != nil {
-			diagnostics = append(diagnostics, engineDiagnostic(err))
+			d := engineDiagnostic(err, score)
+			var budget *rules.ResidentBudgetError
+			if errors.As(err, &budget) && !render.UsesScheduledEngine(score, render.Options{}) && directAssetBudget(p) == nil {
+				d.Severity = "warning"
+				d.Message = "scheduled engine: " + d.Message + "; the direct mixer can render this score"
+			}
+			diagnostics = append(diagnostics, d)
 		}
 	}
 	if !hasDiagnosticErrors(diagnostics) {
@@ -64,13 +70,24 @@ func checkBeyondValidator(path string, inspection scoreInspection, limit int64) 
 // resident PCM budget and the pack cap under their own codes, and every other
 // refusal as CICADA-PARAM at the top of the score, as inspectScore reports the
 // compile of a score without audio.
-func engineDiagnostic(err error) notation.Diagnostic {
+func engineDiagnostic(err error, score *notation.Score) notation.Diagnostic {
 	d := notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: notation.Position{Line: 1, Column: 1}}
 	var budget *rules.ResidentBudgetError
 	var memory *instrumentpack.ResidentPCMError
 	switch {
 	case errors.As(err, &budget):
-		d.Code, d.Expected, d.Found = "CICADA-LIMIT", "at most 64.0 MiB of resident PCM", fmt.Sprintf("%.1f MiB", float64(budget.Used+budget.Bytes)/(1<<20))
+		d.Code = "CICADA-LIMIT"
+		if budget.FrameLimit == 0 && budget.Used+budget.Bytes > rules.ResidentBudget {
+			d.Expected, d.Found = "at most 64.0 MiB of resident PCM", fmt.Sprintf("%.1f MiB", float64(budget.Used+budget.Bytes)/(1<<20))
+		}
+		if score != nil {
+			for _, asset := range score.Assets {
+				if budget.Name == "asset "+asset.Name {
+					d.Position = asset.Position
+					break
+				}
+			}
+		}
 	case errors.As(err, &memory):
 		d.Code = samplerMemoryCode
 	}
@@ -85,9 +102,6 @@ func engineDiagnostic(err error) notation.Diagnostic {
 // another rate.
 func assetRateDiagnostics(p *project.Project, score *notation.Score) []notation.Diagnostic {
 	findings := sampleasset.AssetRateFindings(p, sampleasset.OutputRates)
-	if len(findings) == 0 {
-		return nil
-	}
 	positions := map[string]notation.Position{}
 	for _, sampler := range score.Samplers {
 		positions["sampler\x00"+sampler.Name] = sampler.Position
@@ -110,7 +124,57 @@ func assetRateDiagnostics(p *project.Project, score *notation.Score) []notation.
 		}
 		diagnostics = append(diagnostics, d)
 	}
+	if render.UsesScheduledEngine(score, render.Options{}) && p.NeedsSampleEngine() {
+		for _, asset := range score.Assets {
+			if asset.RateHz <= sampleasset.MaxSourceRate {
+				continue
+			}
+			covered := false
+			for _, finding := range findings {
+				if finding.Asset == asset.Name {
+					covered = true
+					break
+				}
+			}
+			if !covered {
+				diagnostics = append(diagnostics, notation.Diagnostic{Code: "CICADA-ASSET-FORMAT", Severity: "error", Position: asset.Position, Expected: "at most 192000 Hz", Found: fmt.Sprintf("%d Hz", asset.RateHz), Message: fmt.Sprintf("the scheduled engine loads asset %s, whose rate %d Hz exceeds its 192000 Hz limit", asset.Name, asset.RateHz)})
+			}
+		}
+	}
 	return diagnostics
+}
+
+// directAssetBudget follows the direct mixer's track order and deduplicates assets.
+func directAssetBudget(p *project.Project) error {
+	assets := map[string]project.Asset{}
+	for _, a := range p.Assets {
+		assets[a.Name] = a
+	}
+	samplers := map[string]project.Sampler{}
+	for _, s := range p.Samplers {
+		if s.Pack == "" {
+			samplers[s.Name] = s
+		}
+	}
+	seen := map[string]bool{}
+	var resident int64
+	for _, track := range p.Tracks {
+		s, ok := samplers[track.Kind]
+		if !ok || seen[s.Asset] {
+			continue
+		}
+		a, ok := assets[s.Asset]
+		if !ok {
+			continue
+		}
+		_, bytes, err := rules.PlaceAsset(a, false, resident)
+		if err != nil {
+			return err
+		}
+		resident += bytes
+		seen[s.Asset] = true
+	}
+	return nil
 }
 
 // rangeSeverity is "error" when an output rate that fails is 48 kHz, the
@@ -158,7 +222,7 @@ func songLimitDiagnostics(score *notation.Score) []notation.Diagnostic {
 	}
 	var diagnostics []notation.Diagnostic
 	for _, limit := range limits {
-		d := notation.Diagnostic{Code: "CICADA-LIMIT", Severity: "error", Position: position,
+		d := notation.Diagnostic{Code: "CICADA-LIMIT", Severity: "warning", Position: position,
 			Expected: fmt.Sprintf("at most %d %s", limit.Max, limit.What), Found: fmt.Sprintf("%d %s", limit.Found, limit.What)}
 		switch limit.What {
 		case "bars":

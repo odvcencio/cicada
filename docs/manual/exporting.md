@@ -34,6 +34,10 @@ the earlier bars before writing the selected range, so instruments and effects
 have the state they would have reached in a full render. Pass the same range
 options to `verify-wav`.
 
+`cicada check` warns when a whole-song render exceeds 256 bars on the direct
+mixer or 256 tempo changes. The score remains valid; render shorter ranges
+with `--from` and `--bars`.
+
 The render summary reports duration, pre-limiter peak, limiter activity, and
 output clipping. `verify-wav` checks sample rate, bit depth, duration, peak,
 DC offset, finite float data, and full-scale integer samples.
