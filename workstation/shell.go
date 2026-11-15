@@ -304,7 +304,8 @@ func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, boo
 type dockClip struct{ name, detail string }
 
 // dockSelection names what the detail dock edits: the Clip tab's pattern with
-// the tracks that play it, and the Device and Automation tabs' track. It
+// the tracks that play it, and the Device and Automation tabs' channel (a
+// track unless the Mixer opened a bus, a return, the master or an effect). It
 // follows the same defaults as the editors, so the header matches them.
 func dockSelection(v workspace, query url.Values) (dockClip, string) {
 	if v.Project == nil {
@@ -351,8 +352,8 @@ func dockSelection(v workspace, query url.Values) (dockClip, string) {
 		}
 	}
 	track := ""
-	if t := deviceTrack(v.Project, query); t != nil {
-		track = t.ID + " · " + t.Kind
+	if channel, ok := v.deviceSelection(query); ok {
+		track = channel.Title()
 	}
 	return clip, track
 }
@@ -461,7 +462,8 @@ var shellLinkPattern = regexp.MustCompile(`href="(/\?[^"]*)"`)
 
 // shellDestination turns a legacy panel destination ("/?panel=<name>&<state>")
 // into the matching /studio URL: the destination's own state plus the shell
-// selection and file from "from". Other targets are returned unchanged.
+// selection and file from "from". A Mixer destination also keeps the channel
+// Device shows. Other targets are returned unchanged.
 func shellDestination(from *url.URL, target string, needPanel bool) string {
 	parsed, err := url.Parse(target)
 	if err != nil || parsed.IsAbs() || parsed.Host != "" || parsed.Path != "/" {
@@ -471,8 +473,14 @@ func shellDestination(from *url.URL, target string, needPanel bool) string {
 	if needPanel && query.Get("panel") == "" {
 		return target
 	}
+	kept := shellKept
+	if query.Get("panel") == "mixer" {
+		// A Mixer strip's save comes back with the channel Device shows, so a
+		// fader move does not send Device to another channel.
+		kept = append(kept[:len(kept):len(kept)], "deviceTrack", "placement")
+	}
 	query.Del("panel")
-	for _, name := range shellKept {
+	for _, name := range kept {
 		if value := from.Query().Get(name); value != "" && query.Get(name) == "" {
 			query.Set(name, value)
 		}

@@ -683,30 +683,51 @@ history remains private to the workspace owner.
 
 ## Mixer and instruments
 
-Select a placement and open **Device** to shape its track, or choose another
-**Track** and **Inspect track**. **Sound** includes controls for built-in voices
-and declared instrument parameters. Units, ranges, and menu choices show the
-values each control accepts. **Apply** saves the setting; **Use default**
-removes that track's override. Each change supports Undo. **Mix and routing**
-and **Insert effects** have their own controls below Sound.
+**Mixer** shows one strip for each track, bus and return, with the master
+pinned at the right end while the others scroll. Every strip has the same rows,
+lined up across strips: its name, what it is (a track's instrument, **Bus**,
+**Return** or **Master**), its inserts in order, its sends with their levels,
+**M** and **S**, pan, then the meter beside the fader and its dB value. The
+fader, the pan slider, **M** and **S** save as you use them, one Undo step for
+each gesture. A bus level takes only the values the score supports, so its
+fader shows the level and does not move; set it in Device.
 
-**Mixer** edits track, bus, return, effect, and master fields supported by the
-source patcher. Each **Set** writes one parameter. Unsupported fields explain
-their limitation and remain available in **Score**.
-Ranges, units, enum choices, and On/Off controls come from Cicada's parameter
-registry. Existing track sends are included in their mixer strip.
-Use **Create chorus** to add a chorus declaration, then add it to a track's
-**Insert chain** and adjust its controls in the mixer.
+Above the strips, **Show** limits the view to tracks or to buses and returns,
+**Meter** shows peak, RMS or both, and **Reset peaks** clears the held peaks
+and clip marks at once. These change only what this tab shows, never the
+score. **Add effect** opens **Create chorus**, which adds a chorus declaration,
+and lists each effect that is on no insert chain.
+
+Select a strip's name to open that channel in **Device**; its strip takes an
+amber edge. Selecting a placement in Arrange opens its track, and **Channel**
+with **Inspect channel** chooses any other track, bus, return, effect or the
+master. For a track, **Sound** includes controls for built-in voices and
+declared instrument parameters. Units, ranges, and menu choices show the
+values each control accepts. **Apply** saves the setting; **Use default**
+removes that track's override. Each change supports Undo.
+
+**Mix and routing** in Device holds the exact values of the selected track, bus
+or master: level, pan, mute, solo, **out** and each send level. A track level
+also takes `off`. Each **Set** writes one parameter. A control the source
+patcher does not support shows **Not available** with the reason, and remains
+available in **Score**. Ranges, units, enum choices, and On/Off controls come
+from Cicada's parameter registry. A return, or an effect on no insert chain,
+opens in Device with its own parameters.
+
+**Insert effects** in Device holds the ordered **Insert chain**. Add a declared
+effect such as a new chorus, move or remove stages, and follow each effect
+name to its parameter controls.
 Audio tracks offer **Add vocal chain**: a high-pass EQ, compressor and de-esser
-in that order. A second click retains the existing vocal chain. Use the ordered
-**Insert chain** controls to move or remove stages, and follow each effect name
-to its parameter controls. These processors have independent state per track;
+in that order. A second click retains the existing vocal chain. These
+processors have independent state per track;
 changes are saved and recompiled. Finish a vocal take before changing saved
 mixer settings. See [track inserts](../audio/mix-chain.md#track-inserts) for
 processor syntax and supported controls.
 
 ![An ordered EQ, compressor and de-esser chain on a test vocal track.](screenshots/studio-producer-vocal-chain-1440.png)
-For an edition 1 score, first check **Upgrade score to edition 2 for this change**.
+An edition 1 score shows its levels and pan on the strips without faders or
+**M** and **S**. Make each change in Device, and first check **Upgrade score
+to edition 2 for this change**.
 The domain service performs the migration and parameter edit together.
 #### PCM capture and shared sampler audition
 
