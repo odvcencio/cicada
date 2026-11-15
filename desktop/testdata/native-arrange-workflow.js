@@ -308,7 +308,6 @@ arrange {
     await dock('device');
     await wait(() => document.querySelector('#device-editor select[name=deviceTrack]')?.value === 'bass', 'Device follows bass placement');
     await select('answer');
-    await dock('device');
     await wait(() => document.querySelector('#device-editor select[name=deviceTrack]')?.value === 'lead', 'Device follows lead placement');
     const cutoffForm = document.querySelector('#device-editor [data-device-parameter="lead.cutoff"] form[action$="/__actions/instrument"]');
     if (!cutoffForm) throw new Error('Built-in acid Device cutoff control missing');

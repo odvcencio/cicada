@@ -54,12 +54,9 @@ func bindShellPlacementEditor(host enginewasm.Context, root js.Value) func() {
 	u.owned = func(node js.Value) bool {
 		return workspacePresent(node) && node.Get("closest").Type() == js.TypeFunction && root.Call("contains", node).Bool() && workspacePresent(node.Call("closest", "#view-panel-arrange"))
 	}
-	refreshing := false
 	u.refresh = func(block js.Value) {
 		if link := block.Call("querySelector", ".placement-select"); workspacePresent(link) {
-			refreshing = true
 			link.Call("click")
-			refreshing = false
 		}
 	}
 	placementLink := func(block js.Value) js.Value {
@@ -226,12 +223,6 @@ func bindShellPlacementEditor(host enginewasm.Context, root js.Value) func() {
 			u.dragClick = false
 			workspaceStop(event)
 			return
-		}
-		if !refreshing && event.Get("detail").Int() == 0 && !event.Get("ctrlKey").Bool() && !event.Get("metaKey").Bool() && !event.Get("shiftKey").Bool() && !event.Get("altKey").Bool() && workspacePresent(target) && target.Get("closest").Type() == js.TypeFunction {
-			control := target.Call("closest", ".placement-select")
-			if workspacePresent(control) && u.owned(control) && openPlacement(control.Call("closest", "[data-placement-block]"), true) {
-				workspaceStop(event)
-			}
 		}
 	})
 	listen("change", u.placementViewChanged)
