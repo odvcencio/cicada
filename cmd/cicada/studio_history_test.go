@@ -304,3 +304,37 @@ func TestStudioRevertRefusesAnOverlappingLaterChange(t *testing.T) {
 		t.Fatalf("overlapping revert changed the source: %s %v", got, err)
 	}
 }
+
+// Reverting an older edit whose two hunks, after a later edit, both claim the
+// same lines is refused, and the 409 says which hunks and why.
+func TestStudioRevertRefusesHunksThatOverlapAndSaysWhy(t *testing.T) {
+	handler, path := studioTestHandler(t)
+	score := func(x, y string, middle bool) string {
+		block := "// z1\n// z2\n// z3\n"
+		lines := studioScore + "// h1\n// " + x + "\n"
+		if middle {
+			lines += block + "// m1\n// m2\n// m3\n// m4\n"
+		}
+		return lines + block + "// " + y + "\n// e1\n"
+	}
+	steps := []string{score("x0", "y0", true), score("x1", "y1", true), score("x1", "y1", false)}
+	before := studioScore
+	for i, next := range steps {
+		response := studioCall(t, handler, "/api/source", studioEdit{Revision: studioRevision([]byte(before)), Source: next})
+		if response.Code != http.StatusOK {
+			t.Fatalf("save %d: %d %s", i+1, response.Code, response.Body.String())
+		}
+		before = next
+	}
+	// Edit 2 changed x0 and y0 in two hunks. With the middle gone, the first
+	// hunk's trailing lines and the second's leading lines are the same three
+	// lines of the file.
+	response := studioCall(t, handler, "/api/history/2/revert", studioEdit{Revision: studioRevision([]byte(before))})
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "hunk 1 also changes") {
+		t.Fatalf("overlapping revert: %d %s", response.Code, response.Body.String())
+	}
+	got, err := os.ReadFile(path)
+	if err != nil || string(got) != before {
+		t.Fatalf("overlapping revert changed the source: %s %v", got, err)
+	}
+}

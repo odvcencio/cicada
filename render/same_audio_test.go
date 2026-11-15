@@ -82,6 +82,8 @@ func TestSameAudioComparesEveryOption(t *testing.T) {
 		"MasterBiasR":     func(o *Options) { o.MasterBiasR = -1e-6 },
 		"MaxResidentPCM":  func(o *Options) { o.MaxResidentPCM = 1 << 20 },
 		"NoteTap":         func(o *Options) { o.NoteTap = func(int, seq.Event) {} },
+		"Jobs":            func(o *Options) { o.Jobs = 3 },
+		"TrackStemsOnly":  func(o *Options) { o.TrackStemsOnly = true },
 	}
 	ignored := map[string]bool{"MasterGainDB": true, "MasterCache": true}
 	fields := reflect.TypeOf(Options{})

@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	edits "m31labs.dev/cicada/edit"
+	"m31labs.dev/cicada/internal/testpack"
 )
 
 // checkJSONDocument mirrors the fields of cicada.check.v1 the tests read.
@@ -210,5 +212,24 @@ func TestCheckJSONAgreesWithText(t *testing.T) {
 				t.Fatalf("%s %s: JSON has %d warnings, text %d:\n%s", name, profile, document.Warnings, warnings, stderr.String())
 			}
 		}
+	}
+}
+
+// check --json names the velocity law each declared pack plays by: a pack
+// whose zones share one gain plays its recorded layers at their recorded
+// level, and a pack whose zone gains differ keeps velocity/127.
+func TestCheckJSONNamesEachPackVelocityLaw(t *testing.T) {
+	dir := t.TempDir()
+	recorded := testpack.Write(t, dir, testpack.Options{ID: "even", Zones: []testpack.Zone{{KeyLow: 48, KeyHigh: 72, VelocityLow: 1, VelocityHigh: 63}, {KeyLow: 48, KeyHigh: 72, VelocityLow: 64, VelocityHigh: 127}}})
+	shaped := testpack.Write(t, dir, testpack.Options{ID: "shaped", Zones: []testpack.Zone{{KeyLow: 48, KeyHigh: 72, VelocityLow: 1, VelocityHigh: 63, Gain: 2}, {KeyLow: 48, KeyHigh: 72, VelocityLow: 64, VelocityHigh: 127}}})
+	source := "cicada 2\ntempo 120\n" + recorded.Sampler("even", 4) + shaped.Sampler("shaped", 4) + "track a even {}\ntrack b shaped {}\npattern p { c4 . . . }\nscene s { a = p b = p }\nsong { s }\n"
+	path := filepath.Join(dir, "song.cicada")
+	if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	report := checkScoreJSON(path, checkOptions{profile: profileDesktop})
+	want := []checkPackReport{{Sampler: "even", Manifest: recorded.Manifest, VelocityLaw: "recorded"}, {Sampler: "shaped", Manifest: shaped.Manifest, VelocityLaw: "velocity/127"}}
+	if !report.Valid || !reflect.DeepEqual(report.Packs, want) {
+		t.Fatalf("packs %+v (valid %v, diagnostics %+v), want %+v", report.Packs, report.Valid, report.Diagnostics, want)
 	}
 }

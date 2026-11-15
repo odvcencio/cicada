@@ -190,5 +190,5 @@ func quantizeDensity(value float32) (uint8, error) {
 	if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) || value < 0 || value > 1 {
 		return 0, fmt.Errorf("must be finite and between 0 and 1")
 	}
-	return uint8(math.Floor(float64(value)*64 + 0.5)), nil
+	return uint8(math.Floor(float64(float64(value)*64) + 0.5)), nil // rounded product: no target fuses it
 }

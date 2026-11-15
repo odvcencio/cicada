@@ -3,15 +3,25 @@ package chorus
 import (
 	"testing"
 
+	"m31labs.dev/cicada/kernel/dsp/subnormal/subnormaltest"
 	"m31labs.dev/cicada/kernel/internal/bitdigest"
 )
 
 // chorusDigest pins the chorus output bits for an exact test programme, with
 // one to three voices and a smoothed control change. CI checks the same digest
 // on arm64 in the PCM24 parity job.
-const chorusDigest = "e5f0bcd0f30a75fae5762fda5ac0ba01502a23f4405a6e2a6f3179577787cbce"
+//
+// It changed with #323, which flushes the input lowpass and the depth and
+// spread controls when they reach float64 subnormal numbers
+// (kernel/dsp/subnormal). The digest hashes those float64 values, which the
+// program's silent blocks take into subnormal numbers; the float32 output is
+// unchanged bit for bit (compared on amd64). amd64 and arm64 produce the new
+// digest alike; it was
+// e5f0bcd0f30a75fae5762fda5ac0ba01502a23f4405a6e2a6f3179577787cbce.
+const chorusDigest = "7853bbeaa409b00f4d0a568bed9cb0c3ac57f8e20218d3948fa4d9f3560c767e"
 
 func TestChorusDigest(t *testing.T) {
+	subnormaltest.SkipWithoutFlush(t) // the digest hashes the flushed float64 state
 	d := bitdigest.New()
 	settings := []Params{
 		DefaultParams(),
@@ -38,7 +48,7 @@ func TestChorusDigest(t *testing.T) {
 			// The float32 output rounds away most last-bit differences; the
 			// float64 state does not.
 			d.Float64(x.current.Rate, x.current.Depth, x.current.Spread, x.current.Mix, x.filteredL, x.filteredR)
-			d.Int(int(x.slowPhase[0]), int(x.slowPhase[1]), int(x.slowPhase[2]))
+			d.Uint32(x.slowPhase[:]...)
 		}
 	}
 	if got := d.Hex(); got != chorusDigest {

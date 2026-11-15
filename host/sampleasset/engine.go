@@ -2,8 +2,8 @@ package sampleasset
 
 import (
 	"fmt"
-	"math"
 
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/voice/sample"
 	"m31labs.dev/cicada/project"
@@ -76,7 +76,7 @@ func Prepare(dir string, p *project.Project) ([]engine.StereoVoiceFactory, error
 					return nil, fmt.Errorf("clip %s: %w", clip.Name, err)
 				}
 				region.Start, region.End = int(clip.StartFrame), int(clip.EndFrame)
-				factory.slots[slot] = &clipRegion{region: region, gain: math.Pow(10, clip.GainDB/20), fadeIn: clip.FadeInFrames, fadeOut: clip.FadeOutFrames}
+				factory.slots[slot] = &clipRegion{region: region, gain: detmath.Pow(10, clip.GainDB/20), fadeIn: clip.FadeInFrames, fadeOut: clip.FadeOutFrames}
 			}
 			prepared[ti] = factory
 		} else if sampler, ok := samplers[track.Kind]; ok {

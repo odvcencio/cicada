@@ -8,6 +8,7 @@ import (
 
 	"m31labs.dev/cicada/kernel/dsp/fastmath"
 	"m31labs.dev/cicada/kernel/dsp/halfband"
+	"m31labs.dev/cicada/kernel/dsp/subnormal"
 )
 
 // Processor is the sample-level contract for a stereo insert or send effect.
@@ -81,6 +82,7 @@ type Drive struct {
 	toneState              [driveShapes]stereo
 	fault                  bool
 	zeroFrames             int
+	frames                 uint32 // Process calls since New or Reset, for flushSubnormals
 }
 
 func NewDrive(sampleRate int) (*Drive, error) {
@@ -152,6 +154,24 @@ func (d *Drive) Reset() {
 	d.position, d.fault = 0, false
 	d.zeroFrames = halfband.Taps
 	d.pre, d.post, d.tone, d.mix, d.weights = d.targetPre, d.targetPost, d.targetTone, d.targetMix, d.targetWeights
+	d.frames = 0
+}
+
+// flushSubnormals replaces a subnormal value with a zero of the same sign
+// (kernel/dsp/subnormal) in the values that glide to exactly zero: the mix,
+// the blend weight of every shape but the selected one (a shape switch takes
+// the old one to zero), and the tone filters, which decay toward zero in
+// silence. Without it each stalls at a subnormal number and slows every frame
+// from then on. Each reaches the output only through products that the sum
+// with normal values or the float32 conversion absorbs; the pre and post gains
+// and the tone coefficient never glide to zero.
+func (d *Drive) flushSubnormals() {
+	d.mix = subnormal.Flush64(d.mix)
+	for shape := range d.weights {
+		d.weights[shape] = subnormal.Flush64(d.weights[shape])
+		state := &d.toneState[shape]
+		state.left, state.right = subnormal.Flush64(state.left), subnormal.Flush64(state.right)
+	}
 }
 
 func (d *Drive) buildTables() {
@@ -168,12 +188,21 @@ func (d *Drive) buildTables() {
 			var power float64
 			for sample := 0; sample < 1024; sample++ {
 				x := sine[sample]
-				y := shapeSample(shape, x*pre)
+				y := tableShape(shape, x*pre)
 				power += float64(y * y)
 			}
 			d.table[shape][index] = inputRMS / math.Sqrt(power/1024)
 		}
 	}
+}
+
+// tableShape is shapeSample for the gain tables: they are coefficients, so
+// the fold uses the exact SinPi (detmath package comment).
+func tableShape(shape DriveShape, input float64) float64 {
+	if shape == Fold {
+		return detmath.SinPi(0.5 * input)
+	}
+	return shapeSample(shape, input)
 }
 
 func shapeSample(shape DriveShape, input float64) float64 {
@@ -183,9 +212,9 @@ func shapeSample(shape DriveShape, input float64) float64 {
 	case Hard:
 		return math.Max(-1, math.Min(1, input))
 	case Fold:
-		// sin(pi/2 * input), with the exact reduction of SinPi: it runs four
-		// times per frame for every shape, so its cost matters.
-		return detmath.SinPi(0.5 * input)
+		// sin(pi/2 * input) per sample, four times per frame for every shape:
+		// the second tier (detmath package comment). Tables use tableShape.
+		return detmath.SinPiNear(0.5 * input)
 	case Diode:
 		if input > 0 {
 			return fastmath.Tanh(input)
@@ -212,6 +241,10 @@ func (d *Drive) Process(left, right float32) (float32, float32) {
 		d.post[shape] += float64((d.targetPost[shape] - d.post[shape]) * d.smooth)
 		d.weights[shape] += float64((d.targetWeights[shape] - d.weights[shape]) * d.smooth)
 	}
+	d.frames++
+	if d.frames%subnormal.SweepFrames == 0 {
+		d.flushSubnormals()
+	}
 	if left == 0 && right == 0 && d.zeroFrames >= halfband.Taps {
 		// Each 43-tap filter retains at most 42 oversampled samples. The
 		// cascaded up/down pair is therefore empty after 43 base-rate zeros;
@@ -221,6 +254,11 @@ func (d *Drive) Process(left, right float32) (float32, float32) {
 		// their cursor: their coefficients depend on relative age, so the next
 		// nonzero input renders identically at any cursor. Keep the explicit dry
 		// delay timeline moving, and keep all shape/parameter ramps above warm.
+		// The dry delay is read and written as below: its zeros carry the
+		// input's sign, which decides the sign of a zero output.
+		index := d.position
+		dry := d.dryDelay[index]
+		d.dryDelay[index] = x
 		d.position++
 		if d.position == DriveLatencyFrames {
 			d.position = 0
@@ -233,8 +271,15 @@ func (d *Drive) Process(left, right float32) (float32, float32) {
 			wet.left += float64(state.left * d.weights[shape])
 			wet.right += float64(state.right * d.weights[shape])
 		}
-		// Tone tails keep their exact per-sample decay; no threshold gates them.
-		return float32(wet.left * d.mix), float32(wet.right * d.mix)
+		// Tone tails keep their exact per-sample decay; no threshold gates
+		// them. Only a tail that has decayed into subnormal numbers, where
+		// it no longer reaches the float32 output, is flushed (flushSubnormals).
+		// The output is the full path's expression: dry*(1-mix) is a zero,
+		// but +0 + -0 is +0, so returning wet*mix alone gave -0 where the full
+		// path gives +0 whenever the wet product rounded to -0.
+		outL := float64(dry.left*(1-d.mix)) + float64(wet.left*d.mix)
+		outR := float64(dry.right*(1-d.mix)) + float64(wet.right*d.mix)
+		return float32(outL), float32(outR)
 	}
 	if left == 0 && right == 0 {
 		d.zeroFrames++

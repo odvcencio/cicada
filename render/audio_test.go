@@ -236,3 +236,69 @@ func TestDirectMixerSamplerChordPlaysEveryNote(t *testing.T) {
 		t.Fatalf("direct chord differs from the engine by %g", worst)
 	}
 }
+
+// A single-asset sampler plays bend, vibrato and pressure rows
+// (docs/manual/engine-host.md). Only the engine implements them, so such a
+// score renders there: the direct mixer used to render a bend row as if it
+// were absent, while Studio played it.
+func TestSamplerExpressionRowsPlayOnRender(t *testing.T) {
+	dir, _ := audioRenderFixture(t, false)
+	data, err := os.ReadFile(filepath.Join(dir, "take.wav"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	build := func(row string) *notation.Score {
+		text := fmt.Sprintf("cicada 2\ntempo 120\nasset take \"take.wav\" { sha256 = \"%x\" format = wav frames = 120000 rate = 48000Hz channels = 2 }\nsampler hit { asset = take root = c4 mode = loop voices = 8 }\ntrack keys hit {}\npattern ch notes { c4 d4 e4 g4%s }\nscene a { keys = ch }\nsong { a }\n", sha256.Sum256(data), row)
+		score, ds := notation.Parse([]byte(text))
+		if score == nil || hasAudioErrors(ds) {
+			t.Fatal(ds)
+		}
+		return score
+	}
+	opts := Options{AssetDir: dir, SampleRate: 48000, Bits: 32, Block: 128}
+	render := func(score *notation.Score) []byte {
+		var wav bytes.Buffer
+		if _, err := WAV(score, opts, &wav); err != nil {
+			t.Fatal(err)
+		}
+		return wav.Bytes()
+	}
+	plain, bent := build(""), build("\n bend: 200ct 0ct 200ct 0ct")
+	if UsesScheduledEngine(plain, opts) {
+		t.Fatal("a sampler without rows should keep the direct mixer")
+	}
+	if !UsesScheduledEngine(bent, opts) {
+		t.Fatal("a sampler bend row must render through the engine")
+	}
+	if bytes.Equal(render(plain), render(bent)) {
+		t.Fatal("the bend row rendered the same as no row")
+	}
+}
+
+// Only a sampler track's own rows need the engine. Rows on a synth track
+// beside a sampler keep the direct mixer, which plays them; rows that a
+// sampler track plays through its chain route to the engine.
+func TestSamplerExpressionRoutingLooksAtSamplerTracks(t *testing.T) {
+	dir, _ := audioRenderFixture(t, false)
+	data, err := os.ReadFile(filepath.Join(dir, "take.wav"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	head := fmt.Sprintf("cicada 2\ntempo 120\nasset take \"take.wav\" { sha256 = \"%x\" format = wav frames = 120000 rate = 48000Hz channels = 2 }\nsampler hit { asset = take root = c4 mode = loop voices = 8 }\n", sha256.Sum256(data))
+	opts := Options{AssetDir: dir, SampleRate: 48000, Bits: 32, Block: 128}
+	for _, c := range []struct {
+		name, body string
+		engine     bool
+	}{
+		{"synth rows beside a sampler", "track keys hit {}\ntrack lead acid {}\npattern ch notes { c4 d4 e4 g4 }\npattern riff notes { 1 3 5 1\n bend: 100ct 0ct 100ct 0ct }\nscene a { keys = ch lead = riff }\nsong { a }\n", false},
+		{"sampler rows through a chain", "track keys hit { chain = bent }\npattern bent notes { c4 d4 e4 g4\n bend: 200ct 0ct 200ct 0ct }\nscene a {}\nsong { a }\n", true},
+	} {
+		score, ds := notation.Parse([]byte(head + c.body))
+		if score == nil || hasAudioErrors(ds) {
+			t.Fatalf("%s: %v", c.name, ds)
+		}
+		if got := UsesScheduledEngine(score, opts); got != c.engine {
+			t.Errorf("%s: scheduled engine %v, want %v", c.name, got, c.engine)
+		}
+	}
+}

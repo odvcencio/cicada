@@ -1,0 +1,50 @@
+cicada 2
+title "Flush check: tape feedback, wow, flutter and saturation to zero while hits play"
+tempo 240
+key c major
+seed 1
+
+fx echo tape {
+  time = 3/16
+  feedback = 0.6
+  wow = 0.5
+  flutter = 0.2
+  saturation = 0.4
+  damp = 3200Hz
+}
+
+track rim drums {
+  send echo = 0.8
+}
+
+pattern hit drums {
+  rs: x...x...x...x...
+}
+
+scene main {
+  rim = hit
+}
+
+automate echo.feedback {
+  @1.1.1 0.6
+  @2.1.1 0
+}
+
+automate echo.wow {
+  @1.1.1 0.5
+  @2.1.1 0
+}
+
+automate echo.flutter {
+  @1.1.1 0.2
+  @2.1.1 0
+}
+
+automate echo.saturation {
+  @1.1.1 0.4
+  @2.1.1 0
+}
+
+song {
+  main*10
+}

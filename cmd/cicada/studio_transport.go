@@ -297,9 +297,9 @@ func (t *studioTransport) snapshot() transportSnapshot {
 			}
 		}
 		state.PendingSlotQuantize = t.stream.PendingPatternQuantizes()
-		position := t.stream.Position()
+		position, meterMap := t.stream.PositionWithMap()
 		state.Bar, state.Step = position.Bar, position.Step
-		state.Tick = t.meterMap().BarStart(position.Bar-1) + (position.Step-1)*seq.TicksPerStep
+		state.Tick = meterMap.BarStart(position.Bar-1) + (position.Step-1)*seq.TicksPerStep
 	}
 	for track, stopped := range t.stoppedTracks {
 		if stopped {

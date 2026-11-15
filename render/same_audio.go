@@ -9,7 +9,8 @@ import (
 )
 
 // SameAudio reports whether rendering score with a and with b writes the same
-// WAV bytes and the same Report apart from Report.MasterGainDB. It answers
+// WAV bytes and the same Report apart from Report.MasterGainDB and the
+// scheduling counts of Report.LaneReport. It answers
 // without rendering: every option must be equal except the export gain
 // (MasterGainDB) and MasterCache, and the export gain must turn into the same
 // float32 gain factors on the renderer and the master chain that score uses. A
@@ -54,14 +55,19 @@ func validMasterGainDB(db float64) bool {
 	return !math.IsNaN(db) && !math.IsInf(db, 0) && db >= -120 && db <= 24
 }
 
-// sameNonGainOptions compares every Options field except the export gains,
+// sameNonGainOptions compares every Options field except the export gain,
 // MasterCache and NoteTap. TestSameAudioComparesEveryOption fails when a field
-// is added to Options without a decision here.
+// is added to Options without a decision here. Jobs never changes the WAV
+// bytes, but it sets Report.Jobs and Report.Lanes, so it is compared.
+// TrackStemsOnly never changes a WAV's bytes either, but it decides whether
+// Stems refuses a score, so it is compared too.
 func sameNonGainOptions(a, b Options) bool {
 	sameDither := a.Dither == nil && b.Dither == nil || a.Dither != nil && b.Dither != nil && *a.Dither == *b.Dither
 	return a.AssetRoot == b.AssetRoot && a.AssetDir == b.AssetDir && a.SamplerBaseline == b.SamplerBaseline &&
 		a.SampleRate == b.SampleRate && a.Bits == b.Bits && a.Bars == b.Bars && a.From == b.From &&
 		math.Float64bits(a.TailSec) == math.Float64bits(b.TailSec) && sameDither && a.Normalize == b.Normalize &&
 		a.Block == b.Block && math.Float32bits(a.MasterBiasL) == math.Float32bits(b.MasterBiasL) &&
-		math.Float32bits(a.MasterBiasR) == math.Float32bits(b.MasterBiasR) && a.MaxResidentPCM == b.MaxResidentPCM
+		math.Float32bits(a.MasterBiasR) == math.Float32bits(b.MasterBiasR) && a.MaxResidentPCM == b.MaxResidentPCM &&
+		a.Jobs == b.Jobs &&
+		a.TrackStemsOnly == b.TrackStemsOnly
 }

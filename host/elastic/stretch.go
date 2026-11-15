@@ -5,6 +5,8 @@ import (
 	"context"
 	"fmt"
 	"math"
+
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 )
 
 // Anchor maps a source frame to its destination frame. Successive anchors
@@ -79,7 +81,7 @@ func Render(ctx context.Context, c Config, read Reader, write Writer) error {
 	window, cache := make([]float64, grain), make([]float32, grain+2*search)
 	output := make([]float32, hop)
 	for i := range window {
-		s := math.Sin(math.Pi * (float64(i) + .5) / float64(grain))
+		s := detmath.Sin(math.Pi * (float64(i) + .5) / float64(grain))
 		window[i] = s * s
 	}
 	anchor := 1
@@ -113,9 +115,9 @@ func Render(ctx context.Context, c Config, read Reader, write Writer) error {
 					continue
 				}
 				x, y := acc[j]/weight[j], float64(cache[start+j])
-				dot += x * y
-				x2 += x * x
-				y2 += y * y
+				dot += float64(x * y)
+				x2 += float64(x * x)
+				y2 += float64(y * y)
 			}
 			if x2*y2 < 1e-18 {
 				return -math.Abs(float64(start-search)) / float64(search)
@@ -143,7 +145,7 @@ func Render(ctx context.Context, c Config, read Reader, write Writer) error {
 			}
 		}
 		for j, w := range window {
-			acc[j] += float64(cache[best+j]) * w
+			acc[j] += float64(float64(cache[best+j]) * w)
 			weight[j] += w
 		}
 		n := int(min(int64(hop), c.TargetFrames-at))

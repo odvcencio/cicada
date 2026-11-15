@@ -82,6 +82,9 @@ func newConfiguredApp(b *backend, options workspaceOptions) (http.Handler, error
 	}
 	s := &studioApp{backend: b, collaboration: newCollaboration(b), notes: notes}
 	s.collaboration.access = notes
+	// Hosts parse the printed address and accept only "/" or the one-use
+	// "/__local/<token>" path (desktop/session.go, editors/vscode/extension.js,
+	// desktop/smoke.py), then open /studio themselves.
 	startupPath := "/"
 	if options.LocalBootstrap && notes != nil && b != nil {
 		if _, err := notes.localOwner("", ""); err != nil && !errors.Is(err, errLocalOwnerSession) {
@@ -297,7 +300,10 @@ func (s *studioApp) loadWorkspace(ctx *server.Context, panel string, saved *work
 		}
 	}
 	if panel == "code" {
-		saved, copies, err := s.sourceDraft(ctx.Request, view.File)
+		// A copy that holds the file's text is not shown: as a draft it would
+		// mark the editor unsaved and pin its file revision, so the editor
+		// would stop following saves, Undo and Redo.
+		saved, copies, err := s.sourceDraft(ctx.Request, view.File, view.DiskSource)
 		view.SourceCopies = copies
 		if err != nil {
 			view.RecoveryError = "Code recovery could not be read. Its files are retained: " + err.Error()

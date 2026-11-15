@@ -20,7 +20,11 @@ cicada verify-wav first-song.wav --rate 48000 --bits 24 --bars 8 --tail 3s
 The engine supports 44.1, 48, and 96 kHz. A render includes a three-second
 tail by default. Integer PCM output uses deterministic triangular dither.
 `--normalize` peak-normalizes the finished file to −1 dBFS; it does not target
-a loudness standard.
+a loudness standard. A range with nothing a 24-bit file can show (an output
+peak below one 24-bit step, 2^-23: rests only, a silent track's stem, or the
+end of a decayed tail) is not normalized: the file is written at unity gain,
+the same bytes as without `--normalize`, and the command prints a warning
+that names the bars.
 
 `--loudness -14`, or an `export` block with `loudness`, renders to a loudness
 target. The gain it finds is makeup gain into the master chain's last limiter,

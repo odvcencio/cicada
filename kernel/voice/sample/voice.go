@@ -6,6 +6,9 @@ package sample
 import (
 	"math"
 
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+	"m31labs.dev/cicada/kernel/dsp/subnormal"
+
 	"m31labs.dev/cicada/kernel/expression"
 )
 
@@ -72,6 +75,7 @@ type Voice struct {
 	bank                       *sincBank
 	velocity, gain, targetGain float64
 	gainAlpha                  float64
+	gainSteps                  uint32 // smoothing steps since New, for the gain's subnormal sweep
 	active, releasing, looped  bool
 	expressionActive           bool
 	held                       bool
@@ -106,7 +110,7 @@ func validateRate(rate int) error {
 func (v *Voice) configure(rate int, region Region) {
 	v.rate, v.fadeFrames, v.region, v.params = rate, rate/500, region, DefaultParams()
 	if sampleExpressionEnabled {
-		v.pressureAlpha = 1 - math.Exp(-1/(float64(rate)*.005))
+		v.pressureAlpha = 1 - detmath.Exp(-1/(float64(rate)*.005))
 		v.pressureGain = 1
 		v.expression.Reset()
 	}
@@ -139,7 +143,7 @@ func (v *Voice) playbackRatio(note uint8) (float64, error) {
 	}
 	ratio := float64(v.region.SampleRate) / float64(v.rate)
 	if note != v.region.RootKey || v.params.FineTuneCents != 0 {
-		ratio *= math.Exp2((float64(note)-float64(v.region.RootKey))/12 + v.params.FineTuneCents/1200)
+		ratio *= detmath.Exp2((float64(note)-float64(v.region.RootKey))/12 + v.params.FineTuneCents/1200)
 	}
 	if ratio < .125 || ratio > 8 {
 		return 0, validationError("sample playback ratio must be between 0.125 and 8")
@@ -348,6 +352,16 @@ func (v *Voice) NextStereo() (float32, float32) {
 		}
 		if v.gainAlpha != 0 {
 			v.gain += float64((v.targetGain - v.gain) * v.gainAlpha)
+			// Gain 0 is a legal target; the glide would stall at a subnormal
+			// number and slow every frame of a looping note. It is swept
+			// every subnormal.SweepFrames smoothing steps, as the other
+			// processors sweep their controls. The gain reaches the output only
+			// through a product converted to float32, where a subnormal float64
+			// is zero.
+			v.gainSteps++
+			if v.gainSteps%subnormal.SweepFrames == 0 {
+				v.gain = subnormal.Flush64(v.gain)
+			}
 		}
 		gain := v.gain
 		if sampleExpressionEnabled {

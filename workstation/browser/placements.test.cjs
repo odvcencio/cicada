@@ -35,7 +35,10 @@ async function until(predicate, message) {
     if (await predicate()) return;
     await new Promise(resolve=>setTimeout(resolve,30));
   }
-  assert.fail(message);
+  // Building a detailed message must never replace the failure it describes.
+  let text = message;
+  if (typeof message === 'function') { try { text = await message(); } catch (error) { text = `timed out (the failure detail could not be read: ${error.message.split('\n')[0]})`; } }
+  assert.fail(text);
 }
 
 // The Studio engine is one Go/WebAssembly program. When goroutines made Go-to-JavaScript calls that ran Go code inside
@@ -97,12 +100,17 @@ test('placements edit visually and Session follows saved Score without reloading
   const pollsRan = async () => { const from={...polls}; const names=['/api/capture','/api/transport','/api/automation/recording']; await until(async()=>names.every(name=>(polls[name]||0)-(from[name]||0)>=2),'the Studio polls did not run'); };
   const ready = async target => { await target.locator('#cicada-workspace[data-workspace-reactive=ready]').waitFor(); };
   const block = (target,id='far-in') => target.locator(`[data-placement-block="${id}"]`);
+  const transportFailure = (target, message) => async () => {
+    // One snapshot in the page: no waiting on a status node that goes away.
+    const visible = await target.locator('[role=status], [data-workspace-status]').evaluateAll(nodes => nodes.filter(node => node.getClientRects().length > 0).map(node => node.innerText.trim()).filter(Boolean));
+    return `${message}; visible status: ${JSON.stringify(visible)}; transport: ${JSON.stringify(await transport())}`;
+  };
   const at = async (ticks,target=page) => { await until(async()=>Number(await block(target).getAttribute('data-placement-at'))===ticks,`far-in did not move to ${ticks}`); await idle(); };
   const undo = async () => { await page.getByRole('button',{name:'Undo',exact:true}).click(); await until(async()=>(await state()).source===fixture,'Undo did not restore the exact fixture'); await at(16320); };
   const far = page.locator('[data-placement-inspector="far-in"]');
   const selectFar = async (watchReentry=false) => {
     await idle();
-    await page.getByRole('link',{name:'Edit placement far-in',exact:true}).click();
+    await page.getByRole('link',{name:/^Edit placement far-in:/}).click();
     // Focusing the link runs a Go focusin listener inside the click. That one nest is by design; count from here on.
     if (watchReentry) await page.evaluate(()=>window.__goReentry.reset());
     await until(async()=>new URL(page.url()).searchParams.get('placement')==='far-in' && await block(page).getAttribute('data-placement-selected')==='true' && await far.getAttribute('open')!==null,'placement selection did not settle');
@@ -160,7 +168,7 @@ test('placements edit visually and Session follows saved Score without reloading
     assert.equal((await state()).source,fixture); assert.equal(await block(page).getAttribute('data-placement-at'),'16320');
     checks.push('Escape cancels a drag without a write');
 
-    await page.getByRole('link',{name:'Edit placement far-in',exact:true}).focus(); await page.keyboard.press('ArrowRight'); await at(16560);
+    await page.getByRole('link',{name:/^Edit placement far-in:/}).focus(); await page.keyboard.press('ArrowRight'); await at(16560);
     await page.keyboard.press('Shift+ArrowRight'); await at(20400);
     await page.getByRole('button',{name:'Undo',exact:true}).click(); await at(16560); await undo();
     await page.getByRole('button',{name:'Resize placement far-in',exact:true}).focus(); await page.keyboard.press('Shift+ArrowLeft');
@@ -177,7 +185,7 @@ test('placements edit visually and Session follows saved Score without reloading
     await selectFar(); await far.getByText('Make a copy',{exact:true}).click();
     await far.getByRole('button',{name:'Duplicate placement',exact:true}).click();
     await block(page,'far-in-copy').waitFor(); await idle(); assert.equal(await page.locator('[data-placement-block]').count(),10);
-    await page.getByRole('link',{name:'Edit placement far-in-copy',exact:true}).click(); await idle();
+    await page.getByRole('link',{name:/^Edit placement far-in-copy:/}).click(); await idle();
     await page.locator('[data-placement-inspector="far-in-copy"]').getByRole('button',{name:'Remove placement',exact:true}).click();
     await block(page,'far-in-copy').waitFor({state:'detached'}); await idle();
     await page.getByRole('button',{name:'Undo',exact:true}).click(); await block(page,'far-in-copy').waitFor(); await idle(); await undo();
@@ -243,15 +251,16 @@ test('placements edit visually and Session follows saved Score without reloading
     const nativeFar=nativePage.locator('[data-placement-inspector="far-in"]'); await nativeFar.getByLabel('Start',{exact:true}).fill('@5.3.1');
     await nativeFar.getByRole('button',{name:'Update placement',exact:true}).click();
     await until(async()=>await block(nativePage).getAttribute('data-placement-at')==='17280','native form did not refresh');
+    await at(17280); // Let this tab observe the other tab's edit before Undo.
     assert.match(nativePage.url(),/placement=far-in/);
-    await nativePage.getByRole('button',{name:'Undo',exact:true}).click(); await until(async()=>(await state()).source===fixture,'native Undo did not restore score');
-    await nativePage.getByRole('link',{name:'Edit placement far-in',exact:true}).click();
+    await nativePage.getByRole('button',{name:'Undo',exact:true}).click(); await until(async()=>(await state()).source===fixture,'native Undo did not restore score'); await at(16320);
+    await nativePage.getByRole('link',{name:/^Edit placement far-in:/}).click();
     await nativePage.locator('[data-placement-inspector="far-in"]').getByRole('button',{name:'Loop solo',exact:true}).click();
     await until(async()=>(await transport()).listening?.mode==='solo','native placement audition failed');
     await nativePage.getByRole('button',{name:'Stop listening',exact:true}).click(); await until(async()=>!(await transport()).playing,'native listening did not stop'); await native.close();
     checks.push('native forms work without JavaScript and preserve selection');
 
-    await page.getByRole('button',{name:'Play',exact:true}).click(); await until(async()=>(await transport()).playing,'transport did not start');
+    await page.getByRole('button',{name:'Play',exact:true}).click(); await until(async()=>(await transport()).playing,transportFailure(page,'transport did not start'));
     await page.getByRole('link',{name:'Score',exact:true}).click(); await page.getByRole('textbox',{name:'Cicada score',exact:true}).waitFor();
     await page.getByRole('link',{name:'Session',exact:true}).click(); await block(page).waitFor();
     await ready(page);
@@ -264,10 +273,13 @@ test('placements edit visually and Session follows saved Score without reloading
     assert.equal(desktop.bodyWidth,desktop.width);
 
     const mobileContext=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,deviceScaleFactor:1,reducedMotion:'reduce',storageState:await context.storageState()});
-    const mobile=await mobileContext.newPage(); await mobile.goto(new URL('/?panel=session&placement=far-in',base).href,{waitUntil:'domcontentloaded'}); await ready(mobile);
-    await mobile.getByRole('link',{name:'Edit placement far-in',exact:true}).tap(); await ready(mobile);
+    const mobile=await mobileContext.newPage(); await mobile.goto(new URL('/?panel=session',base).href,{waitUntil:'domcontentloaded'}); await ready(mobile);
+    await mobile.getByRole('link',{name:/^Edit placement far-in:/}).tap();
+    await until(async()=>new URL(mobile.url()).searchParams.get('placement')==='far-in' && await block(mobile).getAttribute('data-placement-selected')==='true' && await mobile.locator('[data-placement-inspector="far-in"]').getAttribute('open')!==null,'mobile placement selection did not settle');
+    await until(async()=>await mobile.locator('#cicada-workspace input[name=revision]').first().inputValue()===(await state()).revision,'mobile selection did not refresh the saved revision');
+    await mobile.locator('#cicada-workspace[aria-busy=true]').waitFor({state:'hidden'});
     const mobileFar=mobile.locator('[data-placement-inspector="far-in"]');
-    await mobileFar.getByRole('button',{name:'Loop in song',exact:true}).tap(); await until(async()=>(await transport()).listening?.mode==='context','mobile listening did not start');
+    await mobileFar.getByRole('button',{name:'Loop in song',exact:true}).tap(); await until(async()=>(await transport()).listening?.mode==='context',transportFailure(mobile,'mobile listening did not start'));
     await mobile.getByRole('button',{name:'Stop listening',exact:true}).tap(); await until(async()=>!(await transport()).playing,'mobile listening did not stop');
     await mobileFar.getByLabel('Start',{exact:true}).fill('@5.3.1'); await mobileFar.getByRole('button',{name:'Update placement',exact:true}).tap(); await at(17280,mobile);
     await mobile.getByRole('button',{name:'Undo',exact:true}).tap(); await at(16320,mobile);
@@ -306,4 +318,116 @@ test('placements edit visually and Session follows saved Score without reloading
     try { const form=page.locator('form[action="/__actions/transport"]'); if(await form.count()) { await form.getByRole('button',{name:'Stop',exact:true}).click({timeout:2000}); } } catch (_) {}
     await browser.close();
   }
+});
+
+test('placement destinations reveal the browser on desktop and phone', {timeout:90000}, async () => {
+  const base = process.env.CICADA_STUDIO_URL;
+  assert.ok(base, 'set CICADA_STUDIO_URL to a disposable Studio');
+  const browser = await playwright().chromium.launch({headless:true, executablePath:process.env.CICADA_CHROME_PATH, args:['--no-sandbox']});
+  const context = await browser.newContext();
+  try {
+    for (const viewport of [{width:1440,height:1000}, {width:390,height:844}]) {
+      const page = await context.newPage();
+      await page.setViewportSize(viewport);
+      await page.addInitScript(() => {
+        if (!sessionStorage.getItem('navigation-layout-seeded')) {
+          sessionStorage.setItem('navigation-layout-seeded', 'yes');
+          localStorage.setItem('studio:layout:browserOpen', 'false');
+          localStorage.setItem('studio:layout:samplerOpen', 'false');
+          localStorage.setItem('studio:layout:takesOpen', 'false');
+        }
+      });
+      await page.goto(new URL('/studio?placement=far-in', base).href);
+      await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
+      const inspector = page.locator('[data-placement-inspector="far-in"]');
+      if (await inspector.getAttribute('open') === null) await inspector.locator('summary').click();
+      const link = page.locator('[data-placement-inspector="far-in"]').getByRole('link', {name:'Sample into pads'});
+      await link.click();
+      await page.locator('#browser-sampler').waitFor();
+      assert.equal(await page.locator('#studio-shell').getAttribute('data-phone-region'), 'browser');
+      assert.equal(await page.locator('#browser-sampler').isVisible(), true);
+      assert.equal(await page.locator('#library-tab-samples').first().evaluate(el => { const r = el.getBoundingClientRect(); return r.bottom > 0 && r.top < innerHeight; }), true, 'destination is in the viewport');
+      await page.reload();
+      await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
+      assert.equal(await page.locator('#library-tab-samples').getAttribute('aria-selected'), 'true', 'Samples remains selected after reload');
+      await page.locator('#library-tab-sounds').click();
+      assert.equal(await page.locator('#browser-sampler').isVisible(), false, 'switching tabs hides Sampler');
+      await page.reload();
+      await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
+      assert.equal(await page.locator('#library-tab-sounds').getAttribute('aria-selected'), 'true', 'Sounds remains selected after reload');
+      await page.goto(new URL('/studio?reveal=takes&clip=audio1&region=browser', base).href);
+      await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
+      await page.locator('#browser-takes').waitFor();
+      assert.equal(await page.locator('#browser-takes').isVisible(), true);
+      assert.equal(await page.locator('#library-tab-takes').evaluate(el => { const r = el.getBoundingClientRect(); return r.bottom > 0 && r.top < innerHeight; }), true, 'Takes is in the viewport');
+      if (viewport.width >= 500) {
+        await page.locator('[data-pane="library"][data-pane-action="hide"]').click();
+        await page.reload();
+        await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
+        assert.equal(await page.locator('#studio-browser > details').getAttribute('open'), null, 'closing Library survives reload');
+      }
+      if (viewport.width < 500) {
+        await page.goto(new URL('/studio?placement=far-in&region=center', base).href);
+        await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
+        const selected = page.locator('[data-placement-inspector="far-in"]');
+        if (await selected.getAttribute('open') === null) await selected.locator('summary').click();
+        let release;
+        const held = new Promise(resolve => { release = resolve; });
+        let arrived;
+        const requested = new Promise(resolve => { arrived = resolve; });
+        await page.route('**/studio?*', async route => {
+          if (new URL(route.request().url()).searchParams.get('reveal') === 'sampler') { arrived(); await held; }
+          await route.continue();
+        });
+        await page.evaluate(() => { window.__destinationNavigated = false; document.addEventListener('gosx:navigate', () => { window.__destinationNavigated = true; }, {once:true}); });
+        await selected.getByRole('link', {name:'Sample into pads'}).click();
+        await requested;
+        await page.locator('.shell-phone-nav [data-shell-region="code"]').click();
+        const response = page.waitForResponse(response => new URL(response.url()).searchParams.get('reveal') === 'sampler');
+        release();
+        await response;
+        await page.waitForFunction(() => window.__destinationNavigated);
+        await until(async () => new URL(page.url()).searchParams.get('region') === 'code' && await page.locator('#studio-shell').getAttribute('data-phone-region') === 'code', 'later phone choice lost');
+        await page.unroute('**/studio?*');
+      }
+      if (viewport.width >= 500) {
+        for (const mode of ['close-library', 'close-section', 'keyboard', 'pointer', 'keyboard-new-focus']) {
+          await page.goto(new URL('/studio?placement=far-in&region=center', base).href);
+          await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
+          if (await page.locator('#studio-browser > details').getAttribute('open') === null)
+            await page.locator('[data-pane="library"][data-pane-action="show"]').click();
+          if (mode === 'close-section') await page.locator('#library-tab-samples').click();
+          const selected = page.locator('[data-placement-inspector="far-in"]');
+          if (await selected.getAttribute('open') === null) await selected.locator('summary').click();
+          const link = selected.getByRole('link', {name:'Sample into pads'});
+          let release, arrived;
+          const held = new Promise(resolve => { release = resolve; });
+          const requested = new Promise(resolve => { arrived = resolve; });
+          await page.route('**/studio?*', async route => {
+            if (new URL(route.request().url()).searchParams.get('reveal') === 'sampler') { arrived(); await held; }
+            await route.continue();
+          });
+          await page.evaluate(() => { window.__destinationNavigated = false; document.addEventListener('gosx:navigate', () => { window.__destinationNavigated = true; }, {once:true}); });
+          if (mode.startsWith('keyboard')) { await link.focus(); await page.keyboard.press('Enter'); }
+          else await link.click();
+          await requested;
+          if (mode === 'close-library') await page.locator('[data-pane="library"][data-pane-action="hide"]').click();
+          if (mode === 'close-section') await page.locator('#library-tab-sounds').click();
+          if (mode === 'keyboard-new-focus') await page.locator('#transport-form button').first().focus();
+          release();
+          await page.waitForFunction(() => window.__destinationNavigated);
+          await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
+          if (mode === 'close-library') assert.equal(await page.locator('#studio-browser > details').getAttribute('open'), null, mode);
+          if (mode === 'close-section') assert.equal(await page.locator('#browser-sampler').isVisible(), false, mode);
+          if (mode === 'keyboard') await until(() => page.locator('#library-tab-samples').evaluate(el => el === document.activeElement), 'keyboard destination was not focused');
+          if (mode === 'pointer' || mode === 'keyboard-new-focus') {
+            await page.waitForTimeout(100);
+            assert.equal(await page.locator('#library-tab-samples').evaluate(el => el === document.activeElement), false, `${mode} must not focus the destination`);
+          }
+          await page.unroute('**/studio?*');
+        }
+      }
+      await page.close();
+    }
+  } finally { await context.close(); await browser.close(); }
 });

@@ -71,6 +71,7 @@ type checkScoreReport struct {
 	Valid       bool                    `json:"valid"`
 	Diagnostics []checkDiagnosticReport `json:"diagnostics"`
 	Browser     *checkBrowserReport     `json:"browser_profile,omitempty"`
+	Packs       []checkPackReport       `json:"packs,omitempty"`
 }
 
 // checkPosition is a place in a source file. Line and column count from 1;
@@ -180,7 +181,8 @@ func checkScoreJSON(path string, options checkOptions) checkScoreReport {
 		add(inspection.source, diagnostic, &inspection)
 	}
 	if !hasDiagnosticErrors(inspection.diagnostics) {
-		packDiagnostics := checkSamplerPacks(path, inspection, options.maxResidentPCM)
+		packDiagnostics, packs := checkSamplerPacks(path, inspection, options.maxResidentPCM)
+		report.Packs = packs
 		for _, diagnostic := range packDiagnostics {
 			add(inspection.source, diagnostic, &inspection)
 		}

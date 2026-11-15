@@ -1,0 +1,51 @@
+cicada 2
+title "Flush check: a reverb send from a hard-left track, then the reverb mix to zero"
+tempo 120
+key a minor
+seed 7
+
+fx reverb reverb {
+  size = 1
+  decay = 2.4s
+  damp = 8kHz
+  highpass = 120Hz
+  predelay = 25ms
+  mix = 1
+}
+
+track center acid {
+  send reverb = 0.5
+}
+
+track left acid {
+  pan = -1
+  send reverb = 0.5
+}
+
+pattern line {
+  1 . 3 . | 5 . 3 .
+}
+
+pattern hush {
+  . . . . | . . . .
+}
+
+scene both {
+  center = line
+  left = line
+}
+
+scene left-only {
+  center = hush
+  left = line
+}
+
+automate reverb.mix {
+  @9.1.1 1
+  @10.1.1 0
+}
+
+song {
+  both*1
+  left-only*14
+}

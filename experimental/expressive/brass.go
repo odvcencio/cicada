@@ -1,8 +1,10 @@
 package expressive
 
 import (
-	"m31labs.dev/cicada/kernel/dsp/halfband"
 	"math"
+
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+	"m31labs.dev/cicada/kernel/dsp/halfband"
 )
 
 // Brass is an experimental outward-striking lip reed coupled to a cylindrical
@@ -37,8 +39,8 @@ func NewBrass(sampleRate int) *Brass {
 	b.bore.init(int(b.fs/60) + 16)
 	b.expression = Expression{PitchHz: 220, Pressure: .75, Position: .5, Brightness: .65, Damping: .3}
 	b.pressure = .75
-	b.smooth = 1 - math.Exp(-1/(.008*b.fs))
-	b.dcPole = math.Exp(-2 * math.Pi * 45 / b.fs)
+	b.smooth = 1 - detmath.Exp(-1/(.008*b.fs))
+	b.dcPole = detmath.Exp(-2 * math.Pi * 45 / b.fs)
 	return b
 }
 
@@ -87,7 +89,7 @@ func (b *Brass) tick() float64 {
 	if b.phase >= 1 {
 		b.phase -= 1
 	}
-	hz := b.hz * math.Exp2(e.Vibrato*math.Sin(2*math.Pi*b.phase)/1200)
+	hz := b.hz * detmath.Exp2(e.Vibrato*detmath.Sin(2*math.Pi*b.phase)/1200)
 	// Restrict the blowing regime to the measured stable branch; expressive
 	// pressure still changes both the flow nonlinearity and radiation amplitude.
 	mouthTarget := .42 + float64(.18*(float64(.4*b.velocity)+float64(.6*b.pressure)))
@@ -104,8 +106,8 @@ func (b *Brass) tick() float64 {
 	// Exact damped pole positions for the linear lip mass/spring. Q=4;
 	// natural lip frequency is below the playing frequency (outward striking).
 	w := 2 * math.Pi * f * .8 / b.fs
-	r := math.Exp(-w / 8)
-	a := 2 * r * math.Cos(w)
+	r := detmath.Exp(-w / 8)
+	a := 2 * r * detmath.Cos(w)
 	rr := r * r
 	lip := float64(float64(a*b.lip1)-float64(rr*b.lip2)) + float64((float64(1-float64(a))+float64(rr))*differential)
 	b.lip2 = b.lip1
@@ -135,9 +137,9 @@ func (b *Brass) tick() float64 {
 	b.dcInput = signal
 	b.dcOutput = hp
 	cutoff := 900 + float64(6500*e.Brightness)
-	alpha := 1 - math.Exp(-2*math.Pi*cutoff/b.fs)
+	alpha := 1 - detmath.Exp(-2*math.Pi*cutoff/b.fs)
 	b.lowpass += float64(alpha * (hp - b.lowpass))
 	radiated := float64(b.lowpass*(.75+float64(.25*e.Position))) + float64((.25*(1-e.Position))*(hp-b.lowpass))
 	drive := 1 + float64(3*e.Drive)
-	return .52 * b.velocity * b.pressure * math.Tanh(radiated*drive) / drive
+	return .52 * b.velocity * b.pressure * detmath.Tanh(radiated*drive) / drive
 }

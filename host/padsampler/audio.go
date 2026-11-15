@@ -12,6 +12,7 @@ import (
 
 	"m31labs.dev/cicada/audioasset"
 	"m31labs.dev/cicada/host/audition"
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 	"m31labs.dev/cicada/kernel/fx"
 	"m31labs.dev/cicada/kernel/voice/sample"
 )
@@ -108,7 +109,7 @@ func Prepare(a audition.Audio, p Pad, e Effects) (audition.Audio, error) {
 	body := int(math.Ceil(float64(len(left)) / v.Ratio()))
 	tail := 0
 	if e.DelayMix > 0 {
-		tail = int(min(8., e.DelayMS/1000*max(1., math.Ceil(math.Log(.001)/math.Log(max(.01, e.Feedback))))) * Rate)
+		tail = int(min(8., e.DelayMS/1000*max(1., math.Ceil(detmath.Log(.001)/detmath.Log(max(.01, e.Feedback))))) * Rate)
 	}
 	if e.ReverbMix > 0 {
 		tail = max(tail, 3*Rate)
@@ -118,7 +119,7 @@ func Prepare(a audition.Audio, p Pad, e Effects) (audition.Audio, error) {
 	}
 	out := audition.Audio{Rate: Rate, Left: make([]float32, body+tail), Right: make([]float32, body+tail)}
 	attack, release := max(1, int(p.AttackMS*Rate/1000)), max(1, int(p.ReleaseMS*Rate/1000))
-	gain := float32(math.Pow(10, p.GainDB/20))
+	gain := float32(detmath.Pow(10, p.GainDB/20))
 	for i := 0; i < body; i++ {
 		l, r := v.NextStereo()
 		env := float32(min(1., float64(i+1)/float64(attack), float64(body-i)/float64(release)))
@@ -126,7 +127,7 @@ func Prepare(a audition.Audio, p Pad, e Effects) (audition.Audio, error) {
 	}
 	if e.Cutoff < 20000 { // Butterworth low-pass, with independent stereo state.
 		w := 2 * math.Pi * e.Cutoff / Rate
-		c, s := math.Cos(w), math.Sin(w)
+		c, s := detmath.Cos(w), detmath.Sin(w)
 		alpha := s / math.Sqrt2
 		den := 1 + alpha
 		b0, b1, b2 := (1-c)/2/den, (1-c)/den, (1-c)/2/den
@@ -134,7 +135,8 @@ func Prepare(a audition.Audio, p Pad, e Effects) (audition.Audio, error) {
 		for _, pcm := range [][]float32{out.Left, out.Right} {
 			var x1, x2, y1, y2 float64
 			for i, x := range pcm {
-				y := b0*float64(x) + b1*x1 + b2*x2 - a1*y1 - a2*y2
+				// Each product is rounded on its own, so no target fuses it into the sum.
+				y := float64(b0*float64(x)) + float64(b1*x1) + float64(b2*x2) - float64(a1*y1) - float64(a2*y2)
 				x2, x1 = x1, float64(x)
 				y2, y1 = y1, y
 				pcm[i] = float32(y)
@@ -194,7 +196,7 @@ func Limit(a audition.Audio) float64 {
 		a.Left[i] *= gain
 		a.Right[i] *= gain
 	}
-	return 20 * math.Log10(float64(gain))
+	return 20 * detmath.Log10(float64(gain))
 }
 
 type Voice struct {
@@ -238,8 +240,8 @@ func Print(perf Performance, sounds map[string]Voice) (audition.Audio, error) {
 			if release > 0 && frame >= end-release {
 				gain *= float32(end-frame) / float32(release)
 			}
-			out.Left[frame] += v.Audio.Left[i] * gain
-			out.Right[frame] += v.Audio.Right[i] * gain
+			out.Left[frame] += float32(v.Audio.Left[i] * gain)
+			out.Right[frame] += float32(v.Audio.Right[i] * gain)
 		}
 	}
 	// A loop print ends exactly at the requested frame; never cut at full gain.

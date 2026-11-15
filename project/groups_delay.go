@@ -1,8 +1,7 @@
 package project
 
 import (
-	"math"
-
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 	"m31labs.dev/cicada/kernel/expression"
 	"m31labs.dev/cicada/kernel/graph"
 	"m31labs.dev/cicada/kernel/seq"
@@ -19,7 +18,7 @@ func validateSharedDelay(program graph.Program, sampleRate int, pattern seq.Patt
 			depth += resolved.VibratoDepthCents
 		}
 		for _, cents := range [...]float32{resolved.PitchCents - depth, resolved.PitchCents + depth} {
-			pitch := float32(440 * math.Exp2(float64(int(note)+int(pattern.Transpose)-69)/12+float64(cents)/1200))
+			pitch := float32(440 * detmath.Exp2(float64(int(note)+int(pattern.Transpose)-69)/12+float64(cents)/1200))
 			if err := graph.ValidateDelayPitch(program, sampleRate, pitch); err != nil {
 				return err
 			}

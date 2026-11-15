@@ -30,6 +30,8 @@ type Zone struct {
 	// the zone ignore note-off.
 	ChokeGroup int
 	OneShot    bool
+	// Gain is the zone's linear gain; zero means 1.
+	Gain float64
 }
 
 // Options shape a pack. The zero value is one mono asset of 1,024 frames and
@@ -134,6 +136,10 @@ func Write(t testing.TB, dir string, o Options) Pack {
 		})
 	}
 	for i, z := range o.Zones {
+		gain := z.Gain
+		if gain == 0 {
+			gain = 1
+		}
 		low, high := z.VelocityLow, z.VelocityHigh
 		if low == 0 {
 			low = 1
@@ -143,7 +149,7 @@ func Write(t testing.TB, dir string, o Options) Pack {
 		}
 		manifest.Zones = append(manifest.Zones, instrumentpack.Zone{
 			Asset: manifest.Assets[i%o.Assets].ID, Root: (z.KeyLow + z.KeyHigh) / 2, KeyLow: z.KeyLow, KeyHigh: z.KeyHigh,
-			VelocityLow: low, VelocityHigh: high, Layer: (low + high) / 2, Group: i, Count: 1, Gain: 1,
+			VelocityLow: low, VelocityHigh: high, Layer: (low + high) / 2, Group: i, Count: 1, Gain: gain,
 			ChokeGroup: z.ChokeGroup, OneShot: z.OneShot,
 		})
 	}

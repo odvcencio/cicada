@@ -114,7 +114,7 @@ func analyzeVocalWaveform(ctx context.Context, dir string, take takejournal.Take
 			return result, err
 		}
 		for i := int64(0); i < n; i++ {
-			v := left[i]*.5 + right[i]*.5 // same mono signal as the comp print
+			v := float32(left[i]*.5) + float32(right[i]*.5) // same mono signal as the comp print
 			for bin+1 < bins && at+i >= ends[bin] {
 				bin++
 			}

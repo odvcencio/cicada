@@ -3,14 +3,11 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"strconv"
 	"syscall/js"
@@ -93,7 +90,9 @@ func (u *workspaceUI) sourceStatus(text string) {
 }
 
 // Recovery never uses the workspace mutation queue: it must not save the
-// score, replace the editor, or delay musical edits and transport commands.
+// score, replace the editor's text, or delay musical edits and transport
+// commands. Studio answers a checkpoint after reading only the file's
+// revision, which takes no service lock.
 func (u *workspaceUI) checkpointSources() {
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
@@ -136,25 +135,28 @@ func (u *workspaceUI) checkpointSources() {
 				fields["intent"] = "clear"
 			}
 			data, _ := json.Marshal(fields)
-			origin := js.Global().Get("location").Get("origin").String()
-			ctx, cancel := context.WithTimeout(u.ctx, 5*time.Second)
-			request, err := http.NewRequestWithContext(ctx, http.MethodPost, origin+"/__actions/source-checkpoint", bytes.NewReader(data))
-			if err != nil {
-				cancel()
-				continue
+			response, err := nativeRequest{Method: methodPost, Path: "/__actions/source-checkpoint", Body: data, Timeout: 5 * time.Second, Limit: 4096, Headers: map[string]string{
+				"Content-Type": "application/json", "Accept": "application/json", "X-CSRF-Token": u.props.CSRF,
+			}}.do(u.ctx)
+			if err == nil && response.Status != statusOK {
+				err = fmt.Errorf("recovery returned %d", response.Status)
 			}
-			request.Header.Set("Content-Type", "application/json")
-			request.Header.Set("Accept", "application/json")
-			request.Header.Set("X-CSRF-Token", u.props.CSRF)
-			response, err := http.DefaultClient.Do(request)
-			if response != nil {
-				_, _ = io.Copy(io.Discard, response.Body)
-				response.Body.Close()
-				if response.StatusCode != http.StatusOK {
-					err = fmt.Errorf("recovery returned %d", response.StatusCode)
+			// Studio says whether it kept a copy: it keeps none of text the
+			// file already has, and names that file's revision. Older
+			// versions do not say, and keep one. An answer that cannot be
+			// read is a failed attempt, like a failed request.
+			var reply struct {
+				Data struct {
+					Kept     *bool  `json:"kept"`
+					Revision string `json:"revision"`
+				} `json:"data"`
+			}
+			if err == nil {
+				if decodeErr := decodeLimited(response.Body, 4096, &reply); decodeErr != nil {
+					err = fmt.Errorf("recovery answer could not be read: %w", decodeErr)
 				}
 			}
-			cancel()
+			kept := reply.Data.Kept == nil || *reply.Data.Kept
 			if u.closed.Load() {
 				return
 			}
@@ -166,7 +168,8 @@ func (u *workspaceUI) checkpointSources() {
 				continue
 			}
 			current.dirty = false
-			if current.clean {
+			if current.clean || !kept {
+				// Closed: an edit after this starts a new copy.
 				delete(u.sources, file)
 			}
 			if workspacePresent(current.control) && current.control.Get("isConnected").Bool() {
@@ -174,7 +177,7 @@ func (u *workspaceUI) checkpointSources() {
 				// and Back can otherwise select a checkpoint not yet on disk.
 				if location, err := url.Parse(js.Global().Get("location").Get("href").String()); err == nil {
 					query := location.Query()
-					if current.clean {
+					if current.clean || !kept {
 						query.Del("codeDraft")
 					} else {
 						query.Set("codeDraft", current.id)
@@ -188,6 +191,18 @@ func (u *workspaceUI) checkpointSources() {
 				}
 				if current.clean {
 					u.sourceStatus("No unsaved Code edits.")
+				} else if !kept {
+					// The file has this text: the editor takes it, at the file's
+					// revision, as its own, so the Code panel is no longer held
+					// and follows the file like an editor without changes.
+					if form := current.control.Call("closest", "form"); reply.Data.Revision != "" && current.control.Get("value").String() == snapshot.content {
+						current.control.Set("defaultValue", snapshot.content)
+						if field := workspaceField(form, "fileRevision"); workspacePresent(field) {
+							field.Set("value", reply.Data.Revision)
+						}
+						form.Call("removeAttribute", "data-code-unsaved")
+					}
+					u.sourceStatus("No unsaved Code edits. The score file has this text.")
 				} else {
 					u.sourceStatus("Recovery copy kept on this device. Use Save file to apply edits to the song.")
 				}

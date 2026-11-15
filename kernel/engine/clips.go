@@ -1,9 +1,11 @@
 package engine
 
 import (
-	"m31labs.dev/cicada/kernel/voice/sample"
 	"math"
 	"math/bits"
+
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+	"m31labs.dev/cicada/kernel/voice/sample"
 )
 
 // AudioAsset is immutable decoded planar PCM, prepared by a host worker.
@@ -60,7 +62,7 @@ func (e *Engine) prepareClips(cfg *Config) error {
 		if err != nil {
 			return err
 		}
-		if err = voice.SetParams(sample.Params{Gain: math.Pow(10, c.GainDB/20)}); err != nil {
+		if err = voice.SetParams(sample.Params{Gain: detmath.Pow(10, c.GainDB/20)}); err != nil {
 			return err
 		}
 		e.clipTemplates[i] = *voice

@@ -3,13 +3,10 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math"
-	"net/http"
 	"net/url"
 	"sort"
 	"strconv"
@@ -161,10 +158,6 @@ func mountSampler(host enginewasm.Context) (enginewasm.Handle, error) {
 			if !root.Get("isConnected").Bool() {
 				return
 			}
-			target := e.Get("target")
-			if !target.Call("closest", "input,textarea,select,[contenteditable=true]").IsNull() || e.Get("ctrlKey").Bool() || e.Get("metaKey").Bool() || e.Get("altKey").Bool() {
-				return
-			}
 			key := strings.ToLower(e.Get("key").String())
 			code := e.Get("code").String()
 			if strings.HasPrefix(code, "Digit") {
@@ -172,6 +165,18 @@ func mountSampler(host enginewasm.Context) (enginewasm.Handle, error) {
 			}
 			if strings.HasPrefix(code, "Key") {
 				key = strings.ToLower(strings.TrimPrefix(code, "Key"))
+			}
+			if event == "keyup" && len(key) == 1 {
+				if i := strings.Index(keys, key); i >= 0 && u.keyPads[i+1] {
+					delete(u.keyPads, i+1)
+					u.releasePad(i + 1)
+					e.Call("preventDefault")
+					return
+				}
+			}
+			target := e.Get("target")
+			if (!target.Call("closest", "input,textarea,select,[contenteditable=true]").IsNull() && target.Get("id").String() != "sampler-expand") || e.Get("ctrlKey").Bool() || e.Get("metaKey").Bool() || e.Get("altKey").Bool() {
+				return
 			}
 			if key == "escape" && event == "keydown" {
 				u.stop()
@@ -185,11 +190,6 @@ func mountSampler(host enginewasm.Context) (enginewasm.Handle, error) {
 				return
 			}
 			if event == "keyup" {
-				if u.keyPads[i+1] {
-					delete(u.keyPads, i+1)
-					u.releasePad(i + 1)
-					e.Call("preventDefault")
-				}
 				return
 			}
 			// Letter keys belong to Live unless the Sampler region has focus.
@@ -659,22 +659,19 @@ func (u *samplerUI) resample(form js.Value) {
 	go func() {
 		defer func() { u.posting = false }()
 		encoded, _ := json.Marshal(values)
-		req, _ := http.NewRequestWithContext(u.ctx, http.MethodPost, js.Global().Get("location").Get("origin").String()+"/__actions/sampler", bytes.NewReader(encoded))
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Accept", "application/json")
-		req.Header.Set("X-Cicada-Reactive", "1")
-		req.Header.Set("X-CSRF-Token", values["csrf_token"])
-		response, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
+		response, err := nativeRequest{Method: methodPost, Path: "/__actions/sampler", Body: encoded, Timeout: 30 * time.Second, Limit: 1 << 20, Headers: map[string]string{
+			"Content-Type": "application/json", "Accept": "application/json", "X-Cicada-Reactive": "1", "X-CSRF-Token": values["csrf_token"],
+		}}.do(u.ctx)
 		if err != nil {
-			u.status("Resampling failed; your performance is retained. " + err.Error())
+			consoleWarn("Sampler resample", err)
+			u.status(resampleFailureText(err))
 			return
 		}
-		defer response.Body.Close()
 		var result struct {
 			OK      bool   `json:"ok"`
 			Message string `json:"message"`
 		}
-		if err = json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&result); err != nil || !result.OK {
+		if err = decodeLimited(response.Body, 1<<20, &result); err != nil || !result.OK {
 			u.status("Resampling failed; your performance is retained. " + result.Message)
 			return
 		}

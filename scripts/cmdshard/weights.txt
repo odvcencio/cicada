@@ -3,6 +3,7 @@
 TestPreviewCompiledParameterLifecycleMatrix 48.09
 TestPreviewLifecycleGeneratedStateMachine 39.68
 TestRenderCacheIdentity 30
+TestParallelRenderIdentity 22.6
 TestRouteParity_Pattern 8.02
 TestVocalFullLengthBeyondOldAssetLimit 7.66
 TestM5RouteParity 6.62

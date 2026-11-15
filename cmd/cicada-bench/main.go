@@ -1,7 +1,10 @@
 // Command cicada-bench times the steps of an agent's loop (check, apply,
 // render, loudness render, audition) with a built cicada binary on named
 // reference scores, prints a table, writes JSON, and with --enforce fails when
-// a speed gate does not hold.
+// a speed gate does not hold. Two more render steps, on scores it writes
+// itself, measure decaying and idle work without a gate: a piano chord held
+// through a reverb (render:held) and the large score with every track off
+// (render:silent).
 //
 // Each step runs the binary as a separate process, as an agent does, once to
 // warm up and then --runs times, and keeps the median. The output names the
@@ -15,6 +18,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -40,8 +45,19 @@ var defaultScores = map[string]string{
 	"large":  "examples/songs/anywhere-you-are.cicada",
 }
 
-// defaultSteps is the set CI runs: the plan's first gates.
-const defaultSteps = "help,check:large,apply1:large,apply50:large,render:medium,render:large,loudness:medium,audition:large"
+// generatedScores are scores the bench writes itself for the decay steps
+// (plan.cicada.speed, F4), reported without a gate: "held" is a modeled piano
+// chord held for 16 s through a reverb send and then released, 30 s in all,
+// where decaying state reaches subnormal numbers; "silent" is the large score
+// with every track off for silentBars bars, the cost of a song's idle tracks.
+var generatedScores = map[string]bool{"held": true, "silent": true}
+
+// silentBars is the length of the silent step's song.
+const silentBars = 16
+
+// defaultSteps is the set CI runs: the plan's first gates, then the decay
+// steps, which are reported only.
+const defaultSteps = "help,check:large,apply1:large,apply50:large,render:medium,render:large,render-jobs1:large,render-jobs4:large,render-auto:medium,render-auto:large,loudness:medium,audition:large,render:held,render:silent"
 
 type options struct {
 	cicada    string
@@ -76,6 +92,27 @@ type Result struct {
 	Replays   int `json:"replays,omitempty"`
 	Repeats   int `json:"repeats,omitempty"`
 	ExitCode  int `json:"exit_code"`
+	// Jobs is the --jobs value of a render-jobsN step. SHA256 is the
+	// rendered WAV's hash, set for render steps when every run wrote the
+	// same bytes; UnstableHash is set when two runs did not.
+	Jobs         int    `json:"jobs,omitempty"`
+	Auto         bool   `json:"auto,omitempty"` // render-auto: --jobs auto
+	SHA256       string `json:"sha256,omitempty"`
+	UnstableHash bool   `json:"unstable_hash,omitempty"`
+}
+
+// renderJobs returns N for a render-jobsN step kind, and 0 for render-auto
+// (--jobs auto).
+func renderJobs(kind string) (int, bool) {
+	if kind == "render-auto" {
+		return 0, true
+	}
+	digits, ok := strings.CutPrefix(kind, "render-jobs")
+	if !ok {
+		return 0, false
+	}
+	jobs, err := strconv.Atoi(digits)
+	return jobs, err == nil && jobs >= 1 && jobs <= 64 && strconv.Itoa(jobs) == digits
 }
 
 // LoudnessRatio is a loudness render's time over a plain render's.
@@ -140,7 +177,7 @@ func parseOptions(args []string) (options, error) {
 	o := options{scores: map[string]string{}}
 	flags.StringVar(&o.cicada, "cicada", "build/cicada", "cicada binary to measure")
 	flags.IntVar(&o.runs, "runs", 5, "runs per step; the median is kept")
-	steps := flags.String("steps", defaultSteps, "comma-separated steps: help, check:<size>, apply1:<size>, apply50:<size>, render:<size>, loudness:<size>, audition:<size>; size is small, medium or large")
+	steps := flags.String("steps", defaultSteps, "comma-separated steps: help, check:<size>, apply1:<size>, apply50:<size>, render:<size>, render-jobs<N>:<size> (render with --jobs N), render-auto:<size> (--jobs auto), loudness:<size>, audition:<size>; size is small, medium or large, or for render held (a piano chord held through a reverb) or silent (the large score with every track off)")
 	for _, size := range []string{"small", "medium", "large"} {
 		o.scores[size] = defaultScores[size]
 		flags.Func(size, "score for the "+size+" steps (default "+defaultScores[size]+")", func(value string) error {
@@ -185,7 +222,14 @@ func validStep(step string) error {
 		return nil
 	}
 	kind, size, ok := strings.Cut(step, ":")
-	if !ok || !slices.Contains([]string{"check", "apply1", "apply50", "render", "loudness", "audition"}, kind) || defaultScores[size] == "" {
+	_, jobs := renderJobs(kind)
+	if !ok || !jobs && !slices.Contains([]string{"check", "apply1", "apply50", "render", "loudness", "audition"}, kind) {
+		return fmt.Errorf("unknown step %q", step)
+	}
+	if generatedScores[size] && kind == "render" {
+		return nil
+	}
+	if defaultScores[size] == "" {
 		return fmt.Errorf("unknown step %q", step)
 	}
 	return nil
@@ -241,14 +285,38 @@ func measure(o options, binary, work, step string) (Result, error) {
 		return result, err
 	}
 	var score string
-	if size != "" {
+	switch {
+	case size == "held":
+		score = "held-piano-reverb.cicada"
+		if err := os.WriteFile(filepath.Join(dir, score), []byte(heldScore), 0o644); err != nil {
+			return result, err
+		}
+		result.Score = score
+	case size == "silent":
+		var err error
+		if score, err = copyScore(o.scores["large"], dir); err != nil {
+			return result, err
+		}
+		source, err := os.ReadFile(filepath.Join(dir, score))
+		if err != nil {
+			return result, err
+		}
+		silent, err := silentScore(source, silentBars)
+		if err != nil {
+			return result, fmt.Errorf("%s: %w", o.scores["large"], err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, score), silent, 0o644); err != nil {
+			return result, err
+		}
+		result.Score = "silent " + filepath.Base(o.scores["large"])
+	case size != "":
 		var err error
 		score, err = copyScore(o.scores[size], dir)
 		if err != nil {
 			return result, err
 		}
 		result.Score = filepath.Base(o.scores[size])
-		if size == "large" && o.largeBars > 0 && (kind == "render" || kind == "audition" || kind == "loudness") {
+		if _, jobs := renderJobs(kind); size == "large" && o.largeBars > 0 && (kind == "render" || jobs || kind == "audition" || kind == "loudness") {
 			result.Bars = o.largeBars
 		}
 	}
@@ -273,6 +341,14 @@ func measure(o options, binary, work, step string) (Result, error) {
 		args = []string{"render", score, "-o", "out.wav", "--loudness", strconv.FormatFloat(o.loudness, 'g', -1, 64)}
 	case "audition":
 		args = []string{"audition", score, "--json"}
+	default:
+		if jobs, ok := renderJobs(kind); ok && jobs == 0 {
+			result.Auto = true
+			args = []string{"render", score, "-o", "out.wav", "--jobs", "auto"}
+		} else if ok {
+			result.Jobs = jobs
+			args = []string{"render", score, "-o", "out.wav", "--jobs", strconv.Itoa(jobs)}
+		}
 	}
 	if result.Bars > 0 {
 		args = append(args, "--bars", strconv.Itoa(result.Bars))
@@ -307,6 +383,19 @@ func measure(o options, binary, work, step string) (Result, error) {
 			result.PeakRSSMB = max(result.PeakRSSMB, float64(peakRSS(command.ProcessState))/(1<<20))
 		}
 		readOutput(&result, kind, stdout.String())
+		if kind == "render" || result.Jobs > 0 || result.Auto {
+			sum, err := fileSHA256(filepath.Join(dir, "out.wav"))
+			if err != nil {
+				return result, err
+			}
+			if run > 1 && sum != result.SHA256 {
+				result.UnstableHash = true
+			}
+			result.SHA256 = sum
+		}
+	}
+	if result.UnstableHash {
+		result.SHA256 = ""
 	}
 	sorted := slices.Clone(result.RunsMS)
 	slices.Sort(sorted)
@@ -316,6 +405,15 @@ func measure(o options, binary, work, step string) (Result, error) {
 		result.Realtime = result.AudioSeconds / (result.MedianMS / 1000)
 	}
 	return result, nil
+}
+
+func fileSHA256(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:]), nil
 }
 
 func median(sorted []float64) float64 {
@@ -337,7 +435,7 @@ var (
 // readOutput takes the rendered length, and for a loudness render the pass and
 // synthesis counts, from the summary line that render prints.
 func readOutput(result *Result, kind, stdout string) {
-	if kind != "render" && kind != "loudness" {
+	if _, jobs := renderJobs(kind); kind != "render" && kind != "loudness" && !jobs {
 		return
 	}
 	if match := framesPattern.FindStringSubmatch(stdout); match != nil {
@@ -394,6 +492,59 @@ func copyScore(path, dir string) (string, error) {
 
 var trackPattern = regexp.MustCompile(`(?m)^track ([A-Za-z_][A-Za-z0-9_-]*) `)
 
+// heldScore is the held step's score: C4, E4, G4 and B4 on the modeled piano
+// at one bar per second, held for 16 bars and released for 14, with a send to
+// the default reverb.
+const heldScore = `cicada 2
+tempo 240
+key c major
+seed 1
+fx room reverb { decay = 2.4s }
+track keys piano { send room = 0.4 }
+pattern chord notes {
+  step = 1/1
+  gate = 100%
+  [c4 e4 g4 b4] - - - - - - - - - - - - - - - . . . . . . . . . . . . . .
+}
+scene held { keys = chord }
+song { held*30 }
+`
+
+// silentScore rewrites a score so that it plays bars bars with every track
+// off: it removes the song and automate blocks (top-level blocks from a line
+// that starts with "song {" or "automate " until their braces balance) and
+// adds a scene that turns every track off and a song of that scene.
+func silentScore(source []byte, bars int) ([]byte, error) {
+	var tracks []string
+	for _, match := range trackPattern.FindAllSubmatch(source, -1) {
+		tracks = append(tracks, string(match[1]))
+	}
+	if len(tracks) == 0 {
+		return nil, errors.New("the score declares no tracks")
+	}
+	var out strings.Builder
+	depth, songs := 0, 0
+	for _, line := range strings.SplitAfter(string(source), "\n") {
+		if depth == 0 && !strings.HasPrefix(line, "song {") && !strings.HasPrefix(line, "automate ") {
+			out.WriteString(line)
+			continue
+		}
+		if depth == 0 && strings.HasPrefix(line, "song {") {
+			songs++
+		}
+		depth += strings.Count(line, "{") - strings.Count(line, "}")
+	}
+	if songs != 1 {
+		return nil, fmt.Errorf("the score has %d song blocks, want 1", songs)
+	}
+	out.WriteString("\nscene bench_silent {\n")
+	for _, track := range tracks {
+		out.WriteString("  " + track + " = off\n")
+	}
+	fmt.Fprintf(&out, "}\n\nsong {\n  bench_silent*%d\n}\n", bars)
+	return []byte(out.String()), nil
+}
+
 // writeIntents writes an envelope of count setparam intents that set the level
 // of the score's tracks in turn, from -3 dB to -7 dB.
 func writeIntents(score, path string, count int) error {
@@ -444,6 +595,12 @@ func formatResult(r Result) string {
 	}
 	if r.PeakRSSMB > 0 {
 		line += fmt.Sprintf("  peak RSS %.0f MiB", r.PeakRSSMB)
+	}
+	switch {
+	case r.UnstableHash:
+		line += "  output differs between runs"
+	case r.SHA256 != "" && (r.Jobs > 0 || r.Auto):
+		line += "  sha256 " + r.SHA256[:16]
 	}
 	return line
 }

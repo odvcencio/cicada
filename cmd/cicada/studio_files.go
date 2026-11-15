@@ -155,6 +155,34 @@ func studioEditRequest(r *http.Request, edit studioEdit) *http.Request {
 	return copy
 }
 
+// fileRevision answers the revision of one project file's text as it is on
+// disk; file "" is the score. Code recovery asks for it on every checkpoint,
+// so it takes no lock and parses nothing: musical edits and transport
+// commands never wait for it.
+func (s *studio) fileRevision(w http.ResponseWriter, r *http.Request) {
+	name, path := r.URL.Query().Get("file"), s.path
+	if name != "" {
+		if known, ok := s.filePaths.Load(name); ok {
+			path = known.(string)
+		} else {
+			found, err := s.filePath(name)
+			if err != nil {
+				studioJSON(w, 404, map[string]any{"error": err.Error()})
+				return
+			}
+			s.filePaths.Store(name, found)
+			path = found
+		}
+	}
+	source, err := os.ReadFile(path)
+	if err != nil {
+		studioJSON(w, 404, map[string]any{"error": err.Error()})
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	studioJSON(w, 200, map[string]any{"file": name, "revision": studioRevision(source)})
+}
+
 func (s *studio) projectRevision(w http.ResponseWriter, r *http.Request) {
 	hash, err := playSourceHash(s.path)
 	if err != nil {

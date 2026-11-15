@@ -38,7 +38,7 @@ func keyedBlock(i keyed, note int) (block, error) {
 }
 
 func voiceCases() []voiceCase {
-	return []voiceCase{
+	cases := []voiceCase{
 		{
 			Name:        "acid",
 			Description: "TB-style monophonic bass voice (kernel/voice/acid). Alias stress: sawtooth, cutoff 8 kHz with full envelope amount and 3 s decay (open), no resonance or drive.",
@@ -322,6 +322,8 @@ func voiceCases() []voiceCase {
 			Responses:   graphFilterResponses(),
 		},
 	}
+	// Graph voices with a cutoff or comb period that moves on every sample.
+	return append(cases, graphModulationCases()...)
 }
 
 func sawProgram(op graph.Op) graph.Program {

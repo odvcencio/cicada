@@ -5,6 +5,8 @@ package graph
 import (
 	"math"
 
+	"m31labs.dev/cicada/kernel/dsp/detmath"
+
 	"m31labs.dev/cicada/kernel/amp"
 	"m31labs.dev/cicada/kernel/dsp/fastmath"
 	"m31labs.dev/cicada/kernel/expression"
@@ -171,7 +173,7 @@ func NewVoiceFromProgramWithModulators(program *Program, sampleRate int, modulat
 		v.sampleRate *= 2
 	}
 	if program.GlideMS > 0 {
-		v.pitchAlpha = 1 - math.Exp(-1/(program.GlideMS/1000*float64(v.sampleRate)))
+		v.pitchAlpha = 1 - detmath.Exp(-1/(program.GlideMS/1000*float64(v.sampleRate)))
 	}
 	v.expression.Reset()
 	if instrumentVibratoEnabled && program.Vibrato != nil {
@@ -309,7 +311,7 @@ func ValidateModulatorIndices(program *Program, count int) error {
 func (v *Voice) NoteOn(note, velocity uint8, slide bool) {
 	v.expression.Reset()
 	wasGated := v.gate > 0
-	targetLog := math.Log2(440) + (float64(note)-69)/12
+	targetLog := detmath.Log2(440) + (float64(note)-69)/12
 	v.velocity = float32(velocity) / 127
 	v.gate = 1
 	if slide && wasGated && v.pitch != 0 {
@@ -318,12 +320,12 @@ func (v *Voice) NoteOn(note, velocity uint8, slide bool) {
 			v.gliding = targetLog != v.pitchLog
 			return
 		}
-		v.pitch = float32(440 * math.Exp2((float64(note)-69)/12))
+		v.pitch = float32(440 * detmath.Exp2((float64(note)-69)/12))
 		v.pitchLog, v.targetLog = targetLog, targetLog
 		v.gliding = false
 		return
 	}
-	v.pitch = float32(440 * math.Exp2((float64(note)-69)/12))
+	v.pitch = float32(440 * detmath.Exp2((float64(note)-69)/12))
 	v.pitchLog, v.targetLog = targetLog, targetLog
 	v.gliding = false
 	if instrumentVibratoEnabled && v.lfo != nil {
@@ -540,7 +542,7 @@ func (v *Voice) nextSample(substep uint64) float32 {
 						offset -= math.Floor(offset)
 					}
 					if !math.IsNaN(offset) {
-						y = float32(math.Sin(2 * math.Pi * (float64(phase) + offset)))
+						y = float32(detmath.SinPi(2 * (float64(phase) + offset)))
 					}
 				}
 				s.phase = frac(phase + dt)
@@ -560,7 +562,7 @@ func (v *Voice) nextSample(substep uint64) float32 {
 			}
 			y = s.env
 			if ms != s.coefficientInput {
-				s.coefficient = float32(math.Exp(-4600 / float64(ms*v.sampleRate)))
+				s.coefficient = float32(detmath.Exp(-4600 / float64(ms*v.sampleRate)))
 				s.coefficientInput = ms
 			}
 			s.env *= s.coefficient
@@ -573,7 +575,8 @@ func (v *Voice) nextSample(substep uint64) float32 {
 		case Ladder, Diode:
 			frequency := clamp(b, 20, v.sampleRate*0.45)
 			if frequency != s.coefficientInput {
-				g := float32(math.Tan(math.Pi * float64(frequency/v.sampleRate)))
+				// float32(detmath.Tan(math.Pi*float64(u))) bit for bit, at less cost.
+				g := detmath.TanPi32(frequency / v.sampleRate)
 				s.coefficient = g / (1 + g)
 				s.coefficientInput = frequency
 			}
@@ -586,7 +589,8 @@ func (v *Voice) nextSample(substep uint64) float32 {
 		case Lowpass, Highpass:
 			frequency := clamp(b, 20, v.sampleRate*0.45)
 			if frequency != s.coefficientInput {
-				s.coefficient = float32(1 - math.Exp(-2*math.Pi*float64(frequency/v.sampleRate)))
+				// float32(1 - detmath.Exp(-2*math.Pi*float64(u))) bit for bit, at less cost.
+				s.coefficient = detmath.OneMinusExpNeg2Pi32(frequency / v.sampleRate)
 				s.coefficientInput = frequency
 			}
 			coef := s.coefficient
@@ -599,9 +603,9 @@ func (v *Voice) nextSample(substep uint64) float32 {
 			blend := clamp(c, 0, 1)
 			y = float32(a*(1-blend)) + float32(b*blend)
 		case Tanh:
-			y = float32(math.Tanh(float64(a)))
+			y = detmath.Tanh32(a) // float32(detmath.Tanh(float64(a))), bit for bit
 		case Exp2:
-			y = float32(math.Exp2(float64(clamp(a, -8, 8))))
+			y = detmath.Exp2F32(clamp(a, -8, 8)) // float32(detmath.Exp2(float64(a))), bit for bit
 		case Clamp:
 			y = clamp(a, b, c)
 		}
@@ -679,7 +683,8 @@ func ladder(state *[4]float32, coef, feedback, x float32) float32 {
 	stateSum := float32(float32(g3*rest)*state[0]) + float32(float32(g2*rest)*state[1]) +
 		float32(float32(coef*rest)*state[2]) + float32(rest*state[3])
 	estimate := (float32(g4*x) + stateSum) / (1 + float32(feedback*g4))
-	input := float32(math.Tanh(float64(x - float32(feedback*estimate))))
+	// Tanh32 is float32(detmath.Tanh(float64(v))) bit for bit, at less cost.
+	input := detmath.Tanh32(x - float32(feedback*estimate))
 	for stage := 0; stage < 4; stage++ {
 		step := float32(coef * (input - state[stage]))
 		out := step + state[stage]

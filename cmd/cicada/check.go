@@ -147,6 +147,12 @@ func checkCommand(args []string, stdout, stderr io.Writer) error {
 		}
 		return err
 	}
+	return runCheck(options, path, stdout, stderr)
+}
+
+// runCheck checks one score, or the project of the working folder when path
+// is empty, as cicada check does after reading its arguments.
+func runCheck(options checkOptions, path string, stdout, stderr io.Writer) error {
 	if path != "" {
 		return checkPathsWith([]string{path}, options, stdout, stderr)
 	}
@@ -247,7 +253,7 @@ func checkPathsWith(paths []string, options checkOptions, stdout, stderr io.Writ
 			continue
 		}
 		// Check loads the sampler packs, which inspectScore leaves to render.
-		packDiagnostics := checkSamplerPacks(path, inspection, options.maxResidentPCM)
+		packDiagnostics, _ := checkSamplerPacks(path, inspection, options.maxResidentPCM)
 		for _, diagnostic := range packDiagnostics {
 			printCheckDiagnostic(stderr, path, inspection.source, diagnostic)
 			if diagnostic.Severity == "error" {

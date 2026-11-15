@@ -1,6 +1,7 @@
 package measure
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"os"
@@ -88,8 +89,96 @@ func TestEngineMeasurements(t *testing.T) {
 		}
 		t.Logf("%-28s %s", e.Name, strings.Join(parts, " "))
 	}
+	if base := os.Getenv("CICADA_ENGINE_MEASUREMENTS_BASELINE"); base != "" {
+		moved, notes, err := compareReports(base, r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, line := range notes {
+			t.Log(line)
+		}
+		for _, line := range moved {
+			t.Error(line)
+		}
+	}
 	for _, f := range failures {
 		t.Error(f)
+	}
+}
+
+// compareReports reads an earlier report from path and returns, as moved,
+// every measured metric except cpu_ns_per_block (which depends on the machine
+// and its load) whose value differs from r; TestEngineMeasurements fails on
+// each. Metrics the earlier report lacks, and the count of identical ones, are
+// returned as notes. Values are compared as the report holds them (rounded to
+// 0.001 in their unit), so a change below that does not show.
+func compareReports(path string, r *report) (moved, notes []string, err error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	var base report
+	if err := json.Unmarshal(data, &base); err != nil {
+		return nil, nil, fmt.Errorf("%s: %w", path, err)
+	}
+	old := map[string]*entry{}
+	for _, e := range base.Entries {
+		old[e.Name] = e
+	}
+	same, compared := 0, 0
+	for _, e := range r.Entries {
+		for _, name := range metricOrder {
+			m := e.Metrics[name]
+			if name == metricCPU || m == nil || m.Status != statusMeasured {
+				continue
+			}
+			compared++
+			var was *metric
+			if b := old[e.Name]; b != nil {
+				was = b.Metrics[name]
+			}
+			switch {
+			case was == nil || was.Status != statusMeasured || was.Value == nil:
+				notes = append(notes, fmt.Sprintf("baseline: %s %s is new (%s)", e.Name, name, formatValue(*m.Value)))
+			case *was.Value == *m.Value:
+				same++
+			default:
+				moved = append(moved, fmt.Sprintf("baseline: %s %s moved %s -> %s (%+.3g)", e.Name, name, formatValue(*was.Value), formatValue(*m.Value), *m.Value-*was.Value))
+			}
+		}
+	}
+	notes = append(notes, fmt.Sprintf("baseline: %d of %d measured metrics identical to %s (cpu_ns_per_block not compared)", same, compared, path))
+	return moved, notes, nil
+}
+
+// TestCompareReportsFailsOnAMovedMetric proves the comparison can fail: a
+// metric that moved is returned as moved, a new one only as a note, and the
+// CPU time is never compared.
+func TestCompareReportsFailsOnAMovedMetric(t *testing.T) {
+	report := func(thdn, cpu float64, extra bool) *report {
+		r := newReport()
+		e := newEntry("fx/example", "fx", "comparison test")
+		e.measured(metricTHDN, "dB", thdn, true)
+		e.measured(metricCPU, "ns/block", cpu, false)
+		r.Entries = append(r.Entries, e)
+		if extra {
+			n := newEntry("fx/new", "fx", "comparison test")
+			n.measured(metricNoise, "dBFS", -200, true)
+			r.Entries = append(r.Entries, n)
+		}
+		return r
+	}
+	path := filepath.Join(t.TempDir(), "base.json")
+	if err := writeJSON(path, report(-60, 1000, false)); err != nil {
+		t.Fatal(err)
+	}
+	moved, notes, err := compareReports(path, report(-60, 2000, true))
+	if err != nil || len(moved) != 0 || len(notes) != 2 {
+		t.Fatalf("same THD+N, new entry, other CPU: moved %q, notes %q, error %v; want no moved, 2 notes", moved, notes, err)
+	}
+	moved, _, err = compareReports(path, report(-59.5, 1000, false))
+	if err != nil || len(moved) != 1 || !strings.Contains(moved[0], "fx/example thdn_db moved -60 -> -59.5") {
+		t.Fatalf("THD+N moved: got %q, error %v; want one moved line", moved, err)
 	}
 }
 

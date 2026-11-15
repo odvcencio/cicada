@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -16,6 +15,7 @@ import (
 	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/internal/filetarget"
 	"m31labs.dev/cicada/internal/paramdefs"
+	"m31labs.dev/cicada/kernel/dsp/detmath"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -235,7 +235,7 @@ func buildStudioMixerView(path string, source []byte) (studioMixerView, error) {
 			address, descriptorID := "", ""
 			if fx != nil {
 				kind = fx.Kind
-				if kind == "delay" {
+				if kind == "delay" || kind == "tape" {
 					descriptorID = "mix.send_a"
 				} else if kind == "reverb" {
 					descriptorID = "mix.send_b"
@@ -246,9 +246,17 @@ func buildStudioMixerView(path string, source []byte) (studioMixerView, error) {
 				continue
 			}
 			address = mixerAddressFor(addresses, track.Name, descriptorID, "track")
+			// mix.send_b is the send to the first reverb (return slot B). A send
+			// to a later reverb (slots C to H) has no live address yet, so its
+			// knob previews nothing and shows the level the source writes; a
+			// commit still edits the source.
+			laterReverb := kind == "reverb" && param.Target != project.FirstReverbName(semantic)
+			if laterReverb {
+				address = ""
+			}
 			controlPath := track.Name + ".send." + param.Target
 			liveValue := addressValues[address]
-			if liveValue == nil {
+			if liveValue == nil || laterReverb {
 				liveValue = mixerSendAddressValue(param.Value)
 			}
 			control := mixerSendView{Path: controlPath, Address: address, To: param.Target, Kind: kind, Level: param.Value, Value: liveValue, Pre: param.Pre, Descriptor: descriptor, SourceRange: ranges[controlPath]}
@@ -320,12 +328,15 @@ func buildStudioMixerView(path string, source []byte) (studioMixerView, error) {
 	view.Master.InsertAddr = view.Master.Fields["insert"].Address
 	view.Master.InsertOK, view.Master.InsertWhy = mixerInsertCapability("master", "master", view.Master.Inserts, score)
 
+	reverbMetered := false
 	for _, effect := range score.Effects {
 		meter := ""
-		if effect.Kind == "delay" {
+		if effect.Kind == "delay" || effect.Kind == "tape" {
 			meter = "a"
-		} else if effect.Kind == "reverb" {
-			meter = "b"
+		} else if effect.Kind == "reverb" && !reverbMetered {
+			// The engine meters return slot B, the first reverb. Later reverbs
+			// (slots C to H) have no meter yet.
+			meter, reverbMetered = "b", true
 		}
 		strip := mixerReturnView{ID: effect.Name, Name: effect.Name, Kind: effect.Kind, Meter: meter, SourceRange: ranges[effect.Name], Fields: []mixerField{}}
 		for _, address := range addresses {
@@ -353,7 +364,7 @@ func buildStudioMixerView(path string, source []byte) (studioMixerView, error) {
 			})
 		}
 		view.Effects = append(view.Effects, strip)
-		if effect.Kind == "delay" || effect.Kind == "reverb" {
+		if effect.Kind == "delay" || effect.Kind == "tape" || effect.Kind == "reverb" {
 			view.Returns = append(view.Returns, strip)
 		}
 	}
@@ -418,7 +429,7 @@ func mixerSendAddressValue(sourceValue string) float64 {
 	if strings.HasSuffix(strings.ToLower(sourceValue), "db") {
 		number, err := strconv.ParseFloat(sourceValue[:len(sourceValue)-2], 64)
 		if err == nil {
-			return math.Pow(10, number/20)
+			return detmath.Pow(10, number/20)
 		}
 	}
 	number, _ := strconv.ParseFloat(sourceValue, 64)
@@ -569,15 +580,18 @@ func mixerInsertCapability(kind, owner string, names []string, score *notation.S
 }
 
 func mixerSendCapability(track notation.Track, target, kind string, score *notation.Score) (bool, string) {
-	if kind != "delay" && kind != "reverb" {
-		return false, "CICADA-UNSUPPORTED: send target must be a delay or reverb return"
+	if kind != "delay" && kind != "tape" && kind != "reverb" {
+		return false, "CICADA-UNSUPPORTED: send target must be a delay, tape or reverb return"
 	}
 	for _, param := range track.Params {
 		if param.Name != "send" || param.Target == target {
 			continue
 		}
+		// One send per return slot. A score has one delay or tape return (slot A), and
+		// each reverb is a return of its own (slot B, then C to H), so sends to
+		// two different reverbs do not collide.
 		other := findNotationEffect(score, param.Target)
-		if other != nil && other.Kind == kind {
+		if other != nil && kind != "reverb" && (other.Kind == "delay" || other.Kind == "tape") {
 			return false, "CICADA-UNSUPPORTED: one send per effect kind is implemented"
 		}
 	}
