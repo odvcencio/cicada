@@ -78,8 +78,9 @@ type workspaceJob struct {
 	ctx     context.Context
 	// hold is the submit a shell region read releases; then runs after the
 	// read with its outcome (shell_edits_js.go).
-	hold *shellHold
-	then func(int)
+	hold      *shellHold
+	then      func(int)
+	transport *workspaceTransport
 	// submitter is the button or link the user pressed; label names a job
 	// with no such control (a keyboard Undo). See workspaceJobLabel.
 	submitter js.Value
@@ -92,6 +93,7 @@ type workspaceTransport struct {
 	target string
 	values map[string]string
 	label  string
+	done   chan struct{}
 }
 
 type workspaceUI struct {
@@ -107,6 +109,8 @@ type workspaceUI struct {
 	revision         *signal.Signal[string]
 	sourceRevision   string
 	status           *signal.Signal[string]
+	transportError   *signal.Signal[string]
+	queuedTransport  int
 	statusGeneration uint64
 	tool             *signal.Signal[string]
 	drafts           map[string]workspaceDraft
@@ -133,11 +137,10 @@ type workspaceUI struct {
 	reloading bool // a page reload to show changed engines has started
 	// revealWanted: a region opened while a read ran; read it after.
 	revealWanted bool
-	// One transport command is in flight at a time; transportNext is the
-	// newest click made meanwhile (sendTransport).
+	// One transport command is in flight at a time; later clicks wait in order.
 	transportMu   sync.Mutex
 	transportBusy bool
-	transportNext *workspaceTransport
+	transportNext []workspaceTransport
 }
 
 type workspaceEditorBaseline struct {
@@ -199,7 +202,7 @@ func mountWorkspace(host enginewasm.Context) (enginewasm.Handle, error) {
 		return nil, fmt.Errorf("GoSX DOM patch receiver is unavailable")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	u := &workspaceUI{root: root, patch: patch, props: props, ctx: ctx, cancel: cancel, jobs: make(chan workspaceJob, 128), revision: signal.New(props.Revision), sourceRevision: props.SourceRevision, status: signal.New(""), tool: signal.New("select"), drafts: map[string]workspaceDraft{}, editors: map[string]workspaceEditorBaseline{}}
+	u := &workspaceUI{root: root, patch: patch, props: props, ctx: ctx, cancel: cancel, jobs: make(chan workspaceJob, 128), revision: signal.New(props.Revision), sourceRevision: props.SourceRevision, status: signal.New(""), transportError: signal.New(""), tool: signal.New("select"), drafts: map[string]workspaceDraft{}, editors: map[string]workspaceEditorBaseline{}}
 	u.projectRevision.Store(props.ProjectRevision)
 	u.seedEditorBaseline()
 	releaseExportBusy := watchExportBusy(root)
@@ -208,7 +211,7 @@ func mountWorkspace(host enginewasm.Context) (enginewasm.Handle, error) {
 			return
 		}
 		if node := root.Call("querySelector", "[data-workspace-status]"); workspacePresent(node) {
-			node.Set("textContent", u.status.Get())
+			node.Set("textContent", u.statusText())
 		}
 		if node := root.Call("querySelector", "[data-workspace-retry]"); workspacePresent(node) {
 			node.Set("hidden", !u.blocked.Load())
@@ -482,7 +485,8 @@ func (u *workspaceUI) submit(event js.Value) {
 			return
 		}
 		if transport {
-			// GoSX's managed form sends it at once; no stale-region hold.
+			// GoSX's managed form sends it at once, without a stale-region hold.
+			// A second press while its request is pending is not sent.
 			return
 		}
 		if u.shellHolding(form) {
@@ -584,7 +588,12 @@ func (u *workspaceUI) submit(event js.Value) {
 		if label == "" {
 			label = "The transport command"
 		}
-		u.sendTransport(workspaceTransport{target: parsed.RequestURI(), values: values, label: label})
+		command := workspaceTransport{target: parsed.RequestURI(), values: values, label: label}
+		if u.queuedTransport > 0 {
+			u.queue(workspaceJob{method: methodPost, target: command.target, form: js.Undefined(), label: label, transport: &command})
+		} else {
+			u.sendTransport(command)
+		}
 		return
 	}
 	job := workspaceJob{method: methodPost, target: parsed.RequestURI(), values: values, form: form, confirmed: u.revision.Get(), controls: workspaceControls(form), submitter: submitter}
@@ -1015,6 +1024,9 @@ func (u *workspaceUI) queue(job workspaceJob) {
 	workspacePending(job, 1)
 	select {
 	case u.jobs <- job:
+		if job.target == "/__actions/transport" {
+			u.queuedTransport++
+		}
 	default:
 		workspacePending(job, -1)
 		u.blocked.Store(true)
@@ -1039,6 +1051,9 @@ func (u *workspaceUI) drain(drop func(workspaceJob) bool) (dropped string) {
 		if !drop(job) {
 			keep = append(keep, job)
 			continue
+		}
+		if job.target == "/__actions/transport" {
+			u.queuedTransport--
 		}
 		u.settle(job, true)
 		if job.ctx != nil {
@@ -1069,7 +1084,15 @@ func (u *workspaceUI) run() {
 			return
 		case job := <-u.jobs:
 			u.busy.Store(true)
-			open := u.runJob(job)
+			open := true
+			if job.transport != nil {
+				<-u.sendTransport(*job.transport)
+			} else {
+				open = u.runJob(job)
+			}
+			if job.target == "/__actions/transport" {
+				u.queuedTransport--
+			}
 			u.busy.Store(false)
 			if !open {
 				return
@@ -1371,45 +1394,71 @@ func workspaceTransportFree(form, submitter js.Value) bool {
 	return strings.Contains(" play pause stop fullSong home trackStop ", " "+action+" ")
 }
 
-// sendTransport sends a transport command at once, beside the queue. One is
-// in flight at a time, in click order: a click made while one is in flight
-// waits for its reply and replaces any earlier click still waiting, so the
-// newest click wins (Play then Stop ends stopped).
-func (u *workspaceUI) sendTransport(command workspaceTransport) {
+// statusText keeps transport refusals visible while edit status changes.
+func (u *workspaceUI) statusText() string {
+	status, transportError := u.status.Get(), u.transportError.Get()
+	if transportError == "" {
+		return status
+	}
+	if status == "" {
+		return transportError
+	}
+	return status + " " + transportError
+}
+
+// sendTransport serializes commands in click order, beside the edit queue.
+func (u *workspaceUI) sendTransport(command workspaceTransport) <-chan struct{} {
+	done := make(chan struct{})
+	command.done = done
 	u.transportMu.Lock()
 	if u.transportBusy {
-		u.transportNext = &command
+		u.transportNext = append(u.transportNext, command)
 		u.transportMu.Unlock()
-		return
+		return done
 	}
 	u.transportBusy = true
 	u.transportMu.Unlock()
 	go func() {
-		for next := &command; next != nil; {
-			u.runTransport(*next)
+		next := command
+		for {
+			u.runTransport(next)
+			close(next.done)
 			u.transportMu.Lock()
-			next, u.transportNext = u.transportNext, nil
-			u.transportBusy = next != nil
+			if len(u.transportNext) == 0 {
+				u.transportBusy = false
+				u.transportMu.Unlock()
+				return
+			}
+			next = u.transportNext[0]
+			u.transportNext = u.transportNext[1:]
 			u.transportMu.Unlock()
 		}
 	}()
+	return done
 }
 
-// runTransport sends one transport command. It changes no score; its view
-// (the panel shows what is playing) is applied only while nothing is queued
-// and neither the score nor its sources have moved, and otherwise comes with
-// the next refresh. A successful reply usually has no message: it leaves the
-// status line as it is, so a notice the user still needs (what was not sent)
-// stays.
+// runTransport sends one transport command. It changes no score. Its view
+// (what is playing) is applied only while nothing is queued, neither the
+// score nor its sources have moved, and the panel view still shows the
+// location the command was sent from; otherwise a read of the current state
+// follows. A refusal is kept apart from the edit status until the next
+// transport command succeeds. A successful reply usually has no message: it
+// leaves the status line as it is, so a notice the user still needs (what
+// was not sent) stays.
 func (u *workspaceUI) runTransport(command workspaceTransport) {
+	location := workspaceLocation()
+	command.values["__cicada_location"] = location
 	job := workspaceJob{method: methodPost, target: command.target, values: command.values, form: js.Undefined()}
 	projection, message, err := u.request(job)
 	if err != nil {
-		u.status.Set(command.label + " did not run: " + err.Error())
+		u.transportError.Set(command.label + " did not run: " + err.Error())
 		return
 	}
-	if !u.busy.Load() && len(u.jobs) == 0 && !u.closed.Load() && projection.Revision == u.revision.Get() && projection.SourceRevision == u.sourceRevision {
-		u.apply(projection, job)
+	u.transportError.Set("")
+	if location != workspaceLocation() {
+		u.queue(workspaceJob{method: methodGet, current: true, form: js.Undefined()})
+	} else if !u.busy.Load() && len(u.jobs) == 0 && !u.closed.Load() && projection.Revision == u.revision.Get() && projection.SourceRevision == u.sourceRevision {
+		_ = u.apply(projection, job)
 	}
 	if message != "" {
 		u.status.Set(message)

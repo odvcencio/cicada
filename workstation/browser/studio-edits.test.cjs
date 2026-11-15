@@ -1505,6 +1505,48 @@ test('Play then Stop pressed 10 ms apart in the panel view ends stopped, every t
   }
 });
 
+test('a transport reply does not restore the previous panel selection', async () => {
+  const {base, cell} = await studio();
+  const {context} = await sharedBrowser();
+  const panel = await context.newPage();
+  panel.setDefaultTimeout(15_000);
+  let readHeld = false, transportHeld = false, releaseRead, releaseTransport;
+  const readGate = new Promise(resolve => { releaseRead = resolve; });
+  const transportGate = new Promise(resolve => { releaseTransport = resolve; });
+  await panel.route('**/__workspace**', async route => {
+    if (!readHeld && route.request().method() === 'GET') {
+      readHeld = true;
+      await readGate;
+    }
+    await route.continue().catch(() => {});
+  });
+  await panel.route('**/__actions/transport', async route => {
+    const response = await route.fetch();
+    transportHeld = true;
+    await transportGate;
+    await route.fulfill({response}).catch(() => {});
+  });
+  try {
+    await panel.goto(new URL('/?panel=patterns&pattern=continuity&step=1', base).href);
+    await panel.locator('#cicada-workspace[data-workspace-reactive="ready"]').waitFor({timeout: 30_000});
+    await panel.locator(cell(2).replace('#detail-panel-clip ', '')).click();
+    await until(() => readHeld, 'the selection read did not start');
+    await panel.locator('.toolbar form[action="/__actions/transport"] button[value="play"]').click();
+    await until(() => transportHeld, 'Play did not return');
+    releaseRead();
+    await panel.waitForFunction(() => new URL(location.href).searchParams.get('step') === '2');
+    const transportReply = panel.waitForResponse(response => new URL(response.url()).pathname === '/__actions/transport');
+    releaseTransport();
+    await transportReply;
+    await panel.waitForTimeout(250);
+    assert.equal(new URL(panel.url()).searchParams.get('step'), '2', 'Play restored the old selection');
+  } finally {
+    releaseRead();
+    releaseTransport();
+    await panel.close();
+  }
+});
+
 test('closing the shell while a write is in flight leaves no error and the next edit works', async () => {
   const {page, state, posts, cell, hold, settled} = await studio();
   const errors = [];
