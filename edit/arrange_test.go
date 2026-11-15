@@ -166,6 +166,20 @@ func (f *fakeCheck) Hash(source []byte) (string, error) {
 	return "same", nil
 }
 
+func (f *fakeCheck) ForSplit() RenderCheck { return f }
+
+type unscopedCheck struct{}
+
+func (unscopedCheck) Hash([]byte) (string, error) { return "same", nil }
+
+func TestSplitRefusesUnscopedRenderCheck(t *testing.T) {
+	_, err := applyArrange(namedScore(t), `{"kind":"splitclip","entity":"placement:return","attick":11520}`, Options{RenderCheck: unscopedCheck{}})
+	var refusal *RefusalError
+	if !errors.As(err, &refusal) || refusal.Cause != ErrSplitRenderCheck.Error() {
+		t.Fatalf("expected split scope refusal: %v", err)
+	}
+}
+
 func TestSplitClipAtPatternBoundary(t *testing.T) {
 	source := namedScore(t)
 	got, err := applyArrange(source, `{"kind":"splitclip","entity":"placement:return","attick":11520}`, Options{RenderCheck: &fakeCheck{}})
@@ -346,6 +360,8 @@ type snapshotCheck struct {
 	current  string // what PairIdentity reports; identity when empty
 	seen     []string
 }
+
+func (f *snapshotCheck) ForSplit() RenderCheck { return f }
 
 func (f *snapshotCheck) HashWith(source []byte, _ map[string][]byte) (string, error) {
 	return f.Hash(source)

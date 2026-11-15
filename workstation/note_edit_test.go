@@ -145,6 +145,43 @@ func TestClipTabRendersQuantizeForEveryPatternKind(t *testing.T) {
 	}
 }
 
+func TestClipGridPrecedesListeningControls(t *testing.T) {
+	address, client, _ := testAppWorkspace(t, &workspace{Revision: "current", SourceRevision: "all-sources", Valid: true, Project: notesProject()})
+	for _, pattern := range []string{"riff", "slow"} {
+		t.Run(pattern, func(t *testing.T) {
+			page := getPage(t, client, address+"/studio?dock=clip&pattern="+pattern)
+			skip := strings.Index(page, `href="#pattern-controls"`)
+			grid := strings.Index(page, `data-pattern-id="`+pattern+`"`)
+			controls := strings.Index(page, `id="pattern-controls" tabindex="-1"`)
+			quantize := strings.Index(page, `id="notes-quantize-title"`)
+			if skip < 0 || grid <= skip || controls <= grid || quantize <= controls {
+				t.Fatalf("clip should place the grid before the listening and quantize controls, with a skip link: skip=%d grid=%d controls=%d quantize=%d", skip, grid, controls, quantize)
+			}
+			shared := strings.Index(page, `id="pattern-shared-note"`)
+			if shared < 0 || shared >= grid || !strings.Contains(page, `Edits affect every use of this pattern.`) || !strings.Contains(page, `aria-describedby="pattern-shared-note"`) {
+				t.Fatal("the grid must explain its shared pattern and expose that note to assistive technology")
+			}
+		})
+	}
+}
+
+func TestClipFollowsSelectedPlacementWithoutPatternParameter(t *testing.T) {
+	p := notesProject()
+	p.Arrange = &project.Arrangement{Placements: []project.Placement{{ID: "later", Track: "keys", Content: "long", AtTick: 3840, LengthTicks: 3840}, {ID: "second", Track: "keys", Content: "riff", LengthTicks: 3840}}}
+	address, client, _ := testAppWorkspace(t, &workspace{Revision: "current", SourceRevision: "all-sources", Valid: true, Project: p})
+	page := getPage(t, client, address+"/studio?tab=arrange&dock=clip&placement=second")
+	if !strings.Contains(page, `data-pattern-id="riff"`) || strings.Contains(page, `data-pattern-id="played"`) {
+		t.Fatal("Clip must show the selected placement's pattern")
+	}
+	if !strings.Contains(page, `name="context_placement" value="second"`) || !strings.Contains(page, `name="track" value="keys"`) {
+		t.Fatal("Clip edits must retain the placement and track context")
+	}
+	page = getPage(t, client, address+"/studio")
+	if !strings.Contains(page, `data-placement-block="second"`) || !strings.Contains(page, `data-pattern-id="riff"`) || strings.Contains(page, `data-pattern-id="played"`) || !strings.Contains(page, `name="track" value="keys"`) {
+		t.Fatal("Clip must follow the earliest placement and its track when no placement is named")
+	}
+}
+
 func TestNotesActionReportsAnUnchangedPatternAndFailures(t *testing.T) {
 	var sent []map[string]any
 	reply := `{"revision":"current","valid":true,"unchanged":true,"message":"Already on the grid."}`

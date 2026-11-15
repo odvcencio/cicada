@@ -34,10 +34,10 @@ shard_count=4
 # shard_segments SHARD prints the segments the shard runs, in order.
 shard_segments() {
 	case "$1" in
-	1) echo "print_sources placements performance_pitch performance_sources placement_commands code_recovery pattern_machine portable_midi macro_controls preset_save" ;;
-	2) echo "pattern_song precision first_song gestures portable_song sound_context continuity modulation_source collaboration columns midi_pickup shared_capture vocals vocal_levels dock_fit" ;;
-	3) echo "owner_session page_stall scene_launch_keys pattern_grid tempo_editor recording_sources autoscroll arrangement_sources solo_clock mixer_strips navigation sampler_waveform export_sources library_recording midi_binding studio_edits recording_setup recording_levels meter_performance performance amp_automation" ;;
-	4) echo "shutdown_proof live_write grid_sources shell direct_variation placement_variation editor performance_time startup tempo_clock export_stems chorus observation_clock note_editor engine_requests" ;;
+	1) echo "print_sources placements performance_pitch performance_sources placement_commands track_rename split_placement code_recovery pattern_machine portable_midi macro_controls preset_save" ;;
+	2) echo "pattern_song precision first_song silent_scene_create gestures portable_song sound_context continuity modulation_source collaboration columns midi_pickup shared_capture vocals vocal_levels dock_fit" ;;
+	3) echo "owner_session chrome_gpu_raster page_stall scene_launch_keys pattern_grid tempo_editor recording_sources autoscroll arrangement_sources solo_clock mixer_strips navigation sampler_waveform export_sources library_recording midi_binding studio_edits recording_setup recording_levels meter_performance performance amp_automation" ;;
+	4) echo "shutdown_proof live_write grid_sources shell direct_variation placement_variation editor performance_time startup scene_blocks tempo_clock export_stems chorus add_insert observation_clock note_editor engine_requests" ;;
 	*) echo "unknown shard: $1" >&2; return 1 ;;
 	esac
 }
@@ -48,10 +48,12 @@ segment_runs() {
 	case "$1" in
 	shutdown_proof) ;;
 	owner_session) echo owner-session ;;
+	chrome_gpu_raster) echo chrome-gpu-raster ;;
 	page_stall) echo page-stall ;;
 	continuity) echo continuity ;;
 	modulation_source) echo modulation-source ;;
 	chorus) echo chorus ;;
+	add_insert) echo add-insert ;;
 	pattern_machine) echo pattern-machine ;;
 	shell) echo shell ;;
 	mixer_strips) echo mixer-strips ;;
@@ -60,6 +62,7 @@ segment_runs() {
 	engine_requests) echo engine-requests ;;
 	columns) echo columns ;;
 	first_song) echo first-song@compose first-song@reopen ;;
+	silent_scene_create) echo silent-scene-create ;;
 	portable_song) echo portable-song@select portable-song@reopen ;;
 	code_recovery) echo code-recovery@capture code-recovery@recover code-recovery@verify ;;
 	export_sources) echo export-sources ;;
@@ -70,9 +73,12 @@ segment_runs() {
 	gestures) echo placement-gestures ;;
 	precision) echo placement-precision ;;
 	startup) echo startup ;;
+	scene_blocks) echo scene-blocks ;;
 	sampler_waveform) echo sampler-waveform ;;
 	autoscroll) echo placement-autoscroll ;;
 	placement_commands) echo placement-commands ;;
+	track_rename) echo track-rename ;;
+	split_placement) echo split-placement ;;
 	arrangement_sources) echo arrangement-sources@edit arrangement-sources@reopen ;;
 	tempo_editor) echo tempo-editor@primary-edit tempo-editor@primary-reopen tempo-editor@secondary-edit tempo-editor@secondary-reopen ;;
 	solo_clock) echo solo-clock ;;
@@ -354,6 +360,11 @@ seg_owner_session() { # 1 s
 	run_suite owner-session env NODE_OPTIONS="$base_node_options" node --test workstation/browser/owner-session.test.cjs
 }
 
+seg_chrome_gpu_raster() { # about 2 s, no Studio
+	# producer-workflow's Chrome rasterizes on the GPU (chrome-gpu-raster.cjs).
+	run_suite chrome-gpu-raster env NODE_OPTIONS="$base_node_options" node --test workstation/browser/chrome-gpu-raster.test.cjs
+}
+
 seg_page_stall() { # about 41 s (35 s, plus about 6 s for the reenter case), no Studio
 	# A frozen page must make its suite report and exit (see page-stall.cjs).
 	run_suite page-stall env NODE_OPTIONS="$base_node_options" node --test workstation/browser/page-stall.test.cjs
@@ -378,6 +389,15 @@ seg_modulation_source() { # 5 s
 	node workstation/browser/modulation-source.test.cjs --write-fixture "$CICADA_MODULATION_SCORE"
 	start_studio "$CICADA_MODULATION_SCORE" build/studio-modulation-server.log /
 	run_suite modulation-source make test-studio-modulation-source | tee build/studio-modulation-report.txt
+	stop_studio
+}
+
+seg_add_insert() {
+	mkdir -p "$browser_root/add-insert"
+	export CICADA_ADD_INSERT_SCORE="$browser_root/add-insert/main.cicada"
+	node workstation/browser/add-insert.test.cjs --write-fixture "$CICADA_ADD_INSERT_SCORE"
+	start_studio "$CICADA_ADD_INSERT_SCORE" build/studio-add-insert-server.log /
+	run_suite add-insert make test-studio-add-insert | tee build/studio-add-insert-report.txt
 	stop_studio
 }
 
@@ -539,6 +559,13 @@ seg_navigation() { # 12 s
 	stop_studio
 }
 
+seg_silent_scene_create() {
+	node workstation/browser/silent-scene-create.test.cjs --write-fixture "$browser_root/silent-scene-create.cicada"
+	start_studio "$browser_root/silent-scene-create.cicada" build/studio-silent-scene-create-server.log
+	run_suite silent-scene-create env CICADA_SILENT_SCENE_SCORE="$browser_root/silent-scene-create.cicada" CICADA_SILENT_SCENE_PROOF_DIR="$PWD/build/studio-silent-scene-create-proof" node --test workstation/browser/silent-scene-create.test.cjs | tee build/studio-silent-scene-create-report.txt
+	stop_studio
+}
+
 seg_gestures() { # 21 s
 	node workstation/browser/placements.test.cjs --write-fixture "$browser_root/gestures.cicada"
 	start_studio "$browser_root/gestures.cicada" build/studio-gestures-server.log
@@ -560,6 +587,14 @@ seg_startup() { # 13 s
 	stop_studio
 }
 
+seg_scene_blocks() {
+	mkdir -p "$browser_root/scene-blocks"
+	node workstation/browser/scene-blocks.test.cjs --write-fixture "$browser_root/scene-blocks/main.cicada"
+	start_studio "$browser_root/scene-blocks/main.cicada" build/studio-scene-blocks-server.log
+	run_suite scene-blocks node --test workstation/browser/scene-blocks.test.cjs | tee build/studio-scene-blocks-report.txt
+	stop_studio
+}
+
 seg_sampler_waveform() { # 6 s
 	node workstation/browser/sampler-waveform.test.cjs --write-fixture "$browser_root/sampler-waveform.cicada"
 	start_studio "$browser_root/sampler-waveform.cicada" build/studio-sampler-waveform-server.log
@@ -577,7 +612,21 @@ seg_autoscroll() { # 27 s
 seg_placement_commands() { # 13 s
 	node workstation/browser/placement-commands.test.cjs --write-fixture "$browser_root/placement-commands.cicada"
 	start_studio "$browser_root/placement-commands.cicada" build/studio-placement-commands-server.log
-	run_suite placement-commands node --test workstation/browser/placement-commands.test.cjs | tee build/studio-placement-commands-report.txt
+	run_suite placement-commands env CICADA_PLACEMENT_OPEN_PROOF_DIR="$PWD/build/studio-clip-open-proof" node --test workstation/browser/placement-commands.test.cjs | tee build/studio-placement-commands-report.txt
+	stop_studio
+}
+
+seg_track_rename() {
+	node workstation/browser/track-rename.test.cjs --write-fixture "$browser_root/track-rename"
+	start_studio "$browser_root/track-rename/main.cicada" build/studio-track-rename-server.log
+	run_suite track-rename env CICADA_TRACK_RENAME_DIR="$browser_root/track-rename" node --test workstation/browser/track-rename.test.cjs | tee build/studio-track-rename-report.txt
+	stop_studio
+}
+
+seg_split_placement() {
+	node workstation/browser/split-placement.test.cjs --write-fixture "$browser_root/split-placement"
+	start_studio "$browser_root/split-placement/main.cicada" build/studio-split-placement-server.log
+	run_suite split-placement env CICADA_SPLIT_DIR="$browser_root/split-placement" node --test workstation/browser/split-placement.test.cjs | tee build/studio-split-placement-report.txt
 	stop_studio
 }
 

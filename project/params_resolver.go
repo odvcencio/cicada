@@ -90,6 +90,12 @@ func ResolveParameterPath(p *Project, path string) (ResolvedParam, error) {
 			}
 			effectOK = true
 			effectKind = semanticEffectKind(effect)
+			// A reverb's controls address the reverb return by kind, which is
+			// slot B, the first reverb. A later reverb (slots C to H) would move
+			// slot B instead of itself, so its controls stay fixed for now.
+			if effectKind == "reverb" && !firstReverb(p, effect.ID) {
+				return fail("CICADA-UNSUPPORTED", "the controls of reverb "+effect.ID+" cannot change while it plays: scenes, automation, routes and macros reach only the first reverb, "+firstReverbName(p))
+			}
 			break
 		}
 	}
@@ -130,6 +136,16 @@ func ResolveParameterPath(p *Project, path string) (ResolvedParam, error) {
 			}
 		}
 		if !found {
+			// send.<name> for a reverb after the first: say what is addressable
+			// rather than point at send.reverb, which is the first reverb's send.
+			if name, ok := strings.CutPrefix(setting, "send."); ok {
+				first := firstReverbName(p)
+				for _, effect := range p.Effects {
+					if effect.ID == name && semanticEffectKind(effect) == "reverb" && first != "" && name != first && !MasterHasInsert(p, name) {
+						return fail("CICADA-UNSUPPORTED", paramdefs.LaterReverbSendMessage(path, name, first))
+					}
+				}
+			}
 			hint := paramdefs.SendPathHint(setting, func(name string) (string, bool) {
 				for _, effect := range p.Effects {
 					if effect.ID == name {
@@ -311,4 +327,24 @@ func validateParameterValue(descriptor paramdefs.Descriptor, value Value) error 
 		return fmt.Errorf("toggle value must be on or off")
 	}
 	return nil
+}
+
+// firstReverb reports whether name is the first reverb return the project
+// declares, the one in return slot B.
+func firstReverb(p *Project, name string) bool {
+	return firstReverbName(p) == name
+}
+
+// FirstReverbName names the reverb in return slot B: the first reverb the
+// project declares outside the master chain, as the engine compiler takes it.
+// Every later reverb takes a slot from C to H. It is "" without a reverb.
+func FirstReverbName(p *Project) string { return firstReverbName(p) }
+
+func firstReverbName(p *Project) string {
+	for _, effect := range p.Effects {
+		if semanticEffectKind(effect) == "reverb" && !MasterHasInsert(p, effect.ID) {
+			return effect.ID
+		}
+	}
+	return ""
 }

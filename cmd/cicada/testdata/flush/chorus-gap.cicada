@@ -1,0 +1,39 @@
+cicada 2
+title "Flush check: a chorus, silence, then notes (render at 96 kHz, where its input lowpass stalls)"
+tempo 240
+key a minor
+seed 1
+
+fx wide chorus {
+  voices = 3
+  rate = 0.6Hz
+  depth = 3ms
+  spread = 1
+  mix = 0.5
+}
+
+track lead acid {
+  insert = wide
+}
+
+pattern line {
+  1 . 3 . | 5 . 3 .
+}
+
+pattern rest {
+  . . . . | . . . .
+}
+
+scene play {
+  lead = line
+}
+
+scene hush {
+  lead = rest
+}
+
+song {
+  play*2
+  hush*6
+  play*2
+}

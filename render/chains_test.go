@@ -73,7 +73,7 @@ func TestOfflineChainSwitchesAllocationFree(t *testing.T) {
 		tracks[0].chain = append(tracks[0].chain, ref.Text)
 	}
 	if n := testing.AllocsPerRun(1000, func() {
-		if err := advanceRenderChains(tracks, tracks[0].chainDue); err != nil {
+		if _, err := advanceRenderChains(tracks, tracks[0].chainDue); err != nil {
 			panic(err)
 		}
 	}); n != 0 {

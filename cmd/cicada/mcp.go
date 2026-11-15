@@ -64,14 +64,21 @@ func mcpCommand(args []string, stdin io.Reader, stdout, stderr *os.File) int {
 		return 2
 	}
 	defer cleanup()
-	// A host may stop the server with a signal instead of closing its input;
-	// the stand-in folder goes either way.
+	// A host may stop the server with a signal instead of closing its input,
+	// or hang up its terminal; the stand-in folder goes either way. SIGPIPE
+	// is caught too, so that a reply to a client that has closed the server's
+	// output fails with EPIPE instead of ending the process: Serve returns
+	// the error and the deferred cleanup runs.
 	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGPIPE)
 	go func() {
-		<-signals
-		cleanup()
-		os.Exit(1)
+		for received := range signals {
+			if received == syscall.SIGPIPE {
+				continue
+			}
+			cleanup()
+			os.Exit(1)
+		}
 	}()
 	os.Stdout = stderr
 	server := &mcpwire.Server{Name: "cicada", Version: cicadaVersion(), Instructions: mcpInstructions, Tools: mcpTools(), Call: mcpCall, Resources: mcpResources(), Read: mcpRead, Log: stderr}
@@ -171,16 +178,6 @@ func readOnly() *mcpwire.Annotations {
 	return &mcpwire.Annotations{ReadOnlyHint: true, IdempotentHint: true}
 }
 
-// outputSchema states the formats a tool returns, by their schema strings.
-func outputSchema(schemas ...string) json.RawMessage {
-	data, _ := json.Marshal(map[string]any{
-		"type":       "object",
-		"properties": map[string]any{"schema": map[string]any{"type": "string", "enum": schemas}},
-		"required":   []string{"schema"},
-	})
-	return data
-}
-
 var mcpScoreProperty = map[string]any{"type": "string", "description": "a score, relative to the root, ending in .cicada"}
 
 func inputSchema(properties map[string]any) json.RawMessage {
@@ -192,22 +189,22 @@ func inputSchema(properties map[string]any) json.RawMessage {
 func mcpToolTable() []mcpTool {
 	return []mcpTool{
 		{mcpwire.Tool{Name: "song", Title: "Read a score", Description: "Without score: every score of the project with its revision. With score: its revision and, as include asks, its source (default), the names it defines (symbols) and its compiled meaning (structure). The document is cicada.song.v1, as cicada song --json prints it." + mcpCapNote,
-			InputSchema: inputSchema(map[string]any{"score": mcpScoreProperty, "include": map[string]any{"type": "array", "items": map[string]any{"enum": songIncludes}}}), OutputSchema: outputSchema(songSchema), Annotations: readOnly()}, mcpSong, songSchema,
+			InputSchema: inputSchema(map[string]any{"score": mcpScoreProperty, "include": map[string]any{"type": "array", "items": map[string]any{"enum": songIncludes}}}), OutputSchema: mcpSongSchema(), Annotations: readOnly()}, mcpSong, songSchema,
 			"ask for one score, and include only what you need (symbols is the smallest)"},
 		{mcpwire.Tool{Name: "check", Title: "Check a score", Description: "Validate one score, or the whole project without score: cicada.check.v1, with each diagnostic's code, position, hint, any fix as intents, and each score's revision. isError is true when a score has errors." + mcpCapNote,
-			InputSchema: inputSchema(map[string]any{"score": mcpScoreProperty, "profile": map[string]any{"enum": []string{profileDesktop, profileBrowser}}}), OutputSchema: outputSchema(checkSchema), Annotations: readOnly()}, mcpCheck, checkSchema,
+			InputSchema: inputSchema(map[string]any{"score": mcpScoreProperty, "profile": map[string]any{"enum": []string{profileDesktop, profileBrowser}}}), OutputSchema: mcpCheckSchema(), Annotations: readOnly()}, mcpCheck, checkSchema,
 			"check one score at a time"},
 		{mcpwire.Tool{Name: "intents", Title: "Describe edit intents", Description: "Without kinds: every edit intent kind with its one-line meaning (cicada.intents_index.v1). With kinds (up to 8): their fields, units, allowed values and examples that apply accepts (cicada.intents.v1)." + mcpCapNote,
-			InputSchema: inputSchema(map[string]any{"kinds": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "maxItems": mcpMaxKinds}}), OutputSchema: outputSchema(intentsIndexSchema, intentsSchema), Annotations: readOnly()}, mcpIntents, intentsSchema,
+			InputSchema: inputSchema(map[string]any{"kinds": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "maxItems": mcpMaxKinds}}), OutputSchema: mcpIntentsSchema(), Annotations: readOnly()}, mcpIntents, intentsSchema,
 			"ask for fewer kinds"},
 		{mcpwire.Tool{Name: "explain", Title: "Explain a code or construct", Description: "Give one of: diagnostic, a code such as CICADA-PARAM (cicada.diagnostics.v1: its meaning and fix); or construct, a language construct or construct.field such as pattern or track.mixer (cicada.explain.v1)." + mcpCapNote,
-			InputSchema: inputSchema(map[string]any{"diagnostic": map[string]any{"type": "string"}, "construct": map[string]any{"type": "string"}}), OutputSchema: outputSchema(diagnosticsSchema, explainSchema), Annotations: readOnly()}, mcpExplain, explainSchema,
+			InputSchema: inputSchema(map[string]any{"diagnostic": map[string]any{"type": "string"}, "construct": map[string]any{"type": "string"}}), OutputSchema: mcpExplainSchema(), Annotations: readOnly()}, mcpExplain, explainSchema,
 			"ask for one field, such as track.mixer"},
 		{mcpwire.Tool{Name: "library", Title: "List or show libraries", Description: "Without path: the libraries the project can import, each with where it resolves (cicada.library.v1). With path, such as std/drums: its manifest, declarations, audio files and content hash." + mcpCapNote,
-			InputSchema: inputSchema(map[string]any{"path": map[string]any{"type": "string"}}), OutputSchema: outputSchema(librarySchema), Annotations: readOnly()}, mcpLibrary, librarySchema,
+			InputSchema: inputSchema(map[string]any{"path": map[string]any{"type": "string"}}), OutputSchema: mcpLibrarySchema(), Annotations: readOnly()}, mcpLibrary, librarySchema,
 			"show one library at a time"},
-		{mcpwire.Tool{Name: "params", Title: "List the sound parameters", Description: "The live-parameter registry: every control of a track, voice, effect or the mixer, with its path, unit, range, default and whether it can change while playing. The array cicada params prints, as params in cicada.param_registry.v1; about 73 KB." + mcpCapNote,
-			InputSchema: inputSchema(map[string]any{}), OutputSchema: outputSchema(paramRegistrySchema), Annotations: readOnly()}, mcpParams, paramRegistrySchema,
+		{mcpwire.Tool{Name: "params", Title: "List the sound parameters", Description: "The live-parameter registry: every control of a track, voice, effect or the mixer, with its path, unit, range, default and whether it can change while playing. The whole registry, the array cicada params prints, as params in cicada.param_registry.v1." + mcpCapNote,
+			InputSchema: inputSchema(map[string]any{}), OutputSchema: mcpParamsSchema(), Annotations: readOnly()}, mcpParams, paramRegistrySchema,
 			"run cicada params instead"},
 	}
 }
