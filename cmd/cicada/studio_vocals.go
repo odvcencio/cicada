@@ -174,6 +174,9 @@ func recordingTimeline(p *project.Project, settings *studioRecordingSettings) (*
 	if p.Edition != 2 {
 		return nil, fmt.Errorf("vocal recording requires an edition-2 score")
 	}
+	if m := p.Meter; m != nil && (m.Numerator != 4 || m.Denominator != 4) && settings != nil && (settings.Start != "" || settings.End != "") {
+		return nil, fmt.Errorf("punch range is unavailable outside 4/4: Studio uses a 4/4 grid")
+	}
 	start, end := int64(0), studioArrangementEnd(p)
 	var err error
 	if settings != nil && settings.Start != "" {

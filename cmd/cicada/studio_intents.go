@@ -391,6 +391,17 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 		studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
 		return
 	}
+	if edit.recordedTake {
+		score, _, parseErr := opts.ParseProject(current, nil)
+		if parseErr != nil {
+			studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": parseErr.Error()})
+			return
+		}
+		if score != nil && score.Meter != nil && (score.Meter.Beats != 4 || score.Meter.Unit != 4) {
+			studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": "live note recording is unavailable outside 4/4: Studio uses a 4/4 grid", "code": "live_recording_meter"})
+			return
+		}
+	}
 	opts.ParamWriter = writer
 	if prepare != nil {
 		env, err = prepare(current, &opts)

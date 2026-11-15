@@ -70,6 +70,7 @@ var barAllowlist = map[[2]string]barAllowance{
 	// Go: whole notes, the seek unit, frames and the GoSX descriptor.
 	{"kernel/seq/meter.go", "const TicksPerWhole"}:                              {1, "defines the whole note, PPQ * 4"},
 	{"kernel/seq/meter.go", "const MaxBarTicks"}:                                {1, "the longest bar, 32/4: eight whole notes"},
+	{"kernel/seq/meter.go", "ValidMeter"}:                                       {1, "a bar is the meter's beats of a whole note divided by its unit"},
 	{"kernel/seq/meter.go", "NewMeterMap"}:                                      {2, "a beat is a whole note divided by the meter's unit; one 4/4 change is the zero map"},
 	{"kernel/seq/meter.go", "MeterMap.BarAt"}:                                   {2, zeroMap},
 	{"kernel/seq/meter.go", "MeterMap.BarStart"}:                                {1, zeroMap},

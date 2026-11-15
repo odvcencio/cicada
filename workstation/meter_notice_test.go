@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"regexp"
 	"strings"
@@ -56,5 +57,34 @@ func TestGesturesThatMoveMusicAreOffInAnotherMeter(t *testing.T) {
 		if !c.off && (!strings.Contains(curve, "CicadaAutomationCurve") || strings.Contains(timeline, "(off until")) {
 			t.Fatal("a 4/4 song lost a gesture")
 		}
+	}
+}
+
+func TestMeterDisablesVocalLanesAndLiveRecording(t *testing.T) {
+	punch := gosx.RenderHTML(vocalPunchInput("recordStart", "@1.1.1", true))
+	if !strings.Contains(punch, "disabled") || !strings.Contains(punch, `data-meter-unavailable="true"`) {
+		t.Fatalf("punch input: %s", punch)
+	}
+	p := &project.Project{Meter: &project.Meter{Numerator: 3, Denominator: 4}}
+	ctx := &server.Context{Request: httptest.NewRequest("GET", "http://localhost/studio", nil)}
+	v := workspace{Project: p, Revision: "r"}
+	button := func(_, label string, disabled bool) gosx.Node {
+		return gosx.El("button", gosx.Attrs(gosx.Attr("disabled", disabled)), gosx.Text(label))
+	}
+	lanes := gosx.RenderHTML((&studioApp{}).vocalLanes(ctx, v, "csrf", "vox", nil, nil, vocalLanesProps{End: 2880}, false, button))
+	if !strings.Contains(lanes, "<fieldset disabled") || !strings.Contains(lanes, "Vocal region gestures") || strings.Contains(lanes, "CicadaVocalLanes") {
+		t.Fatalf("vocal lanes: %s", lanes)
+	}
+	service := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer service.Close()
+	backend, err := newBackend(service.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	live := gosx.RenderHTML((&studioApp{backend: backend}).live(ctx, v, "csrf"))
+	if !strings.Contains(live, `data-record-unavailable="true"`) || !strings.Contains(live, "live note recording are off") {
+		t.Fatalf("live recording: %s", live)
 	}
 }

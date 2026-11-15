@@ -12,6 +12,7 @@ import (
 
 	"m31labs.dev/cicada/edit/editlog"
 	"m31labs.dev/cicada/host/takejournal"
+	"m31labs.dev/cicada/project"
 )
 
 var vocalAssetLine = regexp.MustCompile(`asset (\S+) "([^"]+)" \{ sha256 = "([0-9a-f]+)"`)
@@ -204,5 +205,13 @@ func TestPublicIntentsRefuseMetadataTheReaderRejects(t *testing.T) {
 				t.Fatal("refused intent left a trace")
 			}
 		})
+	}
+}
+
+func TestPunchRangeRefusesOtherMeter(t *testing.T) {
+	p := &project.Project{Edition: 2, Meter: &project.Meter{Numerator: 3, Denominator: 4}}
+	_, err := recordingTimeline(p, &studioRecordingSettings{Start: "@1.1.1", End: "@2.1.1"})
+	if err == nil || !strings.Contains(err.Error(), "punch range") {
+		t.Fatalf("punch refusal: %v", err)
 	}
 }

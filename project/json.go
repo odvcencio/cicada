@@ -602,6 +602,9 @@ func DecodeJSON(data []byte) (*Project, error) {
 	if err := ValidateProject(&p); err != nil {
 		return nil, jsonError(data, projectDiagnosticCode(err), "", 0, err)
 	}
+	if m := p.Meter; m != nil && m.Numerator == 4 && m.Denominator == 4 && len(m.Groups) == 0 {
+		p.Meter = nil
+	}
 	if _, err := canonicalProjectBytes(&p); err != nil {
 		code := "CICADA-PARAM"
 		if errors.Is(err, errCanonicalJSONLimit) {

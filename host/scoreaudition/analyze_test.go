@@ -243,3 +243,30 @@ func textOf(a *Analysis) string {
 	a.Report.WriteText(&b)
 	return b.String()
 }
+
+func TestMeteredAuditionBarAndDefaultJSON(t *testing.T) {
+	source := `cicada 2
+meter 3/4
+tempo 120
+track bass acid {}
+pattern riff { . . . . . . . . . . . . c3 . . . . . . . . . . . }
+scene a { bass = riff }
+song { a*2 }
+`
+	a := analyze(t, source)
+	tr := track(t, a, "bass")
+	if len(tr.Rhythm) != 12 || tr.Rhythm[0] == 0 {
+		t.Fatalf("3/4 rhythm should place the bar 2 onset at slot 1: %v", tr.Rhythm)
+	}
+	if len(a.Report.Bars) < 2 || a.Report.Bars[1].Bar != 2 || len(a.Report.Bars[1].WrittenNotes) == 0 {
+		t.Fatalf("bar 2: %+v", a.Report.Bars)
+	}
+	plain := analyze(t, strings.Replace(source, "meter 3/4\n", "", 1))
+	data, err := json.Marshal(plain.Report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(data, []byte(`"ticks_per_bar"`)) || bytes.Contains(data, []byte(`"meter"`)) {
+		t.Fatalf("default meter fields: %s", data)
+	}
+}

@@ -56,6 +56,7 @@ func (meterCompiler) Compile(source []byte, _ map[string][]byte) (*edits.Plan, e
 type sameMusic struct{}
 
 func (sameMusic) Hash([]byte) (string, error) { return "same", nil }
+func (sameMusic) ForSplit() edits.RenderCheck { return sameMusic{} }
 
 func applyMeterIntent(t *testing.T, source, intent string) (*edits.Result, error) {
 	t.Helper()

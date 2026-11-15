@@ -47,11 +47,11 @@ func ParseMeter(fraction, groups string) (Meter, string, string) {
 	numerator, denominator, ok := strings.Cut(fraction, "/")
 	beats, err1 := strconv.ParseInt(numerator, 10, 64)
 	unit, err2 := strconv.ParseInt(denominator, 10, 64)
-	if !ok || err1 != nil || err2 != nil || beats < 1 || beats > 32 || unit != 2 && unit != 4 && unit != 8 && unit != 16 {
+	if !ok || err1 != nil || err2 != nil || !seq.ValidMeterFraction(beats, unit) {
 		return m, "CICADA-METER", "meter must be N/D with N from 1 to 32 and D of 2, 4, 8 or 16"
 	}
 	m.Beats, m.Unit = beats, unit
-	if ticks := m.BarTicks(); ticks > seq.MaxBarTicks {
+	if ticks := m.BarTicks(); !seq.ValidMeter(beats, unit) {
 		return m, "CICADA-LIMIT", fmt.Sprintf("a bar of %s is %d ticks; the limit is %d", fraction, ticks, seq.MaxBarTicks)
 	}
 	if groups == "" {

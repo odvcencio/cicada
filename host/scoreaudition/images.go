@@ -100,7 +100,7 @@ func (a *Analysis) Images() (map[string][]byte, error) {
 			}
 		}
 	}
-	for x := 0; x < cols; x += 16 {
+	for x := 0; x < cols; x += a.framesPerBar {
 		for y := 0; y < 12*ch; y++ {
 			chroma.SetNRGBA(x*cw, y, color.NRGBA{255, 255, 255, 255})
 		}
@@ -112,9 +112,9 @@ func (a *Analysis) Images() (map[string][]byte, error) {
 	// Rhythm: one row per sounding track, one cell per sixteenth.
 	const cell = 24
 	rows := max(1, len(a.rhythmRows))
-	rhythm := image.NewNRGBA(image.Rect(0, 0, 16*cell, rows*cell))
+	rhythm := image.NewNRGBA(image.Rect(0, 0, a.framesPerBar*cell, rows*cell))
 	for r := 0; r < rows; r++ {
-		for s := 0; s < 16; s++ {
+		for s := 0; s < a.framesPerBar; s++ {
 			col := ramp(0)
 			if r < len(a.rhythmRows) {
 				col = ramp(a.rhythmRows[r][s])

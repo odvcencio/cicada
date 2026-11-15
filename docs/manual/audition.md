@@ -185,6 +185,8 @@ decimals. Levels below the floor read -120.
 | `title` | string | Score title. |
 | `sample_rate` | number | Render rate in Hz (48000). |
 | `score.tempo_bpm` | number | Score tempo. |
+| `score.meter` | string | Declared song meter, omitted when the song has no effective meter declaration. |
+| `score.ticks_per_bar` | number | Ticks in a bar of the declared meter, omitted along with `score.meter`. |
 | `score.written_key` | string | Key from the score, for example `A minor`. |
 | `score.song_bars` | number | Bars in the whole song. |
 | `score.from_bar`, `score.bars` | number | First analyzed bar (one-based) and the count. |

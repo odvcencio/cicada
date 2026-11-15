@@ -29,10 +29,10 @@ func (p *Project) useFormat2() {
 
 // validMeter checks a meter the way the source parser does.
 func validMeter(m *Meter) error {
-	if m.Numerator < 1 || m.Numerator > 32 || m.Denominator != 2 && m.Denominator != 4 && m.Denominator != 8 && m.Denominator != 16 {
+	if !seq.ValidMeterFraction(int64(m.Numerator), int64(m.Denominator)) {
 		return fmt.Errorf("CICADA-METER: meter must be N/D with N from 1 to 32 and D of 2, 4, 8 or 16")
 	}
-	if ticks := int64(m.Numerator) * (seq.TicksPerWhole / int64(m.Denominator)); ticks > seq.MaxBarTicks {
+	if ticks := int64(m.Numerator) * (seq.TicksPerWhole / int64(m.Denominator)); !seq.ValidMeter(int64(m.Numerator), int64(m.Denominator)) {
 		return fmt.Errorf("CICADA-LIMIT: a bar of %d/%d is %d ticks; the limit is %d", m.Numerator, m.Denominator, ticks, seq.MaxBarTicks)
 	}
 	if len(m.Groups) == 0 {

@@ -36,14 +36,24 @@ var (
 func init() {
 	Register("setprojectsettings", func() Intent { return &SetProjectSettings{} })
 	Handle("setprojectsettings", func(ctx *Context, intent Intent) error {
-		updated, err := projectSettingsSource(ctx, intent.(*SetProjectSettings))
+		settings := intent.(*SetProjectSettings)
+		old, _ := ctx.Parse()
+		previous := "4/4"
+		if old != nil && old.Meter != nil {
+			previous = old.Meter.String()
+		}
+		updated, err := projectSettingsSource(ctx, settings)
 		if err != nil {
 			return err
 		}
 		ctx.Source, ctx.plan = updated, nil
 		label := "Project title, tempo, and key changed"
-		if intent.(*SetProjectSettings).Meter != "" {
-			label = "Project title, tempo, key, and meter changed"
+		if settings.Meter != "" && old != nil {
+			fraction, groups, _ := strings.Cut(strings.TrimSpace(settings.Meter), " ")
+			meter, _, _ := notation.ParseMeter(fraction, strings.TrimSpace(groups))
+			if meter.String() != previous {
+				label = "Project title, tempo, key, and meter changed"
+			}
 		}
 		ctx.SetLabel(label)
 		return nil

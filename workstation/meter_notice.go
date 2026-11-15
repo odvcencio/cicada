@@ -15,7 +15,7 @@ func meterNotice(m *project.Meter) (string, bool) {
 		return "", false
 	}
 	meter := strconv.Itoa(m.Numerator) + "/" + strconv.Itoa(m.Denominator)
-	return "This song is in " + meter + ". Studio still draws bars, the grid and snapping in 4/4; positions you type in the Code view and edits through cicada intents use " + meter + ".", true
+	return "This song is in " + meter + ". Studio still draws bars, the grid and snapping in 4/4; positions you type in the Code view and edits through cicada intents use " + meter + ". Vocal region gestures, punch-range entry and live note recording are off because they use the 4/4 grid.", true
 }
 
 // The browser engine's grid (control.GridMeterMap) is 4/4 until time

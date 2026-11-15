@@ -328,7 +328,7 @@ func Cicada() *grammargen.Grammar {
 	g.Define("midi_cc", seq(field("port", sym("identifier")), optional(seq(str("ch"), field("channel", sym("integer")))), str("cc"), field("number", sym("integer")), str("->"), field("target", sym("parameter_path")), optional(seq(field("min", sym("number")), str(".."), field("max", sym("number")))), optional(seq(str("takeover"), str("="), field("takeover", sym("identifier")))), optional(str(";"))))
 	g.Define("midi_note", seq(field("port", sym("identifier")), optional(seq(str("ch"), field("channel", sym("integer")))), str("note"), field("number", choice(sym("integer"), sym("letter_pitch"))), str("->"), field("action", choice(str("play"), str("stop"), seq(str("launch"), field("scene", sym("identifier"))), seq(str("stop-track"), field("track", sym("identifier"))), seq(str("launch-slot"), field("track", sym("identifier")), field("pattern", sym("_name"))))), optional(seq(str("mode"), str("="), field("mode", sym("identifier")))), optional(str(";"))))
 	// The song's meter (time signatures phase 2): `meter 3/4`, or `meter 7/8 2+2+3`
-	// with beat groups. Defined last, because rule order fixes symbol ids.
+	// with beat groups. Adding rules moved symbol IDs; nothing persists them.
 	g.Define("meter_decl", seq(str("meter"), field("meter", sym("fraction")), optional(field("groups", sym("beat_groups")))))
 	g.Define("beat_groups", token(pat(`[0-9]+(\+[0-9]+)*`)))
 	g.Test("song meter", "cicada 2 meter 7/8 2+2+3 track meter acid {}", "")

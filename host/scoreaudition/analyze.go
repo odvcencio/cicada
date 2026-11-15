@@ -63,10 +63,10 @@ type Report struct {
 
 type Facts struct {
 	TempoBPM float64 `json:"tempo_bpm"`
-	// Meter is the song's meter as source writes it ("4/4" for a score that
-	// declares none); TicksPerBar is one bar of it at 960 ticks a quarter note.
-	Meter       string       `json:"meter"`
-	TicksPerBar int64        `json:"ticks_per_bar"`
+	// Meter and TicksPerBar describe an effective meter declaration; both are
+	// omitted when the song uses the default 4/4.
+	Meter       string       `json:"meter,omitempty"`
+	TicksPerBar int64        `json:"ticks_per_bar,omitempty"`
 	WrittenKey  string       `json:"written_key"`
 	SongBars    int          `json:"song_bars"`
 	FromBar     int          `json:"from_bar"`
@@ -140,14 +140,15 @@ type SectionReport struct {
 type Analysis struct {
 	Report Report
 
-	rate        int
-	specRows    [][]float32 // frame x row, dB
-	specHop     int
-	barCols     []int // spectrogram column of each bar line
-	barNumbers  []int
-	chroma      [][12]float64
-	rhythmRows  [][]float64
-	firstBarIdx int
+	rate         int
+	specRows     [][]float32 // frame x row, dB
+	specHop      int
+	barCols      []int // spectrogram column of each bar line
+	barNumbers   []int
+	chroma       [][12]float64
+	rhythmRows   [][]float64
+	framesPerBar int
+	firstBarIdx  int
 }
 
 const (
@@ -264,10 +265,15 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 		tempoChanges = append(tempoChanges, TempoChange{Bar: c.Bar + 1, BPM: float64(c.BPMMilli) / 1000})
 	}
 
-	a := &Analysis{rate: rate, specHop: specHopSize, firstBarIdx: opts.From}
+	framesPerBar := int(meterMap.BarTicks(0) / seq.TicksPerStep)
+	a := &Analysis{rate: rate, specHop: specHopSize, firstBarIdx: opts.From, framesPerBar: framesPerBar}
 	r := &a.Report
 	r.Schema, r.Format, r.Title, r.SampleRate = Schema, FormatVersion, p.Title, rate
-	r.Score = Facts{TempoBPM: round(bpm, 3), Meter: meterText(p), TicksPerBar: p.MeterMap().BarTicks(0), WrittenKey: fmt.Sprintf("%s %s", noteNames[p.Key.Root%12], p.Key.Scale), SongBars: songBars, FromBar: opts.From + 1, Bars: bars, TempoChanges: tempoChanges}
+	r.Score = Facts{TempoBPM: round(bpm, 3), WrittenKey: fmt.Sprintf("%s %s", noteNames[p.Key.Root%12], p.Key.Scale), SongBars: songBars, FromBar: opts.From + 1, Bars: bars, TempoChanges: tempoChanges}
+
+	if p.Meter != nil {
+		r.Score.Meter, r.Score.TicksPerBar = meterText(p), meterMap.BarTicks(0)
+	}
 
 	// Read the stems and sum the pitched ones: the heard harmony comes from
 	// them, so drums and their pitched noise do not decide the chord.
@@ -290,7 +296,7 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	}
 
 	// Chroma and band power, one frame per sixteenth note.
-	frames := bars * 16
+	frames := bars * framesPerBar
 	chromaPlan := newPlan(chromaFFT)
 	binPC := make([]int, chromaFFT/2+1)
 	inBand := make([]bool, chromaFFT/2+1)
@@ -369,12 +375,12 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	for b := 0; b < bars; b++ {
 		var v [12]float64
 		var bp, bm float64
-		for f := 0; f < 16; f++ {
+		for f := 0; f < framesPerBar; f++ {
 			for i := range v {
-				v[i] += a.chroma[b*16+f][i]
+				v[i] += a.chroma[b*framesPerBar+f][i]
 			}
-			bp += pitchedBand[b*16+f]
-			bm += mixBand[b*16+f]
+			bp += pitchedBand[b*framesPerBar+f]
+			bm += mixBand[b*framesPerBar+f]
 		}
 		lo, hi := min(barSample(b), mix.Len()), min(barSample(b+1), mix.Len())
 		pitchedRMS := rmsDB(pitchedMix.Slice(lo, hi))
@@ -485,7 +491,7 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	acts := notes.activity(cfg, len(p.Tracks), fromTick, bars, sustain, barSounding)
 	var maxEnergy float64
 	for ti, track := range p.Tracks {
-		tr := TrackReport{ID: track.ID, Rhythm: make([]float64, 16)}
+		tr := TrackReport{ID: track.ID, Rhythm: make([]float64, framesPerBar)}
 		s := stems[ti]
 		var energy float64
 		for i := range s.L {
@@ -798,7 +804,8 @@ func noteShape(s stereo, peaks []int, rate int) (attackMs, decayMs float64, lowe
 // scaled so the largest is 1, over the bars where the track plays a pattern.
 // Swung slots are looked up where the pattern's swing places them.
 func rhythmProfile(env []float64, rate int, clock *project.TempoMap, meterMap seq.MeterMap, base int64, from, bars int, act barActivity) ([]float64, float64) {
-	prof, cnt := make([]float64, 16), make([]float64, 16)
+	slots := int(meterMap.BarTicks(0) / seq.TicksPerStep)
+	prof, cnt := make([]float64, slots), make([]float64, slots)
 	swing := 50.0
 	swingSet := false
 	for b := 0; b < bars; b++ {
@@ -806,7 +813,7 @@ func rhythmProfile(env []float64, rate int, clock *project.TempoMap, meterMap se
 			continue
 		}
 		pat := act.pattern[b]
-		for s := 0; s < 16; s++ {
+		for s := 0; s < slots; s++ {
 			tick := int64(s) * seq.TicksPerStep
 			if pat != nil && pat.Len > 0 {
 				g := pat.GridTicks()

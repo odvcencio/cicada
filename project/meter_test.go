@@ -184,3 +184,39 @@ func TestAutomationPositionErrorsNameTheMeter(t *testing.T) {
 		}
 	}
 }
+
+func TestPlainFourFourJSONNormalizesThroughSourceAndImage(t *testing.T) {
+	score, ds := notation.Parse([]byte(waltzSource))
+	if score == nil || hasErrors(ds) {
+		t.Fatal(ds)
+	}
+	p, ds := FromScore(score)
+	if p == nil || hasErrors(ds) {
+		t.Fatal(ds)
+	}
+	p.Meter = &Meter{Numerator: 4, Denominator: 4}
+	encoded, err := CanonicalJSON(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := DecodeJSON(encoded)
+	if err != nil || decoded.Meter != nil {
+		t.Fatalf("decoded meter: %+v, %v", decoded, err)
+	}
+	source, err := ToSource(decoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, ds := notation.Parse(source)
+	if parsed == nil || hasErrors(ds) || parsed.SongMeter() != nil {
+		t.Fatalf("source meter: %s %v", source, ds)
+	}
+	cfg, err := CompileEngine(decoded, 48000, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	image, err := kernelimage.Encode(cfg)
+	if err != nil || binary.LittleEndian.Uint32(image[8:])&kernelimage.MeterFlag != 0 {
+		t.Fatalf("image meter flag: %v", err)
+	}
+}
