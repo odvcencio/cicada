@@ -192,6 +192,13 @@ type Pool struct {
 
 	stats      Stats
 	trackNanos []int64
+
+	// statedCost, when a test sets it, replaces each segment's measured
+	// times in observe: it returns the cost in nanoseconds per frame of track,
+	// or of the caller's mix for track -1. The Pool then decides from stated
+	// costs, not from a clock that a paused machine stretches. Nil in
+	// production.
+	statedCost func(track int) float64
 }
 
 // LanePanic is what Ready, End and Run raise when a lane panicked: the lane
@@ -748,7 +755,17 @@ func (p *Pool) observe(count int, mix int64) {
 		*cost += float64(costWeight * (perFrame - *cost))
 	}
 	for track := 0; track < p.tracks; track++ {
-		update(&p.cost[track], &p.measured[track], float64(p.took[track])/float64(count))
+		update(&p.cost[track], &p.measured[track], p.perFrame(track, p.took[track], count))
 	}
-	update(&p.mixCost, &p.mixMeasured, float64(max(0, mix))/float64(count))
+	update(&p.mixCost, &p.mixMeasured, p.perFrame(-1, max(0, mix), count))
+}
+
+// perFrame is a segment's cost of track, or of the caller's mix for track -1,
+// in nanoseconds per frame: nanos measured over count frames, or the stated
+// cost when a test set one (statedCost).
+func (p *Pool) perFrame(track int, nanos int64, count int) float64 {
+	if p.statedCost != nil {
+		return p.statedCost(track)
+	}
+	return float64(nanos) / float64(count)
 }
