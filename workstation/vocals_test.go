@@ -14,7 +14,18 @@ import (
 
 	"m31labs.dev/cicada/host/takejournal"
 	"m31labs.dev/cicada/project"
+	"m31labs.dev/gosx"
 )
+
+func TestVocalsExplainsEditionOneUpgrade(t *testing.T) {
+	var s studioApp
+	html := gosx.RenderHTML(s.vocals(nil, workspace{Project: &project.Project{Edition: 1}}, ""))
+	for _, want := range []string{"Record vocals", "Vocal recording needs an edition 2 score.", `href="/?panel=mixer"`, "Upgrade through Mixer"} {
+		if !strings.Contains(html, want) {
+			t.Errorf("edition 1 vocal panel missing %q: %s", want, html)
+		}
+	}
+}
 
 func TestRecordingSetupUsesAudioDialogInStudioAndLinksInStandalonePanels(t *testing.T) {
 	address, client, _ := detailDockApp(t)

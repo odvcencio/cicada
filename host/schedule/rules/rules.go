@@ -30,13 +30,27 @@ func FrameLimit(asset project.Asset) int64 {
 	return MaxFrames
 }
 
-// ResidentBudgetError names what pushed the project past ResidentBudget and how
-// far: name needs bytes on top of used.
-func ResidentBudgetError(name string, bytes, used int64) error {
-	if used == 0 {
-		return fmt.Errorf("project audio exceeds the 64 MiB resident PCM budget: %s needs %s", name, mib(bytes))
+// ResidentBudgetError describes an asset or sampler that exceeds the resident
+// PCM budget or the per-asset frame limit. Bytes are needed on top of Used.
+type ResidentBudgetError struct {
+	Name               string
+	Bytes, Used        int64
+	Frames, FrameLimit int64
+}
+
+func (e *ResidentBudgetError) Error() string {
+	if e.FrameLimit > 0 {
+		return fmt.Sprintf("%s exceeds the resident limit of %d frames (found %d)", e.Name, e.FrameLimit, e.Frames)
 	}
-	return fmt.Errorf("project audio exceeds the 64 MiB resident PCM budget: %s needs %s on top of %s already resident", name, mib(bytes), mib(used))
+	if e.Used == 0 {
+		return fmt.Sprintf("project audio exceeds the 64 MiB resident PCM budget: %s needs %s", e.Name, mib(e.Bytes))
+	}
+	return fmt.Sprintf("project audio exceeds the 64 MiB resident PCM budget: %s needs %s on top of %s already resident", e.Name, mib(e.Bytes), mib(e.Used))
+}
+
+// NewResidentBudgetError names what exceeded the budget and by how much.
+func NewResidentBudgetError(name string, bytes, used int64) error {
+	return &ResidentBudgetError{Name: name, Bytes: bytes, Used: used}
 }
 
 func mib(bytes int64) string { return fmt.Sprintf("%.1f MiB", float64(bytes)/(1<<20)) }
@@ -51,8 +65,11 @@ func PlaceAsset(a project.Asset, streamable bool, resident int64) (stream bool, 
 	if streamable && (bytes > 1<<20 || a.Frames > FrameLimit(a) || bytes > ResidentBudget-resident) {
 		return true, bytes, nil
 	}
-	if a.Frames > FrameLimit(a) || bytes <= 0 || bytes > ResidentBudget-resident {
-		return false, bytes, ResidentBudgetError("asset "+a.Name, bytes, resident)
+	if a.Frames > FrameLimit(a) {
+		return false, bytes, &ResidentBudgetError{Name: "asset " + a.Name, Bytes: bytes, Used: resident, Frames: a.Frames, FrameLimit: FrameLimit(a)}
+	}
+	if bytes <= 0 || bytes > ResidentBudget-resident {
+		return false, bytes, NewResidentBudgetError("asset "+a.Name, bytes, resident)
 	}
 	return false, bytes, nil
 }

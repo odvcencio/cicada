@@ -1,6 +1,9 @@
 package acid
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 func TestOscillatorBankImageRoundTrip(t *testing.T) {
 	want := bankForSampleRate(48_000)
@@ -13,8 +16,12 @@ func TestOscillatorBankImageRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	for bin := range want.tables {
-		if *want.tables[bin] != *got.tables[bin] {
-			t.Fatalf("oscillator table %d changed in the image", bin)
+		// Compare value by value: TinyGo 0.41.1 crashed in LLVM's optimizer
+		// on the whole-array comparison *want.tables[bin] != *got.tables[bin].
+		for i, w := range want.tables[bin] {
+			if math.Float32bits(w) != math.Float32bits(got.tables[bin][i]) {
+				t.Fatalf("oscillator table %d changed in the image at %d", bin, i)
+			}
 		}
 		for prior := 0; prior < bin; prior++ {
 			if (want.tables[prior] == want.tables[bin]) != (got.tables[prior] == got.tables[bin]) {
