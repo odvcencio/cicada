@@ -43,6 +43,7 @@ type backendError struct {
 }
 
 type expectedProjectSourcesKey struct{}
+type splitIntentTimeoutKey struct{}
 
 func (e *backendError) Error() string { return e.Message }
 
@@ -78,6 +79,9 @@ func (b *backend) request(ctx context.Context, method, path string, input any) (
 	if method == http.MethodPost && (path == "/api/record" || path == "/api/intents") {
 		copy := *client
 		copy.Timeout = 30 * time.Second // large retained gesture takes compile before acknowledgment
+		if path == "/api/intents" && ctx.Value(splitIntentTimeoutKey{}) == true {
+			copy.Timeout = 120 * time.Second // compare full renders before accepting a split
+		}
 		client = &copy
 	}
 	if method == http.MethodPost && path == "/api/arrange" {
