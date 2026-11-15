@@ -34,6 +34,18 @@ func TestPatternPreviewUsesCompatibleTracksAndRetainsTheChosenSound(t *testing.T
 		if end < 0 {
 			t.Fatal("missing preview sound selector")
 		}
+		selectStart := strings.Index(preview[:end], "<select")
+		if selectStart < 0 {
+			t.Fatal("missing preview sound selector")
+		}
+		selectEnd := strings.Index(preview[selectStart:end], ">")
+		if selectEnd < 0 {
+			t.Fatal("missing preview sound selector tag end")
+		}
+		selectTag := preview[selectStart : selectStart+selectEnd]
+		if !strings.Contains(selectTag, `data-pattern-preview-track`) || !strings.Contains(selectTag, `data-studio-view-control`) {
+			t.Fatal("preview sound selector must be a studio view control")
+		}
 		if !strings.Contains(preview[:end], test.present) || strings.Contains(preview[:end], test.absent) || strings.Contains(preview[:end], `value="vox"`) || !strings.Contains(preview, `aria-label="Loop `+test.pattern+`"`) {
 			t.Fatalf("incorrect sound choices for %s", test.pattern)
 		}
