@@ -1,38 +1,85 @@
-/* Mixer: aligned channel strips that scroll sideways, the master last. Each
-   strip shows its name, a level fader with its value, then inserts, sends,
-   pan, mute and routing in the same order. */
-.shell #view-panel-mixer #mixer { margin:0; padding:0 0 12px; border:0; border-radius:0; background:none; }
-.shell #view-panel-mixer #mixer > .action-form { display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; margin:0; padding:5px 12px; border-bottom:1px solid var(--border); background:var(--panel); }
-.shell #view-panel-mixer #mixer > .action-form .field { display:flex; align-items:center; gap:6px; margin:0; }
-.shell #view-panel-mixer #mixer > .action-form :is(input,button) { min-height:27px; }
-.shell #view-panel-mixer #mixer > .action-form input[type=text] { width:140px; }
+/* Mixer: a tool strip, then channel strips that scroll sideways with the master
+   pinned at the right end. Every strip has the same rows in the same order
+   (name, kind, inserts, sends, mute and solo, pan, then meter and fader), and
+   the rows share their heights across strips. A strip's name opens the channel
+   in Device, which holds the exact-value, routing, insert and effect controls. */
+.shell #view-panel-mixer #mixer { margin:0; padding:0; border:0; border-radius:0; background:none; }
+/* The view tab already says "Mixer", so the heading is for screen readers only. */
+.shell #view-panel-mixer #mixer > .panel-heading { position:absolute; width:1px; height:1px; min-height:0; padding:0; border:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
 
-.shell #view-panel-mixer .strips { display:flex; align-items:stretch; gap:8px; padding:10px 12px; overflow-x:auto; overscroll-behavior-x:contain; }
-.shell #view-panel-mixer .strip { display:flex; flex-direction:column; gap:6px; flex:0 0 200px; min-width:0; padding:8px; border:1px solid var(--border); border-top:3px solid var(--track-color,var(--grid-strong)); border-radius:4px; background:var(--panel); }
-.shell #view-panel-mixer .strip[data-mixer-strip=master] { border-top-color:var(--amber); }
-.shell #view-panel-mixer .strip[data-mixer-strip=bus] { border-top-color:var(--muted); }
-.shell #view-panel-mixer .strip > h3 { margin:0; padding:5px 8px; border-radius:3px; background:var(--raised); font-size:13px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* Tool strip: what this tab shows on the left, the one score action on the right. */
+.shell #view-panel-mixer .mixer-tools { position:relative; display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; padding:5px 12px; border-bottom:1px solid var(--border); background:var(--panel); }
+.shell #view-panel-mixer .mixer-tools > .field { display:flex; align-items:center; gap:6px; margin:0; }
+.shell #view-panel-mixer .mixer-tools > .field > span { color:var(--text); font-size:13px; }
+.shell #view-panel-mixer .mixer-tools > .field select { width:auto; }
+.shell #view-panel-mixer .mixer-tools :is(select,button,input) { min-height:27px; }
+.shell #view-panel-mixer .mixer-add-effect { margin-left:auto; }
+.shell #view-panel-mixer .mixer-add-effect > summary { display:flex; align-items:center; min-height:27px; padding:3px 9px; border:1px solid var(--border); border-radius:4px; background:var(--raised); cursor:pointer; list-style:none; }
+.shell #view-panel-mixer .mixer-add-effect > summary::-webkit-details-marker { display:none; }
+.shell #view-panel-mixer .mixer-add-effect[open] > summary { border-color:var(--amber); color:var(--amber); }
+.shell #view-panel-mixer .mixer-add-effect__body { position:absolute; top:100%; right:12px; z-index:6; width:min(360px,calc(100% - 24px)); padding:10px; border:1px solid var(--border); border-radius:4px; background:var(--raised); box-shadow:0 8px 24px #0008; }
+.shell #view-panel-mixer .mixer-add-effect__body .action-form { display:flex; flex-wrap:wrap; align-items:end; gap:6px 8px; margin:0; }
+.shell #view-panel-mixer .mixer-add-effect__body .field { flex:1 1 140px; min-width:0; margin:0; }
+.shell #view-panel-mixer .mixer-add-return { margin-top:10px; padding-top:8px; border-top:1px solid var(--border); }
+.shell #view-panel-mixer .mixer-add-return > strong { display:block; margin-bottom:6px; color:var(--muted); font-size:11px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; }
+.shell #view-panel-mixer .mixer-add-return > p { margin:0 0 6px; color:var(--muted); }
+.shell #view-panel-mixer .mixer-unplaced { margin-top:10px; padding-top:8px; border-top:1px solid var(--border); }
+.shell #view-panel-mixer .mixer-unplaced p { margin:0 0 4px; }
+.shell #view-panel-mixer .mixer-unplaced ul { display:flex; flex-wrap:wrap; gap:4px 12px; margin:0; padding:0; list-style:none; }
+.shell #view-panel-mixer .mixer-unplaced a { color:var(--mint); }
+.shell #view-panel-mixer .mixer-unplaced span { color:var(--muted); font:11px var(--mono); }
+
+/* Show filters the strips and Meter picks the bars from the chosen option, in
+   this tab only. The master stays in every view. */
+.shell #mixer:has([data-mixer-show] option[value=tracks]:checked) .strip:is([data-mixer-strip=bus],[data-mixer-strip=return]),
+.shell #mixer:has([data-mixer-show] option[value=buses]:checked) .strip[data-mixer-strip=track],
+.shell #mixer:has([data-mixer-meter] option[value=peak]:checked) .strip-meter > .strip-meter__rms,
+.shell #mixer:has([data-mixer-meter] option[value=rms]:checked) .strip-meter > :is(.strip-meter__peak,.strip-meter__hold) { display:none; }
+.shell #mixer:has([data-mixer-meter] option[value=peak]:checked) .strip-meter__peak { background:var(--mint); }
+
+/* Strips: one grid column each. The rows are tracks of the outer grid, which
+   every strip shares (subgrid), so a row is as tall as its tallest cell on any
+   strip and the rows line up. The minimum heights keep them close where
+   subgrid is missing. */
+.shell #view-panel-mixer .strips { display:grid; grid-auto-flow:column; grid-auto-columns:148px; grid-template-columns:none; grid-template-rows:repeat(8,auto); justify-content:start; gap:6px 8px; padding:10px 0 10px 12px; overflow-x:auto; overscroll-behavior-x:contain; }
+.shell #view-panel-mixer .strip { --strip-top:var(--track-color,var(--grid-strong)); display:grid; grid-row:1 / span 8; grid-template-rows:subgrid; min-width:0; padding:8px; border:1px solid var(--border); border-top:3px solid var(--strip-top); border-radius:4px; background:var(--panel); }
+.shell #view-panel-mixer .strip > * { min-width:0; }
+.shell #view-panel-mixer .strip[data-mixer-strip=bus] { --strip-top:var(--muted); }
+.shell #view-panel-mixer .strip[data-mixer-strip=return] { --strip-top:color-mix(in srgb,var(--mint) 45%,var(--border)); }
+/* The master stays in sight at the right end while the other strips scroll
+   under it. The strips have no padding on that side, so it sits flush with the
+   pane's edge and nothing shows beyond it. */
+.shell #view-panel-mixer .strip[data-mixer-strip=master] { --strip-top:var(--amber); position:sticky; right:0; z-index:2; box-shadow:-10px 0 12px -8px #000c; }
+/* The channel Device shows: the amber edge used for a selection elsewhere. */
+.shell #view-panel-mixer .strip[data-mixer-selected=true] { border-color:var(--strip-top) var(--amber) var(--amber); box-shadow:inset 3px 0 0 var(--amber); }
+.shell #view-panel-mixer .strip[data-mixer-strip=master][data-mixer-selected=true] { box-shadow:inset 3px 0 0 var(--amber),-10px 0 12px -8px #000c; }
+
+.shell #view-panel-mixer .strip-name { margin:0; min-height:30px; font-size:13px; font-weight:600; }
+.shell #view-panel-mixer .strip-name a { display:block; padding:5px 8px; border:1px solid transparent; border-radius:3px; background:var(--raised); color:var(--text); text-decoration:none; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.shell #view-panel-mixer .strip-name a:hover { border-color:var(--grid-strong); }
+.shell #view-panel-mixer .strip[data-mixer-selected=true] .strip-name a { border-color:color-mix(in srgb,var(--amber) 60%,transparent); color:var(--amber); }
+.shell #view-panel-mixer .strip-kind { margin:0; min-height:15px; color:var(--muted); font:11px var(--mono); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.shell #view-panel-mixer :is(.strip-inserts,.strip-sends) { display:grid; align-content:start; gap:3px; margin:0; padding:0; list-style:none; }
+.shell #view-panel-mixer .strip-inserts { min-height:22px; }
+.shell #view-panel-mixer :is(.strip-inserts,.strip-sends) > li,
+.shell #view-panel-mixer p.strip-inserts { padding:2px 6px; border:1px solid var(--border); border-radius:2px; background:var(--bg); font:11px var(--mono); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.shell #view-panel-mixer .strip-sends > li { color:var(--muted); }
+.shell #view-panel-mixer .strip-none { color:var(--muted); font:11px var(--mono); }
+.shell #view-panel-mixer p.strip-inserts.strip-none { align-self:start; border-style:dashed; }
 
 /* Fader: a vertical range beside its dB readout. */
-.shell #view-panel-mixer .strip-fader { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:start; gap:10px; padding:6px 4px; }
+.shell #view-panel-mixer .strip-fader { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:start; gap:6px; padding:6px 0; }
 .shell #view-panel-mixer .strip-fader .action-form { display:block; margin:0; }
 .shell #view-panel-mixer .strip-fader input[type=range] { writing-mode:vertical-lr; direction:rtl; width:28px; height:132px; min-height:0; margin:0; padding:0; border:0; background:none; accent-color:var(--track-color,var(--amber)); cursor:ns-resize; }
 .shell #view-panel-mixer .strip[data-mixer-strip=master] .strip-fader input[type=range] { accent-color:var(--amber); }
-.shell #view-panel-mixer .strip-readout { justify-self:end; color:var(--text); font:600 14px var(--mono); }
+/* A level Device sets: the fader shows it and does not move. */
+.shell #view-panel-mixer .strip-fader input[type=range]:disabled { opacity:.45; cursor:default; }
+.shell #view-panel-mixer .strip-readout { grid-column:2; justify-self:end; color:var(--text); font:600 13px var(--mono); }
 .shell #view-panel-mixer .strip-readout small { display:block; color:var(--muted); font:10px var(--mono); text-align:right; }
-
-/* The strip's other controls: compact label, value and Set. */
-.shell #view-panel-mixer .strip .mixer-control form { grid-template-columns:minmax(0,1fr) auto; gap:4px; align-items:end; }
-.shell #view-panel-mixer .strip .mixer-control .field { margin:0; }
-.shell #view-panel-mixer .strip .mixer-control .field span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:10px var(--mono); letter-spacing:.04em; }
-.shell #view-panel-mixer .strip .mixer-control :is(input,select,button) { min-height:26px; padding:2px 6px; font-size:12px; }
-.shell #view-panel-mixer .strip .effect-chain { padding:6px; border:1px solid var(--border); border-radius:3px; background:var(--bg); font-size:12px; }
-.shell #view-panel-mixer .strip .effect-chain > strong { color:var(--muted); font:500 10px var(--mono); letter-spacing:.08em; text-transform:uppercase; }
-.shell #view-panel-mixer .strip .effect-chain ol { margin:4px 0; padding-left:18px; }
-.shell #view-panel-mixer .strip > p.muted { margin:0; font-size:11px; }
 
 /* Mute and solo: one-click toggles; the pressed state is the saved state. */
 .shell .strip-toggles { display:flex; gap:6px; }
+.shell #view-panel-mixer .strip-toggles { min-height:26px; }
 .shell .strip-toggles .action-form, .shell .rail-toggles .action-form { display:block; margin:0; }
 .shell .strip-toggle { min-width:26px; min-height:26px; padding:2px 6px; border:1px solid var(--border); border-radius:3px; background:var(--bg); color:var(--muted); font:600 12px var(--mono); cursor:pointer; }
 .shell .strip-toggle:hover { color:var(--text); border-color:var(--grid-strong); }
@@ -40,7 +87,7 @@
 .shell .strip-toggle[data-toggle=solo][aria-pressed=true] { background:var(--amber); border-color:var(--amber); color:var(--bg); }
 
 /* Pan: a horizontal range with its readout and a centre button. */
-.shell #view-panel-mixer .strip-pan { display:grid; grid-template-columns:minmax(0,1fr) auto auto; align-items:center; gap:6px; }
+.shell #view-panel-mixer .strip-pan { display:grid; grid-template-columns:minmax(0,1fr) auto auto; align-items:center; gap:4px; min-height:22px; }
 .shell #view-panel-mixer .strip-pan .action-form { display:block; margin:0; min-width:0; }
 .shell #view-panel-mixer .strip-pan input[type=range] { width:100%; min-height:20px; margin:0; padding:0; border:0; background:none; accent-color:var(--track-color,var(--amber)); }
 .shell #view-panel-mixer .strip-pan-readout { min-width:3ch; color:var(--text); font:600 12px var(--mono); text-align:right; }
@@ -49,7 +96,7 @@
 
 /* Meter: peak (dim), RMS (bright), a peak-hold tick and a clip lamp over
    -60 to +6 dBFS. The engine writes --peak, --rms and --hold as 0 to 1. */
-.shell #view-panel-mixer .strip-channel { display:flex; align-items:flex-start; gap:6px; }
+.shell #view-panel-mixer .strip-channel { display:flex; align-items:flex-start; gap:8px; }
 .shell #view-panel-mixer .strip-channel .strip-fader { flex:1; min-width:0; }
 .shell .strip-meter { --peak:0; --rms:0; --hold:0; position:relative; flex:0 0 16px; width:16px; height:132px; margin:6px 0 0; border:1px solid var(--border); border-radius:2px; background:var(--bg); overflow:hidden; }
 .shell .strip-meter > span { position:absolute; left:0; right:0; }
@@ -59,9 +106,20 @@
 .shell .strip-meter__clip { top:0; height:5px; background:var(--raised); }
 .shell .strip-meter[data-clip=true] .strip-meter__clip { background:var(--coral); }
 .shell .strip-meter::after { content:""; position:absolute; left:0; right:0; bottom:90.9%; height:1px; background:var(--grid-strong); opacity:.8; }
+/* A channel the engine does not meter keeps the slot, empty and dim. */
+.shell .strip-meter--none { opacity:.35; }
+.shell .strip-meter--none::after { display:none; }
 
-.shell .strip-loudness { display:grid; grid-template-columns:1fr 1fr; gap:4px 8px; margin:0; font:10px var(--mono); }
-.shell .strip-loudness div { display:flex; flex-direction:column; }
+.shell .strip-loudness { display:grid; gap:2px; margin:0; font:10px var(--mono); }
+.shell .strip-loudness div { display:flex; flex-wrap:wrap; justify-content:space-between; gap:0 6px; }
 .shell .strip-loudness dt { color:var(--muted); }
-.shell .strip-loudness dd { margin:0; color:var(--text); font:600 12px var(--mono); }
-.shell #view-panel-mixer .strip-tools { display:flex; flex-direction:column; gap:6px; min-height:60px; }
+.shell .strip-loudness dd { margin:0; color:var(--text); font:600 11px var(--mono); }
+
+/* Phone: two whole strips beside the pinned master at 390 px. */
+@media (max-width:799px) {
+	.shell #view-panel-mixer .strips { grid-auto-columns:120px; gap:6px; padding:8px 0 8px 8px; }
+	.shell #view-panel-mixer .strip { padding:6px; }
+	.shell #view-panel-mixer .mixer-tools { gap:6px; padding:5px 8px; }
+	.shell #view-panel-mixer .mixer-tools > .field select { max-width:126px; padding-inline:5px; }
+	.shell #view-panel-mixer .mixer-add-effect__body { right:8px; width:calc(100% - 16px); }
+}

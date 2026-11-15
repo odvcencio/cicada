@@ -1,0 +1,33 @@
+cicada 2
+title "Flush check: a kick panned hard left, then turned off, while the snare plays"
+tempo 240
+key c major
+seed 1
+
+track kit drums {}
+
+pattern beat drums {
+  bd: x...x...x...x...
+  sd: ....x.......x...
+}
+
+scene center {
+  kit = beat
+}
+
+scene left {
+  kit = beat
+  kit.bd_pan = -1
+}
+
+scene off {
+  kit = beat
+  kit.bd_pan = -1
+  kit.bd_level = off
+}
+
+song {
+  center*1
+  left*6
+  off*6
+}

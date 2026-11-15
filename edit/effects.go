@@ -111,11 +111,21 @@ func paramValue(params []notation.Param, name string) string {
 // request puts it, naming the real reason.
 func checkNewEffect(score *notation.Score, name, kind, target string) (route string, chain []string, err error) {
 	if effectIsReturn[kind] {
+		// A score has one delay or tape return (slot A). Reverbs take slot B
+		// and slots C to H; the score's own check refuses an eighth reverb or a
+		// second one in edition 1.
 		for _, effect := range score.Effects {
-			sameReturn := effect.Kind == kind || kind != "reverb" && (effect.Kind == "delay" || effect.Kind == "tape")
-			if sameReturn {
-				return "", nil, refuse("effect_single_instance", "effectkind", "the score already has the %s return %s; a score has one delay or tape return and one reverb return", effect.Kind, effect.Name)
+			if kind != "reverb" && (effect.Kind == "delay" || effect.Kind == "tape") {
+				return "", nil, refuse("effect_single_instance", "effectkind", "the score already has the %s return %s; a score has one delay or tape return", effect.Kind, effect.Name)
 			}
+		}
+		// A new reverb is the first one only if the score has no reverb return.
+		first := kind == "reverb"
+		for _, effect := range score.Effects {
+			first = first && !(effect.Kind == "reverb" && !onMaster(score, effect.Name))
+		}
+		if message := paramdefs.ReturnNameCollision(name, kind, first); message != "" {
+			return "", nil, refuse("invalid_name", "name", "%s", message)
 		}
 		if target != "" {
 			return "", nil, refuse("effect_is_return", "inserton", "a %s is a send return, not an insert: add it without inserton, then send a track to it with setparam param:<track>.send.%s", kind, name)
