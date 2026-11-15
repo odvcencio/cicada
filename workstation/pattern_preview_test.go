@@ -85,7 +85,25 @@ func TestClipToolbarAndLegacyPatternLayout(t *testing.T) {
 		if strings.Contains(page, `class="pattern-editor"`) {
 			t.Fatal("shell retains pattern library column")
 		}
+		if strings.Contains(page, `class="clip-library-notice"`) {
+			t.Fatal("local pattern has a library notice")
+		}
 	}
+	p.Patterns[0].ID = "motif.idea"
+	library := getPage(t, client, address+"/studio?dock=clip&pattern=motif.idea&region=detail")
+	if !strings.Contains(library, `class="clip-library-notice"`) || !strings.Contains(library, `href="#pattern-variation">Make a variation to edit</a>`) {
+		t.Fatal("library pattern missing variation notice")
+	}
+	management := strings.Index(library, `data-pattern-management="motif.idea"`)
+	if management < 0 {
+		t.Fatal("missing library pattern management")
+	}
+	tagStart := strings.LastIndex(library[:management], "<details")
+	tagEnd := strings.Index(library[management:], ">")
+	if tagStart < 0 || tagEnd < 0 || strings.Contains(library[tagStart:management+tagEnd], " open") {
+		t.Fatal("library pattern More panel must start closed")
+	}
+	p.Patterns[0].ID = "first"
 	legacy := getPage(t, client, address+"/?panel=patterns&pattern=first")
 	if !strings.Contains(legacy, `class="pattern-editor"`) || !strings.Contains(legacy, `class="pattern-library"`) || !strings.Contains(legacy, "Create pattern") || !strings.Contains(legacy, "Use this pattern") || strings.Contains(legacy, `class="clip-toolbar"`) {
 		t.Fatal("legacy pattern layout changed")

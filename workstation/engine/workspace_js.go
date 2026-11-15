@@ -316,6 +316,7 @@ func bindClipToolbar(root js.Value) func() {
 	document := js.Global().Get("document")
 	u.listen(document, "keydown", u.clipToolbarKeyDown)
 	u.listen(document, "pointerdown", u.clipToolbarPointerDown)
+	u.listen(document, "click", u.clipToolbarClick)
 	u.listen(document, "toggle", u.clipToolbarToggle)
 	return func() {
 		u.closed.Store(true)
@@ -345,6 +346,12 @@ func (u *workspaceUI) clipToolbarKeyDown(event js.Value) {
 }
 
 func (u *workspaceUI) clipToolbarPointerDown(event js.Value) {
+	target := event.Get("target")
+	if workspacePresent(target) && target.Get("closest").Type() == js.TypeFunction {
+		if workspacePresent(target.Call("closest", `.clip-toolbar, [data-gosx-toast-host]`)) || (u.owned(target) && workspacePresent(target.Call("closest", `#detail-panel-clip a[href$="#pattern-variation"]`))) {
+			return
+		}
+	}
 	panels := u.root.Call("querySelectorAll", `details[name="clip-toolbar"][open]`)
 	for i := 0; i < panels.Length(); i++ {
 		panel := panels.Index(i)
@@ -354,6 +361,26 @@ func (u *workspaceUI) clipToolbarPointerDown(event js.Value) {
 	}
 }
 
+func (u *workspaceUI) clipToolbarClick(event js.Value) {
+	target := event.Get("target")
+	if !u.owned(target) || target.Get("closest").Type() != js.TypeFunction || !workspacePresent(target.Call("closest", `#detail-panel-clip a[href$="#pattern-variation"]`)) {
+		return
+	}
+	variation := u.root.Call("querySelector", "#detail-panel-clip #pattern-variation")
+	if !workspacePresent(variation) {
+		return
+	}
+	panel := variation.Call("closest", "details")
+	if !workspacePresent(panel) {
+		return
+	}
+	panel.Set("open", true)
+	if input := variation.Call("querySelector", `input:not([type]), input[type="text"]`); workspacePresent(input) {
+		input.Call("focus")
+	}
+	workspaceStop(event)
+}
+
 func (u *workspaceUI) clipToolbarToggle(event js.Value) {
 	panel := event.Get("target")
 	if !u.owned(panel) || panel.Get("matches").Type() != js.TypeFunction || !panel.Call("matches", `details[name="clip-toolbar"]`).Bool() || panel.Get("open").Bool() {
@@ -361,7 +388,14 @@ func (u *workspaceUI) clipToolbarToggle(event js.Value) {
 	}
 	forms := panel.Call("querySelectorAll", "form")
 	for i := 0; i < forms.Length(); i++ {
-		forms.Index(i).Call("reset")
+		form := forms.Index(i)
+		form.Call("reset")
+		if workspaceAttr(form, "data-gosx-form-state") == "error" {
+			form.Call("setAttribute", "data-gosx-form-state", "idle")
+		}
+		if status := form.Call("querySelector", ".form-status"); workspacePresent(status) {
+			status.Set("textContent", "")
+		}
 	}
 	controls := panel.Call("querySelectorAll", "[data-edited], [data-baseline]")
 	for i := 0; i < controls.Length(); i++ {
@@ -1772,10 +1806,6 @@ func workspaceHTMLPreserve(current, next *html.Node) {
 	}
 	if current.Data == "details" {
 		_, open := workspaceHTMLAttr(current, "open")
-		if name, _ := workspaceHTMLAttr(next, "name"); name == "clip-toolbar" {
-			_, serverOpen := workspaceHTMLAttr(next, "open")
-			open = open || serverOpen
-		}
 		workspaceHTMLBool(next, "open", open)
 	}
 	oldChildren := []*html.Node{}

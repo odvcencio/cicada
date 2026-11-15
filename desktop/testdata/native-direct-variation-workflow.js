@@ -48,7 +48,15 @@
       const reopened=await render('reopened');if(reopened.hash!==retained.performed.hash)throw new Error('Reopened WAV changed');sessionStorage.removeItem(key);checks.push('reopened local variations retain their sound selection, edited performance and WAV');
       return {type:'cicada-native-smoke',ok:true,checks,...retained,phase:'done',reopened};
     }
-    const baseline=await render('baseline');await chooseUpper('motif.idea');await audition('unused library idea');
+    const baseline=await render('baseline');
+    if(document.querySelector('#studio-shell')){
+      const link=document.querySelector('.clip-library-notice a[href$="#pattern-variation"]');
+      if(!link)throw new Error('Library variation notice missing');
+      link.click();
+      if(!variation('motif.idea')?.closest('details')?.open)throw new Error('Library variation notice did not open More');
+      if(document.activeElement!==variation('motif.idea').querySelector('[name=newName]'))throw new Error('Library variation notice did not focus the name');
+    }
+    await chooseUpper('motif.idea');await audition('unused library idea');
     if(!/^[a-z_][a-z0-9_-]*$/.test(variation('motif.idea').querySelector('[name=newName]').value))throw new Error('Library variation proposed an invalid name');
     if(typeof window.__cicadaDirectViews==='function')await window.__cicadaDirectViews();
     fill(variation('motif.idea').querySelector('[name=newName]'),'off');variation('motif.idea').querySelector('button[type=submit]').click();await wait(()=>variation('motif.idea')?.querySelector('form').dataset.gosxFormState==='error','reserved name refused');await ready();

@@ -1049,6 +1049,7 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
 .shell #detail-panel-clip .clip-toolbar { display:flex; flex-wrap:nowrap; align-items:center; gap:4px 8px; position:relative; z-index:5; min-width:0; padding-bottom:4px; }
 .shell #detail-panel-clip .clip-toolbar > p { margin:0; font-size:11px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .shell #detail-panel-clip .clip-toolbar > small { font-size:10px; flex-shrink:0; white-space:nowrap; }
+.shell #detail-panel-clip .clip-library-notice { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted); font-size:11px; }
 .shell #detail-panel-clip .clip-toolbar-spacer { flex:1; }
 .shell #detail-panel-clip .clip-toolbar > details { flex-shrink:0; position:static; margin:0; padding:0; border:0; }
 .shell #detail-panel-clip .clip-toolbar summary { cursor:pointer; padding:4px 7px; border:1px solid var(--border); border-radius:4px; background:var(--raised); }
@@ -1059,6 +1060,7 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
 .shell #detail-panel-clip .clip-toolbar .clip-picker .clip-menu-content { right:auto; width:min(340px,100%); }
 .shell #detail-panel-clip .clip-picker .pattern-library { display:flex; flex-direction:column; }
 .shell #detail-panel-clip .clip-toolbar #cicada-pattern-preview .actions { display:flex; flex-wrap:nowrap; align-items:center; gap:6px; }
+.shell #detail-panel-clip .clip-toolbar #cicada-pattern-preview { flex-shrink:0; }
 .shell #detail-panel-clip .clip-toolbar #cicada-pattern-preview .field { display:flex; align-items:center; gap:4px; margin:0; white-space:nowrap; }
 .shell #detail-panel-clip .clip-toolbar #cicada-pattern-preview [data-sound-status]:empty { display:none; }
 .shell #detail-panel-clip .clip-toolbar #cicada-pattern-preview [data-sound-status] { margin:0; font-size:11px; }

@@ -234,6 +234,25 @@ test('Studio views, Record entry and Mac placement commands retain drafts and Un
     const newName=newPanel.locator('input[name=newName]');
     const renderedName=await newName.inputValue();
     await newName.fill('discard-this-draft');
+    const sound=page.locator('#cicada-pattern-preview [data-pattern-preview-track]');
+    const soundOptions=await sound.locator('option').evaluateAll(options=>options.map(option=>option.value));
+    const currentSound=await sound.inputValue();
+    const otherSound=soundOptions.find(value=>value!==currentSound);
+    assert.ok(otherSound,'fixture needs another audition sound');
+    await sound.click();
+    await sound.selectOption(otherSound);
+    await ready();
+    assert.equal(await newPanel.evaluate(node=>node.open),true,'choosing a sound closed New');
+    assert.equal(await newName.inputValue(),'discard-this-draft','choosing a sound discarded the draft');
+    await newName.press('Escape');
+    await until(async()=>!(await newPanel.evaluate(node=>node.open)) && await newName.inputValue()===renderedName,'Escape did not close and reset New');
+    await newPanel.locator('summary').click();
+    await newName.fill('discard-outside-draft');
+    // The open panel floats over the grid, so the outside press goes to the Arrange heading.
+    await page.locator('#arrangement .panel-heading').click({position:{x:4,y:4}});
+    await until(async()=>!(await newPanel.evaluate(node=>node.open)) && await newName.inputValue()===renderedName,'outside press did not close and reset New');
+    await newPanel.locator('summary').click();
+    await newName.fill('discard-this-draft');
     await newPanel.locator('summary').click();
     await until(async()=>!(await newName.evaluate(node=>node.hasAttribute('data-edited'))),'closed panel did not discard its draft');
     await page.locator('#detail-panel-clip .clip-picker summary').click();

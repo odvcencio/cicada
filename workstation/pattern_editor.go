@@ -697,7 +697,11 @@ func (s *studioApp) patterns(ctx *server.Context, v workspace, csrf string) gosx
 func (s *studioApp) clipToolbar(ctx *server.Context, v workspace, csrf string, p project.Pattern, library []gosx.Node, shared, facts, preview, tools gosx.Node) gosx.Node {
 	q := ctx.Request.URL.Query()
 	picker := gosx.El("details", gosx.Attrs(gosx.Attr("class", "clip-picker"), gosx.Attr("name", "clip-toolbar")), gosx.El("summary", gosx.Text(p.ID+" · "+p.Kind)), gosx.El("nav", gosx.Attrs(gosx.Attr("class", "pattern-library clip-menu-content"), gosx.Attr("aria-label", "Pattern library")), gosx.Fragment(library...)))
-	return gosx.El("div", gosx.Attrs(gosx.Attr("class", "clip-toolbar")), picker, shared, facts, preview, tools, gosx.El("span", gosx.Attrs(gosx.Attr("class", "clip-toolbar-spacer"))), s.patternCreation(ctx, v, csrf, "", true), patternMachineLink(q.Get("track"), p.ID, q.Get("scene")), s.patternManagement(ctx, v, csrf, p, true))
+	var notice gosx.Node = gosx.Fragment()
+	if strings.Contains(p.ID, ".") {
+		notice = gosx.El("span", gosx.Attrs(gosx.Attr("class", "clip-library-notice")), gosx.Text("Library pattern "), gosx.El("a", gosx.Attrs(gosx.Attr("href", "#pattern-variation")), gosx.Text("Make a variation to edit")))
+	}
+	return gosx.El("div", gosx.Attrs(gosx.Attr("class", "clip-toolbar")), picker, shared, facts, notice, preview, tools, gosx.El("span", gosx.Attrs(gosx.Attr("class", "clip-toolbar-spacer"))), s.patternCreation(ctx, v, csrf, "", true), patternMachineLink(q.Get("track"), p.ID, q.Get("scene")), s.patternManagement(ctx, v, csrf, p, true))
 }
 
 func rollButton(step int, label, text string, note *project.Step, active, selected bool) gosx.Node {

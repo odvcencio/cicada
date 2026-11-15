@@ -119,7 +119,7 @@ func (s *studioApp) patternCreationForTracks(ctx *server.Context, v workspace, c
 		label += " for " + trackID
 	}
 	isToolbar := len(toolbar) > 0 && toolbar[0]
-	attrs := gosx.Attrs(gosx.Attr("class", "pattern-management"), gosx.Attr("data-gosx-key", "create-pattern-"+creationKey), gosx.Attr("aria-label", label), gosx.Attr("open", failed || (!isToolbar && sceneContext != "")))
+	attrs := gosx.Attrs(gosx.Attr("class", "pattern-management"), gosx.Attr("data-gosx-key", "create-pattern-"+creationKey), gosx.Attr("aria-label", label), gosx.Attr("open", failed || sceneContext != ""))
 	summary := "Create pattern"
 	if isToolbar {
 		attrs = append(attrs, gosx.Attr("name", "clip-toolbar"))
