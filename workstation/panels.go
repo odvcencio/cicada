@@ -149,9 +149,13 @@ func (s *studioApp) session(ctx *server.Context, v workspace, csrf, selected str
 	if v.Project == nil {
 		return failure(fmt.Errorf("save a valid score to open the session"))
 	}
+	return s.sessionView(ctx, v, csrf, selected, false)
+}
+
+func (s *studioApp) sessionView(ctx *server.Context, v workspace, csrf, selected string, shell bool) gosx.Node {
 	p := v.Project
-	if len(p.Scenes) == 0 {
-		return s.arrangement(ctx, v, csrf, selected)
+	if shell || len(p.Scenes) == 0 {
+		return s.arrangementView(ctx, v, csrf, selected, shell)
 	}
 	return gosx.Fragment(s.arrangement(ctx, v, csrf, selected), view.SceneLaunchMatrix(p, v.Revision, csrf))
 }
@@ -304,14 +308,14 @@ func (s *studioApp) trackRail(ctx *server.Context, v workspace, csrf string) fun
 		}
 	}
 	return func(track string) gosx.Node {
-		var toggles gosx.Node = gosx.Fragment()
+		var toggles []gosx.Node
 		if strip, ok := strips[track]; ok {
-			toggles = gosx.El("div", gosx.Attrs(gosx.Attr("class", "rail-toggles")), s.mixerToggle(v, csrf, "session", track, "mute", strip.Fields["mute"]), s.mixerToggle(v, csrf, "session", track, "solo", strip.Fields["solo"]))
+			toggles = append(toggles, s.mixerToggle(v, csrf, "session", track, "mute", strip.Fields["mute"]), s.mixerToggle(v, csrf, "session", track, "solo", strip.Fields["solo"]))
 		}
 		input := gosx.El("input", gosx.Attrs(gosx.Attr("type", "text"), gosx.Attr("name", "name"), gosx.Attr("value", track), gosx.Attr("aria-label", "New name for "+track), gosx.BoolAttr("required")))
 		form := ui.Form(ui.FormProps{Action: "/__actions/track-rename", CSRF: csrf, Revision: v.Revision, ReturnTo: "/?panel=session", Class: "action-form"}, hidden("source_revision", v.SourceRevision), hidden("track", track), input, gosx.El("p", gosx.Attrs(gosx.Attr("class", "rail-rename-hint")), gosx.Text("Stop playback before renaming.")), submit("", "", "Rename track"))
-		rename := gosx.El("details", gosx.Attrs(gosx.Attr("class", "rail-rename")), gosx.El("summary", gosx.Attrs(gosx.Attr("aria-label", "Rename "+track)), gosx.Text("Rename")), form)
-		return gosx.Fragment(toggles, rename)
+		rename := gosx.El("details", gosx.Attrs(gosx.Attr("class", "rail-rename")), gosx.El("summary", gosx.Attrs(gosx.Attr("aria-label", "Rename "+track)), gosx.Text("✎")), form)
+		return gosx.El("div", gosx.Attrs(gosx.Attr("class", "rail-toggles")), gosx.Fragment(toggles...), rename)
 	}
 }
 

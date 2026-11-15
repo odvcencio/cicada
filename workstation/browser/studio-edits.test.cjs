@@ -1043,6 +1043,7 @@ test('Remove block after another client inserted a block earlier is not sent', a
   // Two blocks to choose from: main, then alternate.
   await page.keyboard.press('Alt+Shift+Digit1');
   await page.locator('#view-tab-arrange[aria-selected="true"]').waitFor();
+  await page.locator('#update-center-arrange').getByText('Add section', {exact: true}).click();
   const add = page.locator('#update-center-arrange form:has(input[name=action][value=append])');
   await add.locator('select[name=scene]').selectOption('alternate');
   await add.locator('input[name=bars]').fill('4');
@@ -1062,7 +1063,7 @@ test('Remove block after another client inserted a block earlier is not sent', a
     await until(async () => await region('center-arrange').getAttribute('data-region-stale') !== null, 'the hidden Arrange view was not stale');
     // Another client copies the first block, which moves alternate to 3.
     const other = await otherClient();
-    await other.locator('#update-center-arrange details[data-song-index="0"] > summary').click();
+    await other.locator('#update-center-arrange .timeline-edit[data-song-index="0"]').click();
     await other.locator('#update-center-arrange details[data-song-index="0"]').getByRole('button', {name: 'Duplicate block'}).click();
     await until(async () => blocks((await state('/api/state')).source).length === 3, 'the other client did not copy the block');
     const theirs = await state('/api/state');
@@ -1074,7 +1075,7 @@ test('Remove block after another client inserted a block earlier is not sent', a
     await refusedRead(opened, 'center-arrange', 'the Arrange view was not read when it opened');
     assert.equal(await page.locator('#update-center-arrange details[data-song-index]').count(), 2, 'the stale view already showed the copy');
     const second = page.locator('#update-center-arrange details[data-song-index="1"]');
-    await second.locator('summary').click();
+    await page.locator('#update-center-arrange .timeline-edit[data-song-index="1"]').click();
     allow.add('center-arrange');
     const songs = sent('/__actions/song');
     await second.getByRole('button', {name: 'Remove block'}).click();

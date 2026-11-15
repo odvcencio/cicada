@@ -50,3 +50,49 @@ func TestSceneBlockEditLinksDropRevealAndRevision(t *testing.T) {
 		}
 	}
 }
+
+func TestShellSceneArrangementControls(t *testing.T) {
+	p := &project.Project{
+		Edition: 2, TempoMilli: 120000,
+		Tracks: []project.Track{{ID: "bass", Kind: "acid"}},
+		Scenes: []project.Scene{{ID: "main"}, {ID: "alternate"}},
+		Song:   []project.SongEntry{{Scene: "main", Bars: 4}, {Scene: "alternate", Bars: 4}},
+	}
+	address, client, _ := testAppWorkspace(t, &workspace{Revision: "current", SourceRevision: "sources", Valid: true, Project: p})
+	body := getPage(t, client, address+"/studio?songBlock=1&songKey=alternate%405%2B4")
+	start := strings.Index(body, `id="arrangement"`)
+	if start < 0 {
+		t.Fatal("missing arrangement")
+	}
+	body = body[start:]
+	end := strings.Index(body, `id="view-panel-session"`)
+	if end < 0 {
+		t.Fatal("missing session panel after arrangement")
+	}
+	body = body[:end]
+	last := -1
+	for _, label := range []string{"Play full song", "Stop listening", "Loop an exact range", "Add section", ">Project</summary>"} {
+		at := strings.Index(body, label)
+		if at <= last {
+			t.Fatalf("tool %q missing or out of order", label)
+		}
+		last = at
+	}
+	for _, want := range []string{
+		"Scene matrix · 8 bars · 0:16 at 120.0 BPM · Click a clip to edit it below. ↳ carries the previous pattern.",
+		`data-song-index="0" id="song-block-0"`,
+		`data-song-index="1" id="song-block-1" open data-song-selected`,
+		`aria-label="Rename bass"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+	if strings.Contains(body, `id="song-block-0" open data-song-selected`) || strings.Contains(body, "Scene launch matrix") {
+		t.Error("unselected block selected or launch matrix present in Arrange")
+	}
+	legacy := getPage(t, client, address+"/?panel=session")
+	if !strings.Contains(legacy, "Scene launch matrix") {
+		t.Error("legacy session lacks scene launch matrix")
+	}
+}

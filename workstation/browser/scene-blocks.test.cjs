@@ -107,7 +107,6 @@ test('scene headers open guarded block controls and Undo restores the song', {ti
   assert.equal(writes.length,1);
   assert.notEqual((await state()).source,before.source);
   assert.equal(await page.locator('[data-song-selected]').count(),0);
-  await page.getByText('After a song edit, choose Edit again to continue.', {exact:false}).waitFor();
   // A copied URL cannot target a different block now occupying the slot.
   await page.goto(new URL(oldURL,base).href);
   await ready();
