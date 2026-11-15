@@ -11,14 +11,27 @@ import (
 
 const arrangeSectionStorage = "cicada:arrange:section"
 
+var rememberedArrangeSection string
+
 // Storage can be unavailable in private browsing or under browser policies.
 func arrangeSectionStorageValue(action, value string) (result string) {
+	switch action {
+	case "get":
+		if rememberedArrangeSection != "" {
+			return rememberedArrangeSection
+		}
+	case "set":
+		rememberedArrangeSection = value
+	case "clear":
+		rememberedArrangeSection = ""
+	}
 	defer func() { _ = recover() }()
 	storage := js.Global().Get("sessionStorage")
 	switch action {
 	case "get":
 		if saved := storage.Call("getItem", arrangeSectionStorage); saved.Type() == js.TypeString {
-			return saved.String()
+			rememberedArrangeSection = saved.String()
+			return rememberedArrangeSection
 		}
 	case "set":
 		storage.Call("setItem", arrangeSectionStorage, value)
@@ -36,6 +49,7 @@ func discardArrangeSection(root, blocks js.Value) {
 	for i := 0; i < blocks.Length(); i++ {
 		block := blocks.Index(i)
 		block.Set("open", false)
+		discardDetailsDraft(block)
 		block.Call("removeAttribute", "data-song-selected")
 	}
 	if status := root.Call("querySelector", "#arrangement [data-scene-open-status]"); workspacePresent(status) {
@@ -49,6 +63,12 @@ func restoreArrangeSection(root js.Value) {
 		return
 	}
 	blocks := root.Call("querySelectorAll", "#arrangement details.arrangement-block[data-song-key]")
+	for i := 0; i < blocks.Length(); i++ {
+		if block := blocks.Index(i); block.Get("open").Bool() {
+			arrangeSectionStorageValue("set", arrangeSectionKey(block))
+			return
+		}
+	}
 	if saved := arrangeSectionStorageValue("get", ""); saved != "" {
 		for i := 0; i < blocks.Length(); i++ {
 			block := blocks.Index(i)
@@ -60,12 +80,6 @@ func restoreArrangeSection(root js.Value) {
 		}
 		discardArrangeSection(root, blocks)
 		return
-	}
-	for i := 0; i < blocks.Length(); i++ {
-		if block := blocks.Index(i); block.Get("open").Bool() {
-			arrangeSectionStorageValue("set", arrangeSectionKey(block))
-			return
-		}
 	}
 }
 
@@ -175,13 +189,11 @@ func bindShellNavigation(host enginewasm.Context, root js.Value) (func(), error)
 	restorePendingShellChoice(host, root)
 	revealShellBrowserDestination(host, root)
 	restoreArrangeSection(root)
-	arrangeUpdated := js.FuncOf(func(js.Value, []js.Value) any {
+	removeArrangeUpdated := workspaceUpdated.add(func() {
 		if root.Get("isConnected").Bool() {
 			checkArrangeSection(root)
 		}
-		return nil
 	})
-	document.Call("addEventListener", "cicada:workspace-updated", arrangeUpdated)
 	localClick := js.FuncOf(func(_ js.Value, args []js.Value) any {
 		if len(args) == 0 || !root.Get("isConnected").Bool() {
 			return nil
@@ -199,6 +211,7 @@ func bindShellNavigation(host enginewasm.Context, root js.Value) (func(), error)
 			block := summary.Get("parentElement")
 			if block.Get("open").Bool() {
 				arrangeSectionStorageValue("clear", "")
+				discardDetailsDraft(block)
 				block.Call("removeAttribute", "data-song-selected")
 			}
 		}
@@ -238,15 +251,7 @@ func bindShellNavigation(host enginewasm.Context, root js.Value) (func(), error)
 				}
 				block.Call("removeAttribute", "data-song-selected")
 				block.Set("open", false)
-				forms := block.Call("querySelectorAll", "form")
-				for j := 0; j < forms.Length(); j++ {
-					forms.Index(j).Call("reset")
-				}
-				controls := block.Call("querySelectorAll", "[data-edited], [data-baseline]")
-				for j := 0; j < controls.Length(); j++ {
-					controls.Index(j).Call("removeAttribute", "data-edited")
-					controls.Index(j).Call("removeAttribute", "data-baseline")
-				}
+				discardDetailsDraft(block)
 			}
 			if workspacePresent(selected) {
 				event.Call("preventDefault")
@@ -361,8 +366,7 @@ func bindShellNavigation(host enginewasm.Context, root js.Value) (func(), error)
 		document.Call("removeEventListener", "gosx:navigate", restore)
 		document.Call("removeEventListener", "focusin", focusChanged, true)
 		document.Call("removeEventListener", "submit", historyPending, true)
-		document.Call("removeEventListener", "cicada:workspace-updated", arrangeUpdated)
-		arrangeUpdated.Release()
+		removeArrangeUpdated()
 		historyPending.Release()
 		remember.Release()
 		restore.Release()

@@ -1056,6 +1056,7 @@ test('Remove block after another client inserted a block earlier is not sent', a
   await page.locator('#view-tab-mixer[aria-selected="true"]').waitFor();
   const allow = new Set();
   await readOnly(allow);
+  let staleSection;
   try {
     const start = posts.length;
     await page.locator(cell(42)).click();
@@ -1077,6 +1078,8 @@ test('Remove block after another client inserted a block earlier is not sent', a
     const second = page.locator('#update-center-arrange details[data-song-index="1"]');
     await page.locator('#update-center-arrange .timeline-edit[data-song-index="1"]').click();
     await second.locator('summary').waitFor({state: 'visible'});
+    staleSection = await page.evaluate(() => sessionStorage.getItem('cicada:arrange:section'));
+    assert.ok(staleSection);
     assert.equal(await page.locator('#update-center-arrange details.arrangement-block[open]').count(), 1);
     allow.add('center-arrange');
     const songs = sent('/__actions/song');
@@ -1092,6 +1095,13 @@ test('Remove block after another client inserted a block earlier is not sent', a
     await page.unroute('**/__studio/regions**');
   }
   await caughtUp();
+  // Seed the stale value and reload in one step: a region patch in between would
+  // notice it first, show the message and clear it.
+  await page.evaluate(value => { sessionStorage.setItem('cicada:arrange:section', value); location.reload(); }, staleSection).catch(() => {});
+  await page.waitForLoadState('domcontentloaded');
+  await page.locator('#studio-shell[data-shell-edits=ready]').waitFor();
+  await until(async () => (await page.locator('#update-center-arrange [data-scene-open-status]').textContent()) === 'The song changed. Choose Edit on a block to continue editing it.', 'reload did not report the changed song');
+  assert.equal(await page.locator('#update-center-arrange details.arrangement-block[open]').count(), 0);
 });
 
 test('a piano-roll click on a cell another client just filled is not sent', async () => {
