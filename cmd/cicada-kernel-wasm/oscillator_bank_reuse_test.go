@@ -149,5 +149,19 @@ song { main*2 }
 	if !bytes.Equal(bank, reused) {
 		t.Fatalf("the second instance returned a different bank image (%d bytes, exported %d)", len(reused), len(bank))
 	}
+	// The image has a four-byte header, 144 uint16 table references, then
+	// little-endian float32 table samples (see decodeOscillatorBankImage).
+	const tableDataAt = 4 + 144*2
+	if len(bank) <= tableDataAt || (len(bank)-tableDataAt)%4 != 0 {
+		t.Fatalf("unexpected oscillator bank image length: %d", len(bank))
+	}
+	flipped := bytes.Clone(bank)
+	for i := tableDataAt + 3; i < len(flipped); i += 4 {
+		flipped[i] ^= 0x80
+	}
+	third, _ := run("flipped", flipped)
+	if third == first {
+		t.Fatal("PCM with sign-flipped bank matches the original")
+	}
 	t.Logf("PCM %x; bank image %d bytes", first[:8], len(bank))
 }

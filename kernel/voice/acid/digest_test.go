@@ -1,7 +1,6 @@
 package acid
 
 import (
-	"os"
 	"testing"
 
 	"m31labs.dev/cicada/kernel/expression"
@@ -19,8 +18,8 @@ import (
 // floors and the resting filter runs. Before the voice's math moved
 // to kernel/dsp/detmath (#328, #329, #343) its output differed between amd64
 // and arm64 within the first second; these digests are the same on amd64,
-// arm64 and TinyGo's WebAssembly (make test-tinygo-digests). Print new values
-// with CICADA_ACID_DIGEST_PRINT=1 and change them only with a stated reason.
+// arm64 and TinyGo's WebAssembly (make test-tinygo-digests). A mismatch
+// reports the new values; change them only with a stated reason.
 const (
 	acidOutputDigest = "d3a21889c94eaff5fa8f9785bc7eca225759e49f89c22e60c4ba8501b1269fa2"
 	acidStateDigest  = "4f209df7987e574692a86fca5bbdd053090e0cda9d8a238a19b0fdea379db659"
@@ -32,11 +31,6 @@ func TestAcidDigest(t *testing.T) {
 		renderAcidPattern(t, rate, output, state)
 	}
 	gotOutput, gotState := output.Hex(), state.Hex()
-	if os.Getenv("CICADA_ACID_DIGEST_PRINT") == "1" {
-		t.Logf("acidOutputDigest = %q", gotOutput)
-		t.Logf("acidStateDigest  = %q", gotState)
-		return
-	}
 	if gotOutput != acidOutputDigest {
 		t.Errorf("acid output digest = %s, want %s", gotOutput, acidOutputDigest)
 	}
@@ -50,9 +44,9 @@ func TestAcidDigest(t *testing.T) {
 // four settings and glides to the next; only bars 2 and 3 turn on the savage
 // stage, and bar 2 the detuned second oscillator and bar 3 full drive. The
 // rest comes before the savage stage on purpose: once the savage stage has
-// been on, its blend decays toward zero without reaching it, and the resting
-// filter path needs it at exactly zero. During the rest every envelope reaches
-// its floor and the voice runs that resting path.
+// been on, its blend takes about 15 seconds to be flushed to zero, and the
+// resting filter path needs it at exactly zero. During the rest every envelope
+// reaches its floor and the voice runs that resting path.
 func renderAcidPattern(t *testing.T, rate int, output, state *bitdigest.Digest) {
 	t.Helper()
 	v, err := New(rate)
