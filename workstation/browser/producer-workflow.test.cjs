@@ -8,7 +8,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const stall = require('./page-stall.cjs');
-const { withGpuRaster } = require('./chrome-gpu-raster.cjs');
+const { withGpuRaster, graphicsStatus } = require('./chrome-gpu-raster.cjs');
 
 async function until(fn, message) {
   const end = Date.now() + 20000;
@@ -43,6 +43,11 @@ test('Producer workflow edits vocal timing, joins, effect chains and drawn autom
   const serverLog = process.env.CICADA_STUDIO_STARTUP_LOG;
   const watches = [await stall.watchContext(desktop, { serverLog })];
   stall.teardown(t, browser, { watch: watches, before: () => desktop.storageState({ path: storage }), exitWhenDone: true });
+  // withGpuRaster adds nothing when the options already choose a graphics
+  // backend, so a later edit of the flags above could undo the workaround
+  // without a message. Check what Chrome actually does.
+  const graphics = await graphicsStatus(browser);
+  assert.match(graphics.rasterization, /^enabled/, `this suite's Chrome must rasterize on the GPU (chrome-gpu-raster.cjs), but it reports rasterization ${graphics.rasterization}`);
   const page = await desktop.newPage();
   page.setDefaultTimeout(20000);
   const errors = [], checks = [];
