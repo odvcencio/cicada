@@ -1,0 +1,5 @@
+// arrangement owner
+arrange {
+  place good drums beat { at = @1.1.1 length = 4bars }
+  place risk bass chance { at = @5.1.1 length = 4bars }
+}

@@ -1,0 +1,9 @@
+// split fixture: definitions
+cicada 2
+track drums drums {}
+track bass acid {}
+pattern beat drums {
+  bd: X... .... X... ....
+  sd: .... X... .... X...
+}
+pattern chance { c3?50 . c4?50 c3?50 }

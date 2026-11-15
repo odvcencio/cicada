@@ -2,6 +2,7 @@
 // Annotated screenshot of a running Studio, for pull request evidence.
 // usage: node annotate.cjs <studio-url> <out.png> <WxH> <search> [options]
 //   --panes LC          library/code panes cookie, two digits (default 10)
+//   --path <path>       page to open (default /studio); @startup opens the given address itself, for a one-use startup link
 //   --click <selector>  click before capturing (repeatable, in order)
 //   --step <kind:arg>   click:<sel> | select:<sel>=<value> | fill:<sel>=<text> | key:<key> | hover:<sel> | wait:<ms> | waitfor:<sel>, run in order after the clicks
 //   --scroll <selector> scroll this element to the centre before marking (repeatable)
@@ -13,7 +14,7 @@ const {chromium} = require(process.env.CICADA_PLAYWRIGHT_MODULE || 'playwright')
 (async () => {
   const [base, out, size, search, ...rest] = process.argv.slice(2);
   const [w, h] = size.split('x').map(Number);
-  const opt = {panes: '10', click: [], step: [], scroll: [], wait: 700, title: '', mark: [], clip: ''};
+  const opt = {panes: '10', path: '/studio', click: [], step: [], scroll: [], wait: 700, title: '', mark: [], clip: ''};
   for (let i = 0; i < rest.length; i += 2) {
     const k = rest[i].replace(/^--/, ''), v = rest[i + 1];
     if (Array.isArray(opt[k])) opt[k].push(v); else opt[k] = k === 'wait' ? Number(v) : v;
@@ -21,13 +22,13 @@ const {chromium} = require(process.env.CICADA_PLAYWRIGHT_MODULE || 'playwright')
   const browser = await chromium.launch({headless: true, executablePath: process.env.CICADA_CHROME_PATH || undefined, args: ['--mute-audio']});
   const context = await browser.newContext({viewport: {width: w, height: h}});
   const startup = new URL(base);
-  if (startup.pathname.startsWith('/__local/')) { const p = await context.newPage(); await p.goto(startup.href); await p.close(); }
+  if (startup.pathname.startsWith('/__local/') && opt.path !== '@startup') { const p = await context.newPage(); await p.goto(startup.href); await p.close(); }
   await context.addCookies([{name: 'cicada_panes', value: opt.panes, url: startup.origin}]);
   const page = await context.newPage();
   await page.addInitScript(open => { try { localStorage.setItem('studio:layout:codeOpen', JSON.stringify(open)); } catch {} }, opt.panes[1] === '1');
-  const target = new URL('/studio', startup); target.search = search;
+  const target = opt.path === '@startup' ? new URL(startup.href) : new URL(opt.path, startup); if (opt.path !== '@startup') target.search = search;
   await page.goto(target.href);
-  await page.locator('#studio-shell[data-shell-actions="ready"]').waitFor({timeout: 20000}).catch(() => console.error('shell not ready'));
+  await page.locator('#studio-shell[data-shell-actions="ready"]').waitFor({timeout: opt.path === '/studio' ? 20000 : 4000}).catch(() => console.error('shell not ready'));
   await page.waitForTimeout(opt.wait);
   for (const sel of opt.click) { try { await page.locator(sel).first().click({timeout: 5000}); await page.waitForTimeout(400); } catch (e) { console.error('click failed: ' + sel); } }
   for (const st of opt.step) {
