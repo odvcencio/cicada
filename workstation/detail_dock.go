@@ -18,6 +18,9 @@ import (
 
 // Device selection follows an inspected placement until the user explicitly
 // chooses a track. A subsequent placement link supplies a fresh selection.
+// deviceTrack resolves the track; deviceChannel also resolves a bus, the
+// master, a return or an effect, which the same query parameter names as
+// "kind:id".
 func deviceTrack(p *project.Project, query url.Values) *project.Track {
 	if p == nil || len(p.Tracks) == 0 {
 		return nil
@@ -40,7 +43,7 @@ func deviceTrack(p *project.Project, query url.Values) *project.Track {
 }
 
 // Shared instrument, mixer and chain forms keep their domain actions and
-// revision guards. Scope their return targets to the track being inspected,
+// revision guards. Scope their return targets to the channel being inspected,
 // including when this hidden panel is revealed by the client-side dock tabs.
 var dockReturnField = regexp.MustCompile(`(<input[^>]*name="__gosx_return_to"[^>]*value=")[^"]*("[^>]*>)`)
 
@@ -52,108 +55,182 @@ func dockForms(node gosx.Node, target string) gosx.Node {
 	}))
 }
 
+// deviceDock shows one channel: a track's sound, mix, routing and inserts; a
+// bus's or the master's mix, routing and inserts; a return's or an effect's
+// parameters. It holds every exact-value control, so the Mixer strips keep only
+// direct ones.
 func (s *studioApp) deviceDock(ctx *server.Context, v workspace, csrf string) gosx.Node {
-	track := deviceTrack(v.Project, ctx.Request.URL.Query())
-	if track == nil {
-		return ui.Panel(ui.PanelProps{ID: "device-editor", Title: "Device", Description: "Add an instrument in the Browser to create a track, then shape its sound here."})
-	}
 	query := ctx.Request.URL.Query()
-	query.Set("dock", "device")
-	query.Set("deviceTrack", track.ID)
-	target := "/studio?" + query.Encode()
-	var choices []string
-	for _, t := range v.Project.Tracks {
-		choices = append(choices, t.ID)
+	mixer, mixerErr := s.loadMixer(ctx, v)
+	var strips, effects []mixerChannel
+	if mixerErr == nil {
+		strips, effects = mixerChannels(mixer, v.Project)
 	}
-	var preserved []gosx.Node
-	for name, values := range query {
-		if name == "deviceTrack" || name == "placement" {
-			continue
+	channel, ok := deviceChannel(v.Project, query, strips, effects)
+	if !ok {
+		description := "Add an instrument in the Browser to create a track, then shape its sound here."
+		if strings.Contains(query.Get("deviceTrack"), ":") {
+			description = "This channel no longer exists. Select a strip in the Mixer."
 		}
-		for _, value := range values {
+		return ui.Panel(ui.PanelProps{ID: "device-editor", Title: "Device", Description: description})
+	}
+	query.Set("dock", "device")
+	query.Set("deviceTrack", channel.Ref())
+	target := "/studio?" + query.Encode()
+	group := func(title string, children []gosx.Node) gosx.Node {
+		return gosx.El("section", gosx.Attrs(gosx.Attr("class", "device-group"), gosx.Attr("aria-label", title)), gosx.El("h3", gosx.Text(title)), gosx.El("div", gosx.Attrs(gosx.Attr("class", "device-controls")), gosx.Fragment(children...)))
+	}
+	note := func(text string) gosx.Node {
+		return gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text(text))
+	}
+	attrs := gosx.Attrs(gosx.Attr("class", "device-groups"), gosx.Attr("data-gosx-key", "device-"+channel.Ref()), gosx.Attr("data-device-channel", channel.Ref()))
+	var groups []gosx.Node
+	if channel.Kind == "track" {
+		attrs = append(attrs, gosx.Attr("data-device-track", channel.ID))
+		// Sound forms carry the workspace revision; the mixer forms below carry
+		// the revision the mixer state was read at.
+		groups = append(groups, group("Sound", s.deviceSound(v, csrf, channel.ID)))
+	}
+	if mixerErr == nil {
+		v.Revision, v.Edition = mixer.Revision, mixer.Edition
+	}
+	switch {
+	case mixerErr != nil:
+		groups = append(groups, group("Mix and routing", []gosx.Node{failure(mixerErr)}))
+	case channel.Kind == "return" || channel.Kind == "effect":
+		title, controls := "Return effect", s.effectControls(v, csrf, channel.Effect)
+		if channel.Kind == "effect" {
+			title = "Effect"
+			if !channel.Inserted {
+				controls = append(controls, note("This effect is on no channel. Open a track in Device and add it to the insert chain."))
+			}
+		}
+		if len(channel.Effect.Fields) == 0 {
+			controls = append(controls, note("This effect has no parameters to set here."))
+		}
+		groups = append(groups, gosx.El("div", gosx.Attrs(gosx.Attr("id", "device-effect-"+channel.ID)), group(title, controls)))
+	default:
+		controls := s.stripMixControls(v, csrf, channel.Strip, false)
+		if len(controls) == 0 {
+			controls = append(controls, note("No mixer controls are available for this channel."))
+		}
+		inserts := s.stripInsertChain(v, csrf, channel)
+		if channel.Kind == "track" {
+			inserts = append(inserts, ampAutomationLinks(ctx, v.Project, channel.ID))
+		}
+		inserts = append(inserts, s.vocalChainAction(v, csrf, channel)...)
+		for _, name := range channel.Strip.Inserts {
+			for _, effect := range mixer.Effects {
+				if effect.Name == name {
+					inserts = append(inserts, gosx.El("details", gosx.Attrs(gosx.Attr("class", "device-effect"), gosx.Attr("id", "device-effect-"+name)), gosx.El("summary", gosx.Text(name)), gosx.El("div", gosx.Attrs(gosx.Attr("class", "device-controls")), gosx.Fragment(s.effectControls(v, csrf, effect)...))))
+				}
+			}
+		}
+		if _, has := channel.Strip.Fields["insert"]; !has && len(channel.Strip.Inserts) == 0 && !channel.Audio {
+			inserts = append(inserts, note("This channel has no insert chain. Add EQ, compression or drive effects in the score to make them available here."))
+		}
+		groups = append(groups, group("Mix and routing", controls), group("Insert effects", inserts))
+	}
+	content := ui.Panel(ui.PanelProps{ID: "device-editor", Title: channel.Title(), Description: "Channel controls, instrument settings and effects. Changes save to the score and support Undo."},
+		devicePicker(v.Project, query, channel, strips, effects), gosx.El("div", attrs, gosx.Fragment(groups...)))
+	// Chain links target the Device copy of an effect's controls.
+	rendered := gosx.RenderHTML(dockForms(content, target))
+	rendered = strings.ReplaceAll(rendered, `href="#effect-`, `href="#device-effect-`)
+	return gosx.RawHTML(rendered)
+}
+
+// devicePicker chooses the channel Device shows: every strip in the Mixer, and
+// each effect that sits on no insert chain. It keeps the rest of the page's
+// selections.
+func devicePicker(p *project.Project, query url.Values, selected mixerChannel, strips, effects []mixerChannel) gosx.Node {
+	names := make([]string, 0, len(query))
+	for name := range query {
+		if name != "deviceTrack" && name != "placement" {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	var preserved []gosx.Node
+	for _, name := range names {
+		for _, value := range query[name] {
 			preserved = append(preserved, hidden(name, value))
 		}
 	}
-	picker := gosx.El("form", gosx.Attrs(gosx.Attr("method", "get"), gosx.Attr("action", "/studio"), gosx.Attr("class", "device-track-picker")),
-		gosx.Fragment(preserved...), field("Track", selectInput("deviceTrack", track.ID, choices, "Device track")), submit("", "", "Inspect track"))
-	var sourceControls []gosx.Node
+	groups := []struct {
+		label   string
+		options []gosx.Node
+	}{{label: "Tracks"}, {label: "Buses and master"}, {label: "Returns"}, {label: "Effects on no channel"}}
+	add := func(group int, c mixerChannel) {
+		attrs := gosx.Attrs(gosx.Attr("value", c.Ref()))
+		if c.Ref() == selected.Ref() {
+			attrs = append(attrs, gosx.BoolAttr("selected"))
+		}
+		groups[group].options = append(groups[group].options, gosx.El("option", attrs, gosx.Text(c.Name)))
+	}
+	for _, c := range strips {
+		switch c.Kind {
+		case "track":
+			add(0, c)
+		case "return":
+			add(2, c)
+		default:
+			add(1, c)
+		}
+	}
+	if len(groups[0].options) == 0 && p != nil {
+		// The mixer state is missing; the project still names the tracks.
+		for _, track := range p.Tracks {
+			add(0, mixerChannel{Kind: "track", ID: track.ID, Name: track.ID})
+		}
+	}
+	for _, c := range effects {
+		if !c.Inserted || c.Ref() == selected.Ref() {
+			add(3, c)
+		}
+	}
+	var options []gosx.Node
+	for _, g := range groups {
+		if len(g.options) > 0 {
+			options = append(options, gosx.El("optgroup", gosx.Attrs(gosx.Attr("label", g.label)), gosx.Fragment(g.options...)))
+		}
+	}
+	return gosx.El("form", gosx.Attrs(gosx.Attr("method", "get"), gosx.Attr("action", "/studio"), gosx.Attr("class", "device-track-picker")),
+		gosx.Fragment(preserved...), field("Channel", gosx.El("select", gosx.Attrs(gosx.Attr("name", "deviceTrack"), gosx.Attr("aria-label", "Device channel")), gosx.Fragment(options...))), submit("", "", "Inspect channel"))
+}
+
+// deviceSound is a track's instrument controls: the declared instrument's
+// parameters, or the built-in voice's.
+func (s *studioApp) deviceSound(v workspace, csrf, id string) []gosx.Node {
+	var track *project.Track
+	if v.Project != nil {
+		for i := range v.Project.Tracks {
+			if v.Project.Tracks[i].ID == id {
+				track = &v.Project.Tracks[i]
+			}
+		}
+	}
+	if track == nil {
+		return []gosx.Node{gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Instrument controls are unavailable for this track."))}
+	}
+	var controls []gosx.Node
 	for i := range v.Project.Instruments {
 		definition := &v.Project.Instruments[i]
 		if definition.ID == track.Kind {
-			sourceControls = s.instrumentTrackParameters(v, csrf, *track, definition)
-			break
-		}
-	}
-	if len(sourceControls) == 0 {
-		sourceControls = s.builtinTrackParameters(v, csrf, *track)
-	}
-	if len(sourceControls) == 0 {
-		text := "Instrument controls and routing are saved on this track. Add instruments in the Browser."
-		if track.Kind == "audio" {
-			text = "Recorded audio track. Record and comp takes in Arrange; shape the vocal with its insert chain here."
-		}
-		sourceControls = append(sourceControls, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text(text)))
-	}
-	var controls, effects []gosx.Node
-	mixer, err := s.loadMixer(ctx, v)
-	if err != nil {
-		controls = append(controls, failure(err))
-	} else {
-		v.Revision, v.Edition = mixer.Revision, mixer.Edition
-		for _, strip := range mixer.Tracks {
-			if strip.ID != track.ID {
-				continue
-			}
-			var keys []string
-			for key, f := range strip.Fields {
-				if f.Supported && key != "insert" {
-					keys = append(keys, key)
-				}
-			}
-			sort.Strings(keys)
-			for _, key := range keys {
-				controls = append(controls, s.mixerField(v, csrf, key, strip.Fields[key]))
-			}
-			for _, send := range strip.Sends {
-				controls = append(controls, s.mixerField(v, csrf, "send to "+send.To, send.mixerField))
-			}
-			if insert, ok := strip.Fields["insert"]; ok && insert.Supported {
-				effects = append(effects, s.effectChain(v, csrf, strip))
-			}
-			effects = append(effects, ampAutomationLinks(ctx, v.Project, track.ID))
-			if track.Kind == "audio" {
-				effects = append(effects, s.form(v, csrf, "mixer", "mixer", hidden("action", "vocal-chain"), hidden("track", track.ID), submit("", "", "Add vocal chain")))
-			}
-			for _, name := range strip.Inserts {
-				for _, effect := range mixer.Effects {
-					if effect.Name == name {
-						var fields []gosx.Node
-						for _, f := range effect.Fields {
-							fields = append(fields, s.mixerField(v, csrf, f.Path, f))
-						}
-						effects = append(effects, gosx.El("details", gosx.Attrs(gosx.Attr("class", "device-effect"), gosx.Attr("id", "device-effect-"+name)), gosx.El("summary", gosx.Text(name)), gosx.El("div", gosx.Attrs(gosx.Attr("class", "device-controls")), gosx.Fragment(fields...))))
-					}
-				}
-			}
+			controls = s.instrumentTrackParameters(v, csrf, *track, definition)
 			break
 		}
 	}
 	if len(controls) == 0 {
-		controls = append(controls, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("No mixer controls are available for this track.")))
+		controls = s.builtinTrackParameters(v, csrf, *track)
 	}
-	if len(effects) == 0 {
-		effects = append(effects, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("This track has no insert chain. Add EQ, compression or drive effects in the score to make them available here.")))
+	if len(controls) == 0 {
+		text := "Instrument controls and routing are saved on this track. Add instruments in the Browser."
+		if track.Kind == "audio" {
+			text = "Recorded audio track. Record and comp takes in Arrange; shape the vocal with its insert chain here."
+		}
+		controls = append(controls, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text(text)))
 	}
-	group := func(title string, children []gosx.Node) gosx.Node {
-		return gosx.El("section", gosx.Attrs(gosx.Attr("class", "device-group"), gosx.Attr("aria-label", title)), gosx.El("h3", gosx.Text(title)), gosx.El("div", gosx.Attrs(gosx.Attr("class", "device-controls")), gosx.Fragment(children...)))
-	}
-	content := ui.Panel(ui.PanelProps{ID: "device-editor", Title: track.ID + " · " + track.Kind, Description: "Track controls, instrument settings and effects. Changes save to the score and support Undo."},
-		picker, gosx.El("div", gosx.Attrs(gosx.Attr("class", "device-groups"), gosx.Attr("data-device-track", track.ID)), group("Sound", sourceControls), group("Mix and routing", controls), group("Insert effects", effects)))
-	// Chain links target the Device copy of an effect's controls, rather than
-	// the same effect in the hidden Mixer panel.
-	rendered := gosx.RenderHTML(dockForms(content, target))
-	rendered = strings.ReplaceAll(rendered, `href="#effect-`, `href="#device-effect-`)
-	return gosx.RawHTML(rendered)
+	return controls
 }
 
 // Built-in source controls share the saved instrument action with authored

@@ -92,6 +92,24 @@ func bindShellNavigation(host enginewasm.Context, root js.Value) (func(), error)
 			_ = host.SetSignal("$dock", "automation")
 			return nil
 		}
+		// A Mixer strip's name opens that channel in Device.
+		if choice := target.Call("closest", "[data-mixer-select]"); workspacePresent(choice) {
+			_ = host.SetSignal("$dock", "device")
+			if js.Global().Get("innerWidth").Float() < 800 {
+				root.Call("setAttribute", "data-phone-region", "detail")
+				url := shellCurrentURL()
+				url.Get("searchParams").Call("set", "region", "detail")
+				syncShellLocation(root, url)
+			}
+			// The server's link names only the channel. Follow it with the
+			// rest of the page's selections (pattern, placement, file) kept.
+			url := shellCurrentURL()
+			for key, value := range map[string]string{"tab": "mixer", "dock": "device", "deviceTrack": workspaceAttr(choice, "data-mixer-select")} {
+				url.Get("searchParams").Call("set", key, value)
+			}
+			choice.Call("setAttribute", "href", url.Get("pathname").String()+url.Get("search").String())
+			return nil
+		}
 		// Native fragment navigation emits popstate in WebKit and Chromium.
 		// The navigation host can still remember the URL from before a local
 		// tab switch and mistake that fragment for a different page. Reveal
@@ -190,6 +208,10 @@ func syncShellLocation(root, url js.Value) {
 			continue
 		}
 		copyShellContext(target, url)
+		if link.Call("hasAttribute", "data-mixer-select").Bool() {
+			target.Get("searchParams").Call("set", "tab", "mixer")
+			target.Get("searchParams").Call("set", "dock", "device")
+		}
 		if region := workspaceAttr(link, "data-shell-region"); region != "" {
 			if region == workspaceAttr(root, "data-phone-region") {
 				link.Call("setAttribute", "aria-current", "page")

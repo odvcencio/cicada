@@ -8,6 +8,7 @@ import (
 	"math"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall/js"
 	"time"
 
@@ -40,13 +41,25 @@ type stripHold struct {
 // document are visible, and checks for visibility four times a second
 // otherwise. Each meter element ([data-meter]) gets --peak, --rms and --hold
 // (0 to 1 over -60 to +6 dBFS) and data-clip. Its aria-label and the master
-// loudness text change at most twice a second.
+// loudness text change at most twice a second. "Reset peaks"
+// ([data-mixer-reset-peaks]) drops every hold tick and clip lamp before the
+// next frame, instead of after their one and three seconds.
 func mountStripMeters() enginewasm.Handle {
 	document := js.Global().Get("document")
 	ctx, cancel := context.WithCancel(context.Background())
 	holds := map[string]*stripHold{}
 	var labelled time.Time
 	failures := 0
+	var reset atomic.Bool
+	onReset := js.FuncOf(func(_ js.Value, args []js.Value) any {
+		if len(args) > 0 {
+			if target := args[0].Get("target"); workspacePresent(target) && target.Get("closest").Type() == js.TypeFunction && workspacePresent(target.Call("closest", "[data-mixer-reset-peaks]")) {
+				reset.Store(true)
+			}
+		}
+		return nil
+	})
+	document.Call("addEventListener", "click", onReset)
 	go func() {
 		for {
 			visible := stripMetersVisible(document)
@@ -81,11 +94,23 @@ func mountStripMeters() enginewasm.Handle {
 				continue
 			}
 			failures = 0
-			paintStripMeters(document, frame, holds, &labelled, false)
+			// A reset forgets the holds; this frame starts them again at the
+			// level it carries, so a channel that still clips stays lit.
+			cleared := reset.Swap(false)
+			if cleared {
+				clear(holds)
+			}
+			paintStripMeters(document, frame, holds, &labelled, cleared)
 		}
 	}()
 	var once sync.Once
-	return enginewasm.HandleFunc(func() { once.Do(cancel) })
+	return enginewasm.HandleFunc(func() {
+		once.Do(func() {
+			cancel()
+			document.Call("removeEventListener", "click", onReset)
+			onReset.Release()
+		})
+	})
 }
 
 // stripMetersVisible reports whether the Mixer view is on screen in a visible
