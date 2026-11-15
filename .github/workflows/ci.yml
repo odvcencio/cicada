@@ -1044,6 +1044,9 @@ jobs:
           CICADA_SIZE_AUDIT_MANIFEST="$PWD/workstation/dist/build.json" go test -race ./internal/buildaudit -count=1
           git diff --exit-code -- tools/gosx-size
           git diff --exit-code -- workstation/ui
+          # git diff does not show a generated file that was never committed
+          # (workstation/ui/style.css is embedded, so a clone would not build).
+          test -z "$(git status --porcelain --untracked-files=all -- workstation/ui)"
       # What fills the UI engine WebAssembly, logged on every run. It reports;
       # the limit is enforced by go generate above.
       - name: UI engine size report (does not fail the job)

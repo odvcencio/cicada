@@ -365,6 +365,12 @@ func (u *workspaceUI) submit(event js.Value) {
 		domDrop(form, "data-workspace-updated")
 		// Transport commands carry no score revision check and never wait.
 		if region := domCall(form, "closest", "[data-update-region]"); strings.EqualFold(workspaceAttr(form, "method"), "post") && workspaceAttr(form, "id") != "transport-form" && workspacePresent(region) && domHas(region, "data-region-stale") && !domHas(region, "data-region-reload") && !shellHeld(region) {
+			if workspaceActionPath(workspaceAttr(form, "action")) == "/__actions/split-placement" {
+				workspaceStop(event)
+				u.status.Set("The arrangement changed. Check the refreshed placement before splitting it.")
+				u.refreshStale(regionsVisibleStale)
+				return
+			}
 			// A form in a stale region still carries an older revision. Read
 			// the region first; nothing is sent until it is current.
 			workspaceStop(event)
@@ -964,12 +970,12 @@ func (u *workspaceUI) runJob(job workspaceJob) bool {
 	// On /studio a form in a fresh update region holds the last confirmed
 	// revision; one in a stale region keeps its own, and the service refuses it.
 	fresh := u.shell && workspacePresent(job.form) && !workspacePresent(job.form.Call("closest", "[data-region-stale]"))
-	if revision, exists := job.values["revision"]; exists && (revision == job.confirmed || fresh) {
+	if revision, exists := job.values["revision"]; job.target != "/__actions/split-placement" && exists && (revision == job.confirmed || fresh) {
 		// Only advance our own queued gestures. A form already stale when
 		// queued keeps its stale revision for authoritative rejection.
 		job.values["revision"] = u.revision.Get()
 	}
-	if source, exists := job.values["source_revision"]; exists && (source == job.confirmedSource || fresh) {
+	if source, exists := job.values["source_revision"]; job.target != "/__actions/split-placement" && exists && (source == job.confirmedSource || fresh) {
 		job.values["source_revision"] = u.sourceRevision
 	}
 	if job.method == methodPost {
@@ -1141,6 +1147,9 @@ func (u *workspaceUI) request(job workspaceJob) (workspaceProjection, string, er
 		ctx = job.ctx
 	}
 	timeout := 15 * time.Second
+	if job.method == methodPost && job.target == "/__actions/split-placement" {
+		timeout = 135 * time.Second // render comparison and confirmed projection
+	}
 	if job.method == methodPost && (job.target == "/__actions/note-commit" || job.target == "/__actions/arrange" && job.values["action"] == "vary" || job.target == "/__actions/pattern" && job.values["action"] == "duplicate") {
 		timeout = 60 * time.Second // sound checks plus the confirmed workspace projection
 	}
