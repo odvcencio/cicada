@@ -330,10 +330,22 @@ func (c *Context) compareRenders(intent string, check RenderCheck, before, after
 }
 
 func (c *Context) compareSourceRenders(intent string, check RenderCheck, file string, before, after []byte) (bool, error) {
-	if file == c.Options.Path {
-		return c.compareRenders(intent, check, before, after)
+	base := c.Options.RenderCheck
+	if intent == "SplitClip" {
+		scoped, ok := base.(SplitRenderCheck)
+		if !ok {
+			return false, &RefusalError{Intent: intent, Cause: ErrSplitRenderCheck.Error()}
+		}
+		base = scoped.ForSplit()
+		if base == nil {
+			return false, &RefusalError{Intent: intent, Cause: ErrSplitRenderCheck.Error()}
+		}
+		check = batchCheck{check: base, files: c.fileOverrides()}
 	}
-	provider, ok := c.Options.RenderCheck.(SourceRenderCheck)
+	if file == c.Options.Path {
+		return c.compareWithRenderCheck(intent, base, check, before, after, c.fileOverrides())
+	}
+	provider, ok := base.(SourceRenderCheck)
 	if !ok {
 		return false, ErrNoRenderCheck
 	}
