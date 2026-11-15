@@ -59,7 +59,10 @@
 .shell #detail-panel-clip .clip-toolbar > details { flex-shrink:0; position:static; margin:0; padding:0; border:0; }
 .shell #detail-panel-clip .clip-toolbar summary { cursor:pointer; padding:4px 7px; border:1px solid var(--border); border-radius:4px; background:var(--raised); }
 .shell #detail-panel-clip .clip-toolbar :is(summary, a, button, input, select):focus-visible { outline:2px solid var(--amber); outline-offset:2px; }
-.shell #detail-panel-clip .clip-menu-content { position:absolute; left:0; right:0; top:100%; z-index:10; box-sizing:border-box; max-height:min(40vh, 140px); overflow:auto; padding:10px; border:1px solid var(--border); border-radius:4px; background:var(--panel); box-shadow:0 8px 20px #0008; }
+/* Only toolbar panels float. A create form that stands alone (no pattern open) stays in the flow, so the phone dock sizes to it. */
+.shell #detail-panel-clip .clip-toolbar .clip-menu-content { position:absolute; left:0; right:0; top:100%; z-index:10; box-sizing:border-box; max-height:min(40vh, 140px); overflow:auto; padding:10px; border:1px solid var(--border); border-radius:4px; background:var(--panel); box-shadow:0 8px 20px #0008; }
+/* The picker is a short list, so it opens as a menu under its button. */
+.shell #detail-panel-clip .clip-toolbar .clip-picker .clip-menu-content { right:auto; width:min(340px,100%); }
 .shell #detail-panel-clip .clip-picker .pattern-library { display:flex; flex-direction:column; }
 .shell #detail-panel-clip .clip-toolbar #cicada-pattern-preview .actions { display:flex; flex-wrap:nowrap; align-items:center; gap:6px; }
 .shell #detail-panel-clip .clip-toolbar #cicada-pattern-preview .field { display:flex; align-items:center; gap:4px; margin:0; white-space:nowrap; }
