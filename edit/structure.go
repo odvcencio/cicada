@@ -81,7 +81,8 @@ func (DeleteTrack) Kind() string { return "deletetrack" }
 // them), and what changes for other tracks: the polyphony an instrument
 // shares between its tracks, and a compressor keyed to the track. An input
 // or a voice the check does not model, the old voice or the new, is refused
-// with voice_input_unmodeled.
+// with voice_input_unmodeled. Giving acceptchanges or dropparams requires the
+// revision of the score whose changes were reviewed.
 //
 // Example: {"kind":"settrackvoice","track":"keys","voice":"tine_ep"}
 // Example: {"kind":"settrackvoice","track":"keys","voice":"tine_ep","dropparams":true}
@@ -453,6 +454,9 @@ func withoutDeclaration(source []byte, types []string, name string) ([]byte, err
 
 func setTrackVoice(ctx *Context, intent Intent) error {
 	in := intent.(*SetTrackVoice)
+	if (in.AcceptChanges || in.DropParams) && ctx.Envelope.Revision == "" {
+		return refuse("revision_required", "revision", "acceptchanges and dropparams require the reviewed score revision")
+	}
 	score, err := validScore(ctx, "changing a track's voice")
 	if err != nil {
 		return err
@@ -501,15 +505,6 @@ func setTrackVoice(ctx *Context, intent Intent) error {
 	if err != nil {
 		return err
 	}
-	if change.voiceInvalid != "" {
-		return refuse("voice_invalid", "voice", "a track cannot play %q: %s", in.Voice, change.voiceInvalid)
-	}
-	if len(change.invalid) > 0 {
-		return &ReasonError{Reason: "voice_change_invalid", Field: "voice", Uses: change.invalid, Message: fmt.Sprintf("track %s cannot change to %s: %s", in.Track, in.Voice, strings.Join(change.invalid, "; "))}
-	}
-	if len(change.unmodeled) > 0 {
-		return &ReasonError{Reason: "voice_input_unmodeled", Field: "voice", Uses: change.unmodeled, Message: fmt.Sprintf("changing track %s to %s cannot be checked for changes to the sound: %s", in.Track, in.Voice, strings.Join(change.unmodeled, "; "))}
-	}
 	var dropped []string
 	for _, s := range change.unsupported {
 		dropped = append(dropped, s.name)
@@ -521,22 +516,56 @@ func setTrackVoice(ctx *Context, intent Intent) error {
 		}
 		return &ReasonError{Reason: "voice_params_unsupported", Field: "voice", Uses: uses, Message: fmt.Sprintf("%s has no setting %s that track %s sets; give dropparams to remove them", in.Voice, strings.Join(dropped, ", "), in.Track)}
 	}
+	var removedComments []string
 	if len(change.unsupported) > 0 {
 		spans := make([][2]int, 0, len(change.unsupported))
 		for _, s := range change.unsupported {
 			start, end := innerRemoval(updated, s.start, s.end, int(node.StartByte()))
+			for _, line := range strings.Split(string(updated[start:s.start]), "\n") {
+				if text := strings.TrimSpace(line); strings.HasPrefix(text, "//") {
+					removedComments = append(removedComments, text)
+				}
+			}
 			spans = append(spans, [2]int{start, end})
 		}
-		st.set(path, removeSpans(updated, spans))
-		if err := resultValid(st, "voice", fmt.Sprintf("changing track %s to %s", in.Track, in.Voice)); err != nil {
+		updated = removeSpans(updated, spans)
+		node, walker, err = declaration(updated, []string{"track_decl"}, in.Track)
+		if err != nil {
 			return err
 		}
+		start, end := int(walker.Field(node, "kind").EndByte()), int(node.EndByte())
+		body := updated[start:end]
+		open, close := bytes.IndexByte(body, '{'), bytes.LastIndexByte(body, '}')
+		if open >= 0 && close > open && len(bytes.TrimSpace(body[open+1:close])) == 0 {
+			updated = replaceMixerSpan(updated, start+open+1, start+close, nil)
+		}
+		st.set(path, updated)
+		node, walker, err = declaration(updated, []string{"track_decl"}, in.Track)
+		if err != nil {
+			return err
+		}
+		change, err = checkVoiceChange(st, score, in.Track, before, in.Voice, path, int(node.StartByte()), int(walker.Field(node, "kind").EndByte()), nil, true)
+		if err != nil {
+			return err
+		}
+	}
+	if change.voiceInvalid != "" {
+		return refuse("voice_invalid", "voice", "a track cannot play %q: %s", in.Voice, change.voiceInvalid)
+	}
+	if len(change.invalid) > 0 {
+		return &ReasonError{Reason: "voice_change_invalid", Field: "voice", Uses: change.invalid, Message: fmt.Sprintf("track %s cannot change to %s: %s", in.Track, in.Voice, strings.Join(change.invalid, "; "))}
+	}
+	if len(change.unmodeled) > 0 {
+		return &ReasonError{Reason: "voice_input_unmodeled", Field: "voice", Uses: change.unmodeled, Message: fmt.Sprintf("changing track %s to %s cannot be checked for changes to the sound: %s", in.Track, in.Voice, strings.Join(change.unmodeled, "; "))}
 	}
 	// The backstop compares the compiled music of the result as it will be
 	// written, settings dropped.
 	change.changes = append(change.changes, compiledSoundChanges(st, score, in.Track, in.Voice)...)
 	if len(change.changes) > 0 && !in.AcceptChanges {
 		return &ReasonError{Reason: "voice_changes_sound", Field: "voice", Uses: change.changes, Message: fmt.Sprintf("changing track %s to %s changes what it plays: %s; give acceptchanges to accept that", in.Track, in.Voice, strings.Join(change.changes, "; "))}
+	}
+	for _, comment := range removedComments {
+		ctx.warn("removed comment: %s", comment)
 	}
 	for _, c := range change.changes {
 		ctx.warn("%s", c)

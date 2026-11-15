@@ -72,12 +72,18 @@ func catalogProject(t *testing.T, kind string) string {
 // returns the diff.
 func applyCatalogPayload(t *testing.T, score string, intent []byte) (string, error) {
 	t.Helper()
+	// The envelope carries the score's revision, as an agent's does after
+	// cicada check: an intent that accepts a reviewed change requires it.
+	source, err := os.ReadFile(score)
+	if err != nil {
+		t.Fatal(err)
+	}
 	envelope := filepath.Join(filepath.Dir(score), "intents.json")
-	if err := os.WriteFile(envelope, []byte(`{"version":1,"intents":[`+string(intent)+`]}`), 0o644); err != nil {
+	if err := os.WriteFile(envelope, []byte(`{"version":1,"revision":"`+edits.Revision(source)+`","intents":[`+string(intent)+`]}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	var stdout bytes.Buffer
-	err := applyCommandWithHooks([]string{score, envelope}, &stdout, nil)
+	err = applyCommandWithHooks([]string{score, envelope}, &stdout, nil)
 	return stdout.String(), err
 }
 

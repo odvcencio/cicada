@@ -1,6 +1,7 @@
 package edit
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -67,7 +68,13 @@ func TestSetTrackVoiceNamesEverySilentChange(t *testing.T) {
 	structureRefusal(t, kit, &SetTrackVoice{Track: "kit", Voice: "small"}, "voice_changes_sound", "voice", "small does not play lane sd",
 		"pattern beat lane sd (line 5): small does not play lane sd, so its hits go silent",
 		"pattern beat lane ch (line 5): small does not play lane ch, so its hits go silent")
-	got, err := Apply([]byte(kit), Envelope{Version: 1, Intents: []Intent{&SetTrackVoice{Track: "kit", Voice: "small", AcceptChanges: true}}}, Options{Compiler: parseCompiler{}})
+	intent := &SetTrackVoice{Track: "kit", Voice: "small", AcceptChanges: true}
+	_, err := Apply([]byte(kit), Envelope{Version: 1, Intents: []Intent{intent}}, Options{Compiler: parseCompiler{}})
+	var refusal *ReasonError
+	if !errors.As(err, &refusal) || refusal.Reason != "revision_required" {
+		t.Fatalf("missing revision: %v", err)
+	}
+	got, err := Apply([]byte(kit), Envelope{Version: 1, Revision: Revision([]byte(kit)), Intents: []Intent{intent}}, Options{Compiler: parseCompiler{}})
 	if err != nil || !strings.Contains(string(got.Source), "track kit small {}") || len(got.Warnings) != 1 || len(got.Warnings[0]) != 2 {
 		t.Fatalf("accepted lanes: %v %+v", err, got)
 	}
@@ -75,11 +82,11 @@ func TestSetTrackVoiceNamesEverySilentChange(t *testing.T) {
 	structureRefusal(t, melodic, &SetTrackVoice{Track: "bass", Voice: "small"}, "voice_change_invalid", "voice", "pattern kind differs from track instrument")
 	paths := "cicada 2\ntempo 120\nfx hall reverb {}\ntrack bass acid {\n  // filter\n  cutoff = 620Hz  // low\n  reso = 0.7\n  level = -3dB\n  send hall = -9dB\n}\npattern riff { a1 . c2 . }\nscene main { bass = riff bass.reso = 0.5 }\nsong { main }\nautomate bass.cutoff { @1.1.1 700Hz }\nlfo wob { rate = 1bars }\nmod wob -> bass.reso depth = 0.2\nmidi {\n  port pads\n  pads cc 74 -> bass.cutoff\n}\nlive { macro tone -> bass.cutoff 200Hz..2kHz }\n"
 	structureRefusal(t, paths, &SetTrackVoice{Track: "bass", Voice: "piano", DropParams: true}, "voice_change_invalid", "voice", "piano has no setting",
-		"scene main setting bass.reso (line 12): piano has no setting reso",
-		"automation bass.cutoff (line 14): piano has no setting cutoff",
-		"modulation route wob -> bass.reso (line 16): piano has no setting reso",
-		"MIDI mapping bass.cutoff (line 19): piano has no setting cutoff",
-		"live macro tone (line 21): piano has no setting cutoff")
+		"scene main setting bass.reso (line 9): piano has no setting reso",
+		"automation bass.cutoff (line 11): piano has no setting cutoff",
+		"modulation route wob -> bass.reso (line 13): piano has no setting reso",
+		"MIDI mapping bass.cutoff (line 16): piano has no setting cutoff",
+		"live macro tone (line 18): piano has no setting cutoff")
 	structureCase(t, strings.Split(paths, "scene main {")[0]+"scene main { bass = riff }\nsong { main }\n", &SetTrackVoice{Track: "bass", Voice: "piano", DropParams: true},
 		"cicada 2\ntempo 120\nfx hall reverb {}\ntrack bass piano {\n  level = -3dB\n  send hall = -9dB\n}\npattern riff { a1 . c2 . }\nscene main { bass = riff }\nsong { main }\n")
 	accents := "cicada 2\ntempo 120\ntrack bass acid {}\npattern riff { a1^ . c2~ . }\nscene main { bass = riff }\nsong { main }\n"

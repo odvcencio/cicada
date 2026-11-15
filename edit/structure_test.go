@@ -29,7 +29,7 @@ song { main*2 break }
 func structureCase(t *testing.T, source string, intent Intent, want string) {
 	t.Helper()
 	for _, newline := range []string{"\n", "\r\n"} {
-		got, err := applyEffectIntent(t, strings.ReplaceAll(source, "\n", newline), intent)
+		got, err := applyStructureIntent(t, strings.ReplaceAll(source, "\n", newline), intent)
 		if err != nil {
 			t.Fatalf("%q: %v", newline, err)
 		}
@@ -39,11 +39,24 @@ func structureCase(t *testing.T, source string, intent Intent, want string) {
 	}
 }
 
+func applyStructureIntent(t *testing.T, source string, intent Intent) (string, error) {
+	t.Helper()
+	env := Envelope{Version: 1, Intents: []Intent{intent}}
+	if voice, ok := intent.(*SetTrackVoice); ok && (voice.AcceptChanges || voice.DropParams) {
+		env.Revision = Revision([]byte(source))
+	}
+	result, err := Apply([]byte(source), env, Options{Compiler: parseCompiler{}})
+	if err != nil {
+		return "", err
+	}
+	return string(result.Source), nil
+}
+
 // structureRefusal applies one intent and requires a refusal with a reason,
 // a field, message words and, when given, the exact uses.
 func structureRefusal(t *testing.T, source string, intent Intent, reason, field, words string, uses ...string) {
 	t.Helper()
-	_, err := applyEffectIntent(t, source, intent)
+	_, err := applyStructureIntent(t, source, intent)
 	var refused *ReasonError
 	var located *IntentError
 	if !errors.As(err, &refused) || refused.Reason != reason || !strings.Contains(err.Error(), words) || !errors.As(err, &located) || located.Field != field {

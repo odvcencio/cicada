@@ -163,7 +163,13 @@ func (s *studio) editOptions(source []byte, files map[string][]byte) (edits.Opti
 	// sampler packs' zones included: a new voice can move notes out of a
 	// pack's keys. It reads the packs' audio, which only a voice change pays.
 	opts.CheckAll = func(candidate []byte, files map[string][]byte) ([]notation.Diagnostic, error) {
-		staged := make(map[string][]byte, len(files)+1)
+		// Library insertion prepares pins before the edit and commits them with
+		// the result. Compare diagnostics against that same pinned view.
+		validationFiles := opts.Compiler.(*studioCompiler).validationFiles
+		staged := make(map[string][]byte, len(validationFiles)+len(files)+1)
+		for path, data := range validationFiles {
+			staged[path] = data
+		}
 		for path, data := range files {
 			staged[path] = data
 		}

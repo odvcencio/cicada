@@ -11,7 +11,8 @@ import (
 // InsertLibraryItem imports a library and binds a track to one of its items.
 // On an existing track a new voice goes through settrackvoice's checks that
 // look at the voice: drum lanes and the rows and marks it ignores, with
-// acceptchanges, and refusals with the same reasons.
+// acceptchanges, and refusals with the same reasons. Accepting changes requires
+// the revision of the score whose changes were reviewed.
 // The host resolves the library first. PresetInstance names an effect
 // instance when Reference is an effect preset. cicada apply does not pin
 // libraries: the project's cicada.sum must already pin the library, or the
@@ -62,6 +63,9 @@ func init() {
 
 func insertLibraryItem(ctx *Context, intent Intent) error {
 	in := intent.(*InsertLibraryItem)
+	if in.AcceptChanges && ctx.Envelope.Revision == "" {
+		return refuse("revision_required", "revision", "acceptchanges requires the reviewed score revision")
+	}
 	if !ValidMixerIdentifier(in.Track) {
 		return fmt.Errorf("select a track or enter a valid new track name")
 	}
@@ -87,9 +91,9 @@ func insertLibraryItem(ctx *Context, intent Intent) error {
 			if err != nil {
 				return err
 			}
-			// A new voice on an existing track goes through settrackvoice's
-			// checks: nothing changes silently.
-			if before != in.Reference {
+			// The host's full check resolves the prepared library pins, so the
+			// voice comparison can inspect the candidate as it will be saved.
+			if before != in.Reference && ctx.Options.CheckAll != nil {
 				if updated, err = checkLibraryVoice(ctx, updated, in, before); err != nil {
 					return err
 				}
@@ -204,7 +208,7 @@ func checkLibraryVoice(ctx *Context, updated []byte, in *InsertLibraryItem, befo
 	if err != nil {
 		return nil, err
 	}
-	change, err := checkVoiceChange(st, score, in.Track, before, in.Reference, ctx.Options.Path, int(node.StartByte()), int(walker.Field(node, "kind").EndByte()), nil, false)
+	change, err := checkVoiceChange(st, score, in.Track, before, in.Reference, ctx.Options.Path, int(node.StartByte()), int(walker.Field(node, "kind").EndByte()), nil, true)
 	if err != nil {
 		return nil, err
 	}
@@ -228,6 +232,9 @@ func checkLibraryVoice(ctx *Context, updated []byte, in *InsertLibraryItem, befo
 		if len(uses) > 0 {
 			return nil, &ReasonError{Reason: "voice_params_unsupported", Field: "reference", Uses: uses, Message: fmt.Sprintf("%s has no setting %s that track %s sets; remove them first (cicada apply's settrackvoice removes them with dropparams)", in.Reference, strings.Join(names, ", "), in.Track)}
 		}
+	}
+	if change.voiceInvalid != "" {
+		return nil, refuse("voice_change_invalid", "reference", "track %s cannot change to %s: %s", in.Track, in.Reference, change.voiceInvalid)
 	}
 	if len(change.invalid) > 0 {
 		return nil, &ReasonError{Reason: "voice_change_invalid", Field: "reference", Uses: change.invalid, Message: fmt.Sprintf("track %s cannot change to %s: %s", in.Track, in.Reference, strings.Join(change.invalid, "; "))}

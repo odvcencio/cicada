@@ -456,7 +456,7 @@ func checkVoiceChange(st *staged, score *notation.Score, track, oldKind, newKind
 				}
 				matched := false
 				for _, setting := range settings {
-					if setting.start <= at && at < setting.end {
+					if setting.start <= at && at < setting.end && d.Severity == "error" && !notation.TrackParamKnown(score, newKind, setting.name) {
 						matched = true
 						if !containsSetting(change.unsupported, setting) {
 							change.unsupported = append(change.unsupported, setting)
@@ -669,13 +669,16 @@ func compiledSoundChanges(st *staged, score *notation.Score, track, newKind stri
 			changes = append(changes, fmt.Sprintf("track %s plays %d voices instead of %d: %s shares its polyphony between every track that plays it, and track %s's patterns change it", t.ID, t.Polyphony, previous.Polyphony, t.Kind, track))
 		}
 	}
-	for _, effect := range score.Effects {
-		for _, param := range effect.Params {
-			if param.Name == "sidechain" && param.Value == track {
-				changes = append(changes, fmt.Sprintf("compressor %s (line %d) ducks to track %s, so its ducking follows %s's sound", effect.Name, param.Position.Line, track, newKind))
+	if found, err := projectUses(st, KindTrack, track); err == nil {
+		for _, file := range found {
+			for _, use := range file.uses {
+				if use.Role == "reference" && (strings.HasPrefix(use.Use, "effect ") || strings.HasPrefix(use.Use, "envelope ")) {
+					changes = append(changes, fmt.Sprintf("%s follows track %s's sound, which changes with %s", describe(ctx, file.path, use), track, newKind))
+				}
 			}
 		}
 	}
+
 	return changes
 }
 

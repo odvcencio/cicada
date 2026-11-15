@@ -409,8 +409,18 @@ func changeVoice(t *testing.T, bin, dir string, example map[string]any) {
 			Uses   []string `json:"uses"`
 		} `json:"error"`
 	}
+	var checked struct {
+		Scores []struct {
+			Revision string `json:"revision"`
+		} `json:"scores"`
+	}
+	stdout, code := cicada(t, bin, dir, "check", "--json", "voice.cicada")
+	decode(t, "check --json before settrackvoice", stdout, &checked)
+	if code != 0 || len(checked.Scores) == 0 || checked.Scores[0].Revision == "" {
+		t.Fatal("check did not return a score revision")
+	}
 	apply := func() (result, int) {
-		envelope, err := json.Marshal(map[string]any{"version": 1, "intents": []any{intent}})
+		envelope, err := json.Marshal(map[string]any{"version": 1, "revision": checked.Scores[0].Revision, "intents": []any{intent}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -448,7 +458,7 @@ func changeVoice(t *testing.T, bin, dir string, example map[string]any) {
 	var check struct {
 		Valid bool `json:"valid"`
 	}
-	stdout, code := cicada(t, bin, dir, "check", "--json", "voice.cicada")
+	stdout, code = cicada(t, bin, dir, "check", "--json", "voice.cicada")
 	decode(t, "check --json after settrackvoice", stdout, &check)
 	if code != 0 || !check.Valid {
 		t.Fatalf("check --json after settrackvoice: exit %d", code)

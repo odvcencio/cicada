@@ -9,7 +9,9 @@ import (
 	"testing"
 	"time"
 
+	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/internal/testpack"
+	"m31labs.dev/cicada/notation"
 )
 
 // applyVoiceChange writes score (and a pack, when withPack is set: it covers
@@ -26,7 +28,7 @@ func applyVoiceChange(t *testing.T, score, intent string, withPack bool) (applyJ
 		t.Fatal(err)
 	}
 	envelope := filepath.Join(dir, "intents.json")
-	if err := os.WriteFile(envelope, []byte(`{"version":1,"intents":[`+intent+`]}`), 0o600); err != nil {
+	if err := os.WriteFile(envelope, []byte(`{"version":1,"revision":"`+edits.Revision([]byte(score))+`","intents":[`+intent+`]}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	var stdout bytes.Buffer
@@ -67,7 +69,7 @@ func TestSetTrackVoiceListsEveryChangeTheReviewFound(t *testing.T) {
 		{"a compressor keyed to the track",
 			"cicada 2\ntempo 120\nfx duck comp { sidechain = lead }\nbus music { insert = duck }\ntrack lead acid {}\ntrack pad piano {}\npattern line { a1 . c2 . }\npattern hold { a3 - - - }\nscene main { lead = line pad = hold }\nsong { main }\n",
 			`{"kind":"settrackvoice","track":"lead","voice":"piano"}`, "voice_changes_sound",
-			[]string{"compressor duck (line 3) ducks to track lead, so its ducking follows piano's sound"}},
+			[]string{"effect duck sidechain (line 3) follows track lead's sound"}},
 		{"a note outside a pack's zones (review finding 2)",
 			"cicada 2\ntempo 120\ntrack lead acid {}\npattern melody { c1 . e4 . }\nscene main { lead = melody }\nsong { main }\n",
 			`{"kind":"settrackvoice","track":"lead","voice":"sound"}`, "voice_change_invalid",
@@ -107,6 +109,89 @@ func TestSetTrackVoiceComparesDrumGateAndTranspose(t *testing.T) {
 	score := "cicada 2\ntempo 120\nkit k { bd = builtin.bd sd = builtin.sd }\ntrack beat drums {}\npattern groove drums { gate = 50% transpose = 0 bd: x . x . sd: . x . x }\nscene main { beat = groove }\nsong { main }\n"
 	result, err, after, _ := applyVoiceChange(t, score, `{"kind":"settrackvoice","track":"beat","voice":"k"}`, false)
 	if err != nil || !result.Written || !strings.Contains(after, "track beat k {}") {
+		t.Fatalf("%v %+v", err, result.Error)
+	}
+}
+
+func TestVoiceDropChecksPackZones(t *testing.T) {
+	score := "cicada 2\ntempo 120\ntrack lead acid { cutoff = 700Hz }\npattern melody { c1 . e4 . }\nscene main { lead = melody }\nsong { main }\n"
+	result, err, _, changed := applyVoiceChange(t, score, `{"kind":"settrackvoice","track":"lead","voice":"sound","dropparams":true}`, true)
+	if err == nil || changed || result.Error == nil || result.Error.Reason != "voice_change_invalid" || !strings.Contains(strings.Join(result.Error.Uses, " "), "outside every zone") {
+		t.Fatalf("%v %+v", err, result.Error)
+	}
+}
+
+func TestVoiceChangeReferences(t *testing.T) {
+	for _, tc := range []struct{ declaration, want string }{
+		{`fx duck comp { sidechain = "lead" }`, "effect duck sidechain"},
+		{`envelope follow { source = lead attack = 10ms release = 200ms }`, "envelope follow source"},
+	} {
+		score := "cicada 2\ntempo 120\n" + tc.declaration + "\ntrack lead acid {}\npattern melody { a1 . c2 . }\nscene main { lead = melody }\nsong { main }\n"
+		result, err, _, _ := applyVoiceChange(t, score, `{"kind":"settrackvoice","track":"lead","voice":"piano"}`, false)
+		if err == nil || result.Error == nil || result.Error.Reason != "voice_changes_sound" || !strings.Contains(strings.Join(result.Error.Uses, " "), tc.want) {
+			t.Fatalf("%s: %v %+v", tc.want, err, result.Error)
+		}
+	}
+}
+
+func TestVoiceAcceptanceRequiresRevision(t *testing.T) {
+	for _, intent := range []string{
+		`{"kind":"settrackvoice","track":"lead","voice":"piano","acceptchanges":true}`,
+		`{"kind":"settrackvoice","track":"lead","voice":"piano","dropparams":true}`,
+		`{"kind":"insertlibraryitem","track":"lead","importpath":"std/synth","reference":"synth.glassbass","acceptchanges":true}`,
+	} {
+		result, err, _ := runApplyJSON(t, intent, "--write")
+		if err == nil || result.Error == nil || result.Error.Reason != "revision_required" || result.Error.Field != "revision" {
+			t.Fatalf("%s: %v %+v", intent, err, result.Error)
+		}
+	}
+}
+
+func TestVoiceDropKeepsFormatAndNamesComments(t *testing.T) {
+	score := "cicada 2\ntempo 120\ntrack lead acid {\n  // first\n  // second\n  cutoff = 700Hz\n}\npattern melody { a1 . c2 . }\nscene main { lead = melody }\nsong { main }\n"
+	result, err, after, _ := applyVoiceChange(t, score, `{"kind":"settrackvoice","track":"lead","voice":"piano","dropparams":true,"acceptchanges":true}`, false)
+	if err != nil || !strings.Contains(after, "track lead piano {}") || len(result.Intents) != 1 || !strings.Contains(strings.Join(result.Intents[0].Warnings, " "), "// first") || !strings.Contains(strings.Join(result.Intents[0].Warnings, " "), "// second") {
+		t.Fatalf("%v %+v %s", err, result.Error, after)
+	}
+}
+
+func TestStudioVoiceChangeUndo(t *testing.T) {
+	isolateState(t)
+	score := "cicada 2\ntempo 120\ntrack lead acid {}\npattern melody { 1 3 5 3 }\nscene main { lead = melody }\nsong { main }\n"
+	_, handler, path := proposalFixture(t, score)
+	env := edits.Envelope{Version: 1, Revision: studioRevision([]byte(score)), Intents: []edits.Intent{&edits.SetTrackVoice{Track: "lead", Voice: "model_marimba", AcceptChanges: true}}}
+	response := studioCall(t, handler, "/api/intents", env)
+	if response.Code != 200 {
+		t.Fatalf("swap: %d %s", response.Code, response.Body.String())
+	}
+	changed, err := os.ReadFile(path)
+	if err != nil || !strings.Contains(string(changed), "track lead model_marimba") {
+		t.Fatalf("swap: %s %v", changed, err)
+	}
+	undo := studioCall(t, handler, "/api/undo", studioEdit{Revision: studioRevision(changed)})
+	restored, err := os.ReadFile(path)
+	if undo.Code != 200 || err != nil || !bytes.Equal(restored, []byte(score)) {
+		t.Fatalf("undo: %d %s %v", undo.Code, restored, err)
+	}
+}
+
+func TestVoiceChangeReportsInvalidSettingValue(t *testing.T) {
+	score := "cicada 2\ntempo 120\ntrack lead model_marimba { sustain = on }\npattern melody { a3 . c4 . }\nscene main { lead = melody }\nsong { main }\n"
+	result, err, _, _ := applyVoiceChange(t, score, `{"kind":"settrackvoice","track":"lead","voice":"piano"}`, false)
+	if err == nil || result.Error == nil || result.Error.Reason != "voice_change_invalid" || !strings.Contains(strings.Join(result.Error.Uses, " "), "piano sustain must be a unitless value") {
+		t.Fatalf("%v %+v", err, result.Error)
+	}
+}
+
+func TestVoiceChangeRefusesUnmodeledInput(t *testing.T) {
+	// Simulate a newly added input whose classification has not caught up.
+	key := "row bend"
+	previous := notation.PatternSyntax[key]
+	delete(notation.PatternSyntax, key)
+	t.Cleanup(func() { notation.PatternSyntax[key] = previous })
+	score := "cicada 2\ntempo 120\ntrack lead acid {}\npattern melody { c4 . e4 . bend: 0ct . 0ct . }\nscene main { lead = melody }\nsong { main }\n"
+	result, err, _, _ := applyVoiceChange(t, score, `{"kind":"settrackvoice","track":"lead","voice":"sound"}`, true)
+	if err == nil || result.Error == nil || result.Error.Reason != "voice_input_unmodeled" || !strings.Contains(strings.Join(result.Error.Uses, " "), "row bend") {
 		t.Fatalf("%v %+v", err, result.Error)
 	}
 }
