@@ -101,8 +101,10 @@ not set. **Keep** preserves that track's slot.
 
 **Arrange** shows scene blocks across all tracks, their bar ranges, and inherited
 patterns. Click a scene header to play from that block, or a pattern clip to
-open its editor. Expand a block to replace its scene, set its length, duplicate
-it, remove it, or move it earlier or later.
+open its editor. Edit beside a scene name opens that block’s controls without
+stopping playback or leaving the page; after a song edit, choose Edit again.
+Expand a block to replace its scene, set its length, duplicate it, remove it,
+or move it earlier or later.
 **Add to arrangement** appends an existing scene. At least one block remains.
 
 Scenes can live in any source listed in `cicada.mod`. Assigning a pattern or
