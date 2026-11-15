@@ -207,6 +207,7 @@ var paramRegistryEntrySchema = map[string]any{
 		"type":         map[string]any{"type": "string"},
 		"values":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "the values of an enum"},
 		"off":          map[string]any{"type": "boolean", "description": "the minimum turns it off"},
+		"note":         map[string]any{"type": "string", "description": "what else a caller must know to set it, such as a second unit it takes"},
 		"schema":       map[string]any{"type": "string"},
 	},
 }
