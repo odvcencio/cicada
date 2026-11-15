@@ -1036,7 +1036,13 @@ jobs:
       - name: Framework generation, race checks, and production bundle
         run: |
           set -euo pipefail
-          go test -race ./internal/buildaudit ./internal/studiohttp -count=1
+          # internal/diagnostics scans every Go file, including workstation/, for
+          # diagnostic codes; a Studio-only change must run it too.
+          go test -race ./internal/buildaudit ./internal/studiohttp ./internal/diagnostics -count=1
+          # Two more root-module guards read workstation/ source: fixed bar lengths
+          # and the deterministic-math near tier.
+          go test ./kernel/seq -run '^TestNoFixedBarLength$' -count=1
+          go test ./kernel/dsp/detmath -run '^TestNearTierOnlyAtListedSites$' -count=1
           make test-workstation
           (cd workstation && go vet ./...)
           make build-workstation-release
@@ -1044,6 +1050,9 @@ jobs:
           CICADA_SIZE_AUDIT_MANIFEST="$PWD/workstation/dist/build.json" go test -race ./internal/buildaudit -count=1
           git diff --exit-code -- tools/gosx-size
           git diff --exit-code -- workstation/ui
+          # git diff does not show a generated file that was never committed
+          # (workstation/ui/style.css is embedded, so a clone would not build).
+          test -z "$(git status --porcelain --untracked-files=all -- workstation/ui)"
       # What fills the UI engine WebAssembly, logged on every run. It reports;
       # the limit is enforced by go generate above.
       - name: UI engine size report (does not fail the job)
@@ -1159,6 +1168,8 @@ jobs:
             build/studio-continuity-report.txt
             build/studio-modulation-report.txt
             build/modulation-source-proof/
+            build/studio-add-insert-report.txt
+            build/studio-add-insert-server.log
             build/studio-chorus-report.txt
             build/studio-pattern-machine-report.txt
             build/studio-pattern-machine-server.log
@@ -1233,6 +1244,7 @@ jobs:
             build/studio-autoscroll-proof/
             build/studio-placement-commands-report.txt
             build/studio-placement-commands-server.log
+            build/studio-clip-open-proof/
             build/studio-arrangement-sources-*-report.txt
             build/studio-arrangement-sources-*-server.log
             build/studio-arrangement-sources-proof/
@@ -1284,6 +1296,9 @@ jobs:
             build/studio-pattern-song-*-report.txt
             build/studio-pattern-song-*-server.log
             build/studio-pattern-song-*-proof/
+            build/studio-silent-scene-create-report.txt
+            build/studio-silent-scene-create-server.log
+            build/studio-silent-scene-create-proof/
             build/studio-pattern-grid-*-report.txt
             build/studio-pattern-grid-*-server.log
             build/studio-pattern-grid-proof/

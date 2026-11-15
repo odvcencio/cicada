@@ -669,8 +669,31 @@ func Validate(s *Score) (ds []Diagnostic) {
 		}
 		add("CICADA-UNSUPPORTED", message, "error", Position{Line: 1, Column: 1})
 	}
-	if kindCounts["reverb"] > 1 {
-		add("CICADA-UNSUPPORTED", "multiple reverb instances are not implemented", "error", Position{Line: 1, Column: 1})
+	// The first reverb is return slot B; each later one takes a slot from C to
+	// H. Edition 1 addresses returns by kind (send_b), so it keeps one reverb.
+	reverbs := 0
+	for _, effect := range s.Effects {
+		if effect.Kind != "reverb" || effectOnMaster(s, effect.Name) {
+			continue
+		}
+		reverbs++
+		switch {
+		case reverbs > 1 && s.Version != 2:
+			add("CICADA-VERSION", "a second reverb return needs edition 2: edition 1 addresses returns by kind", "error", effect.Position)
+		case reverbs == maxReverbReturns+1:
+			add("CICADA-LIMIT", fmt.Sprintf("a score has at most %d reverb returns (slot B and slots C to H); %s is reverb number %d", maxReverbReturns, effect.Name, reverbs), "error", effect.Position)
+		}
+	}
+	// A return may not take the name of a built-in send path segment unless it
+	// is the return that path addresses (send.delay, send.reverb).
+	firstReverb := firstReverbReturn(s)
+	for _, effect := range s.Effects {
+		if (effect.Kind != "delay" && effect.Kind != "tape" && effect.Kind != "reverb") || effectOnMaster(s, effect.Name) {
+			continue
+		}
+		if message := paramdefs.ReturnNameCollision(effect.Name, effect.Kind, effect.Name == firstReverb); message != "" {
+			add("CICADA-DUPLICATE", message, "error", effect.Position)
+		}
 	}
 	for _, bus := range s.Buses {
 		checkID(bus.Name, bus.Position)
@@ -1156,4 +1179,22 @@ func ValidateLive(live *Live, tracks []Track) []Diagnostic {
 		}
 	}
 	return ds
+}
+
+// maxReverbReturns is the number of reverb returns a score may route: slot B
+// and the six slots C to H.
+const maxReverbReturns = 7
+
+// effectOnMaster reports whether the master chain inserts the named effect.
+func effectOnMaster(s *Score, name string) bool {
+	for _, param := range s.Master {
+		if param.Name == "insert" {
+			for _, field := range strings.Fields(param.Value) {
+				if field == name {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }

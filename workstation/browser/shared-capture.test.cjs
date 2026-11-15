@@ -138,6 +138,7 @@ test((channelCapture ? 'Ordinary channel' : 'MPE')+' capture retains independent
     await web.mouse.down();
     await web.mouse.move(dock.x+dock.width/2,dock.y+363,{steps:8});
     await web.mouse.up();
+    await web.locator('[data-live-midi-setup] summary').click();
     await web.locator('[data-live-midimode]').selectOption(channelCapture ? 'auto' : 'lower');
     await web.locator('[data-live-pattern]').selectOption('phrase');
     await web.locator('#transport-form button[value=play]').click();

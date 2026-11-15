@@ -23,7 +23,7 @@ func (s *studioApp) samplePacks(ctx *server.Context, v workspace, csrf string) g
 	quality := gosx.El("select", gosx.Attrs(gosx.Attr("name", "tier")),
 		gosx.El("option", gosx.Attrs(gosx.Attr("value", "hq16"), gosx.Attr("selected", tier == "hq16")), gosx.Text("PCM16 FLAC · smaller download")),
 		gosx.El("option", gosx.Attrs(gosx.Attr("value", "lossless"), gosx.Attr("selected", tier == "lossless")), gosx.Text("Exact · original PCM")))
-	form := s.form(v, csrf, "instruments", "sample-pack",
+	form := s.form(v, csrf, "sampler", "sample-pack",
 		field("Catalog URL", textInput("catalogURL", state.Value("catalogURL"))),
 		field("Catalog SHA-256", textInput("sha256", state.Value("sha256"))),
 		field("Pack ID", textInput("id", id)),
@@ -55,6 +55,6 @@ func (s *studioApp) downloadSamplePack(ctx *action.Context) error {
 		return action.Validation(err.Error(), nil, f)
 	}
 	ctx.FormData = nil
-	ctx.RedirectBackWithMessage("/?panel=instruments", "Downloaded. Add this declaration in Score: "+result.Declaration)
+	ctx.RedirectBackWithMessage("/?panel=sampler", "Downloaded. Add this declaration in Score: "+result.Declaration)
 	return nil
 }

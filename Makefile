@@ -217,6 +217,11 @@ test-studio-latency:
 test-studio-modulation-source:
 	node --test workstation/browser/modulation-source.test.cjs
 
+.PHONY: test-studio-add-insert
+# Requires a fresh Studio process and disposable score.
+test-studio-add-insert:
+	node --test workstation/browser/add-insert.test.cjs
+
 .PHONY: test-studio-chorus
 # Requires a fresh Studio process, disposable score, and proof directory.
 test-studio-chorus:

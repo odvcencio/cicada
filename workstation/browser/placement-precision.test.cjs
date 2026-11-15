@@ -11,6 +11,9 @@ const fixture=`// ${marker}\n`+fs.readFileSync(path.join(__dirname,'../../exampl
 if(process.argv[2]==='--write-fixture'){fs.writeFileSync(path.join(path.dirname(process.argv[3]),'precision.wav'),wave,{flag:'wx'});fs.writeFileSync(process.argv[3],fixture,{flag:'wx'});process.exit(0)}
 function playwright(){const p=process.env.CICADA_PLAYWRIGHT_MODULE;return p?createRequire(path.resolve(p,'package.json'))(p):require('playwright')}
 async function until(fn,label){const end=Date.now()+15000;while(Date.now()<end){if(await fn())return;await new Promise(r=>setTimeout(r,40))}assert.fail(label)}
+// The local owner capability is one-use. Reuse the first test's session for
+// the second rather than silently exercising the destination as a viewer.
+let precisionOwnerStorage;
 test('placement precision and copy gestures retain musical offsets and commit once',{timeout:180000},async()=>{
  const base=process.env.CICADA_STUDIO_URL;assert.ok(base&&['127.0.0.1','localhost','[::1]'].includes(new URL(base).hostname));
  const browser=await playwright().chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--no-sandbox']});
@@ -27,7 +30,26 @@ test('placement precision and copy gestures retain musical offsets and commit on
  const coordinates=async(resize=false,id='far-in')=>{const control=block(id).locator(resize?'[data-placement-resize]':'.placement-select');await control.scrollIntoViewIfNeeded();const b=await control.boundingBox();return {x:b.x+(resize?b.width/2:Math.min(20,b.width/3)),y:b.y+b.height/2}};
  const gesture=async({dx=96,alt=false,shift=false,resize=false,hold=false,id='far-in'}={})=>{await page.getByRole('button',{name:'Show selected',exact:true}).click();const {x,y}=await coordinates(resize,id);if(alt)await page.keyboard.down('Alt');if(shift)await page.keyboard.down('Shift');await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x+dx,y,{steps:5});if(!hold){await page.mouse.up();if(alt)await page.keyboard.up('Alt');if(shift)await page.keyboard.up('Shift')}};
  try{
-  await page.goto(base+'/studio?tab=arrange&placement=far-in');await ready();baseline=(await state()).source;baselineRevision=(await state()).revision;assert.ok(baseline.includes(marker));
+  await page.goto(base+'/studio?tab=arrange&placement=far-home');await ready();baseline=(await state()).source;baselineRevision=(await state()).revision;assert.ok(baseline.includes(marker));
+  const audioLink=block().locator('.placement-select');
+  assert.match(await audioLink.getAttribute('title'),/audio placement/);
+  assert.equal(await audioLink.getAttribute('aria-label'),'Edit placement far-in: audio clip precision-clip');
+  const code=page.getByRole('textbox',{name:'Cicada score',exact:true}),clean=await code.inputValue();
+  await code.fill(clean+'\n// unsaved audio idea\n');
+  await page.evaluate(()=>{window.__audioEnterNavigations=0;document.addEventListener('gosx:navigate',()=>window.__audioEnterNavigations++);});
+  await audioLink.focus();await page.keyboard.press('Enter');await page.waitForTimeout(150);
+  assert.equal(await page.evaluate(()=>window.__audioEnterNavigations),0,'audio Enter navigated while Code had a draft');
+  assert.equal(new URL(page.url()).searchParams.get('placement'),'far-home');
+  assert.equal(await code.inputValue(),clean+'\n// unsaved audio idea\n');
+  assert.equal((await state()).source,baseline);
+  assert.match(await page.locator('[data-placement-edit-status]').innerText(),/Save or discard/);
+  await code.fill(clean);
+  await until(async()=>/No unsaved Code edits/.test(await page.locator('[data-source-recovery-status]').textContent()),'restored Code draft was not cleared');
+  await audioLink.focus();await page.keyboard.press('Enter');
+  await until(async()=>new URL(page.url()).searchParams.get('placement')==='far-in','Enter did not select the audio placement');await ready();
+  assert.equal(await page.locator('[data-placement-inspector=far-in]').evaluate(node=>node.open),true);
+  assert.equal((await state()).source,baseline);assert.equal(posts.length,0);
+  check('Enter on an audio placement retains its inspector selection and does not edit the score');
   await page.getByLabel('Timeline zoom',{exact:true}).selectOption('96');
   for(const step of [3840,960,480,320,240,160,120,1]){await choose(String(step));const count=posts.length;await block().locator('.placement-select').focus();await page.keyboard.press('ArrowRight');await value('at',16327+step);assert.equal(posts.length,count+1);await undo();assert.equal(await page.getByLabel('Snap step',{exact:true}).inputValue(),String(step))}
   check('all eight snap increments nudge an off-grid phrase once and preserve its seven-tick offset; one Undo restores exact source/revision');
@@ -61,7 +83,7 @@ test('placement precision and copy gestures retain musical offsets and commit on
   check('overlapping pattern copy returns a real form error, leaves the exact source and cleans up the preview');
   // Recover via the normal selection GET and verify protected Code/pending contexts.
   await block().locator('.placement-select').click();await ready();
-  const editor=page.getByRole('textbox',{name:'Cicada score',exact:true}),clean=await editor.inputValue();await editor.fill(clean+'\n// vocal draft\n');count=posts.length;await gesture();assert.equal(posts.length,count);assert.equal((await state()).source,baseline);await editor.fill(clean);await ready();
+  const editor=page.getByRole('textbox',{name:'Cicada score',exact:true});await editor.fill(clean+'\n// vocal draft\n');count=posts.length;await gesture();assert.equal(posts.length,count);assert.equal((await state()).source,baseline);await editor.fill(clean);await ready();
   let release,entered=false;const gate=new Promise(r=>release=r);await page.route('**/__actions/arrange',async route=>{entered=true;await gate;await route.continue()});await gesture();await until(()=>entered,'pending copy was not submitted: '+await page.evaluate(()=>JSON.stringify({status:document.querySelector('[data-placement-edit-status]')?.textContent,copy:document.querySelector('[name=placementCopy]')?.checked,edited:[...document.querySelectorAll('[data-edited=true]')].map(n=>({name:n.name,value:n.value,baseline:n.dataset.baseline,default:n.defaultValue})),navigation:window.__gosx?.navigation?.state}))).catch(e=>{release();throw e});count=posts.length;await gesture();assert.equal(posts.length,count);release();await value('at',20167,'far-in-copy');await page.unroute('**/__actions/arrange');await undo();
   check('unsaved Code and a real pending copy block additional gesture writes');
   await page.getByRole('tab',{name:'Session',exact:true}).click();await page.getByRole('tab',{name:'Arrange',exact:true}).click();assert.equal(await page.getByLabel('Copy on drag',{exact:true}).isChecked(),true);assert.equal(await page.getByLabel('Snap step',{exact:true}).inputValue(),'240');
@@ -74,5 +96,48 @@ test('placement precision and copy gestures retain musical offsets and commit on
   await page.setViewportSize({width:1440,height:1000});await page.goto(base+'/?panel=session&placement=far-in');await page.locator('#cicada-workspace[data-workspace-reactive=ready]').waitFor();await page.getByLabel('Timeline zoom',{exact:true}).selectOption('96');await page.getByLabel('Copy on drag',{exact:true}).check();count=posts.length;await gesture();await until(async()=>await block('far-in-copy').count()===1&&await block('far-in-copy').getAttribute('data-placement-at')==='20167','panel copy saved');assert.equal(posts.length,count+1);assert.equal(await block('far-in-copy').getAttribute('data-placement-selected'),'true');await until(()=>block('far-in-copy').locator('.placement-select').evaluate(e=>e===document.activeElement),'panel copy focused');await page.getByRole('button',{name:'Undo',exact:true}).click();await until(async()=>(await state()).source===baseline,'panel exact Undo');await page.getByLabel('Copy on drag',{exact:true}).uncheck();
   check('panel Session uses the same guarded copy gesture, selects and focuses the new copy, and exact Undo restores the song');
   if(proof)fs.writeFileSync(path.join(proof,'report.json'),JSON.stringify({checks,errors,arrangePOSTs:posts.length,sourceSHA256:crypto.createHash('sha256').update(baseline).digest('hex'),finalRevision:(await state()).revision,platform:process.platform,browser:browser.version(),physicalAudioVerified:false},null,2));
+  precisionOwnerStorage=await page.context().storageState();
  }catch(error){if(proof){fs.mkdirSync(proof,{recursive:true});fs.writeFileSync(path.join(proof,'failure.json'),JSON.stringify({error:String(error),checks,posts:posts.map(r=>r.postData()),status:await page.locator('[data-placement-edit-status]').innerText()},null,2));await page.screenshot({path:path.join(proof,'failure.png')})}throw error}finally{await browser.close()}
+});
+
+test('audio placement destinations preserve Code drafts and pending edits',{timeout:90000},async()=>{
+ const base=process.env.CICADA_STUDIO_URL;assert.ok(base);
+ const browser=await playwright().chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--no-sandbox']});
+ const context=await browser.newContext({viewport:{width:1440,height:1000},storageState:precisionOwnerStorage});const page=await context.newPage();page.setDefaultTimeout(15000);
+ try {
+  await page.goto(base);await page.goto(new URL('/studio?placement=far-in',base).href);
+  await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
+  const inspector=()=>page.locator('[data-placement-inspector="far-in"]');
+  const editLink=()=>inspector().getByRole('link',{name:'Edit precision-clip',exact:true});
+  if(await inspector().getAttribute('open')===null)await inspector().locator('summary').click();
+  const code=page.locator('#studio-code textarea').first();
+  if(!await code.isVisible())await page.locator('[data-pane="code"][data-pane-action="show"]').click();
+  const original=await code.inputValue(),draft=original+'\n// navigation draft\n';await code.fill(draft);
+  await editLink().click();
+  await page.locator('#browser-takes').waitFor();
+  assert.equal(new URL(page.url()).searchParams.get('clip'),'precision-clip');
+  assert.equal(await page.locator('#studio-code textarea').first().inputValue(),draft,'audio destination preserves the Code draft');
+  assert.equal(await page.locator('#library-tab-takes').evaluate(el=>{const r=el.getBoundingClientRect();return r.bottom>0&&r.top<innerHeight}),true);
+  await page.locator('#studio-code textarea').first().fill(original);
+  await page.goto(new URL('/studio?placement=far-in',base).href);await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
+  await page.locator('#library-tab-sounds').click();
+  if(await inspector().getAttribute('open')===null)await inspector().locator('summary').click();
+  const state=async()=>(await(await page.request.get(new URL('/api/state',base).href)).json());
+  const savedBefore=(await state()).source;
+  let release,entered;const held=new Promise(resolve=>release=resolve),requested=new Promise(resolve=>entered=resolve);
+  await page.route('**/__actions/arrange',async route=>{entered();await held;await route.continue()});
+  const start=inspector().getByLabel('Start',{exact:true});await start.fill('@5.3.1');
+  await inspector().getByRole('button',{name:'Update placement',exact:true}).click();await requested;
+  await editLink().click();
+  await page.locator('#browser-takes').waitFor();
+  const response=page.waitForResponse(r=>r.request().method()==='POST'&&new URL(r.url()).pathname==='/__actions/arrange');
+  release();const result=await response;assert.ok([200,303].includes(result.status()),`pending placement edit: HTTP ${result.status()}`);
+  await until(async()=>(await state()).source.includes('at = @5.3.1'),'pending edit reaches saved score');
+  await page.unroute('**/__actions/arrange');
+  assert.equal(new URL(page.url()).searchParams.get('clip'),'precision-clip','finishing the pending edit retains the chosen destination');
+  assert.equal(await page.locator('#browser-takes').isVisible(),true);
+  await until(async()=>await page.locator('#undo-form input[name=revision]').inputValue()===(await state()).revision&&await page.getByRole('button',{name:'Undo',exact:true}).getAttribute('aria-disabled')!=='true','Undo reflects the completed edit');
+  await page.getByRole('button',{name:'Undo',exact:true}).click();
+  await until(async()=>(await state()).source===savedBefore,'Undo restores the score after navigation during a pending edit');
+ } finally {await page.close();await browser.close()}
 });

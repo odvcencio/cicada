@@ -23,6 +23,18 @@ var newRenderCheck = func(path string, overrides map[string][]byte) edits.Render
 	return rendercheck.NewWith(path, overrides)
 }
 
+var _ edits.SplitRenderCheck = (*cachedCheck)(nil)
+
+func (c *cachedCheck) ForSplit() edits.RenderCheck {
+	c.mu.Lock()
+	inner := c.inner
+	c.mu.Unlock()
+	if scoped, ok := inner.(edits.SplitRenderCheck); ok {
+		return scoped.ForSplit()
+	}
+	return nil
+}
+
 func (c *cachedCheck) ForSource(path string, files map[string][]byte) (edits.RenderCheck, error) {
 	c.mu.Lock()
 	inner := c.inner
