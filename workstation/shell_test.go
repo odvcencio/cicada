@@ -292,7 +292,7 @@ func TestShellTabsFollowTheARIATabPattern(t *testing.T) {
 		if isSelected != strings.Contains(tag, `aria-current="page"`) {
 			t.Errorf("tab %s: aria-selected and aria-current disagree", id)
 		}
-		if !strings.HasPrefix(id, "library-tab-") && !strings.Contains(attr(tag, "href"), "tab=") && !strings.Contains(attr(tag, "href"), "dock=") {
+		if !strings.Contains(attr(tag, "href"), "tab=") && !strings.Contains(attr(tag, "href"), "dock=") && !strings.Contains(attr(tag, "href"), "library=") {
 			t.Errorf("tab %s lost its no-JavaScript link: %s", id, tag)
 		}
 	}

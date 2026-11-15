@@ -194,7 +194,7 @@ func (u *soundsUI) render(message string) {
 	for i := 0; i < buttons.Length(); i++ {
 		button := buttons.Index(i)
 		selected := u.selected == workspaceAttr(button, "data-sound-preview")
-		label, text := "Listen to "+workspaceAttr(button, "data-sound-name"), "Audition"
+		label, text := "Audition "+workspaceAttr(button, "data-sound-name"), "Audition"
 		if u.props.Pattern != "" {
 			label, text = "Loop "+workspaceAttr(button, "data-sound-name"), "Loop part"
 		}

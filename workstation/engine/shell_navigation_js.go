@@ -324,12 +324,11 @@ func syncShellLocation(root, url js.Value) {
 			target.Get("searchParams").Call("set", "region", region)
 		} else if workspaceAttr(link, "data-gosx-tab") != "" {
 			container := link.Call("closest", "[data-gosx-tabs]")
-			if workspaceAttr(container, "data-gosx-tabs-signal") == "$layout.libraryTab" {
-				continue
-			}
 			key := "dock"
 			if workspaceAttr(container, "data-gosx-tabs-signal") == "$view" {
 				key = "tab"
+			} else if workspaceAttr(container, "data-gosx-tabs-signal") == "$layout.libraryTab" {
+				key = "library"
 			}
 			target.Get("searchParams").Call("set", key, workspaceAttr(link, "data-gosx-tab"))
 		}

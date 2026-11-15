@@ -405,7 +405,6 @@ test('the closed Sampler does not take the Live keyboard', async () => {
   await page.keyboard.press('a');
   assert.deepEqual(await page.evaluate(() => window.__keys), ['a'], 'with the Sampler section closed, a reaches Live');
   await page.locator('#library-tab-samples').click();
-  await page.locator('#browser-sampler').locator('button, input, select').first().focus();
   await page.keyboard.press('a');
   assert.deepEqual(await page.evaluate(() => window.__keys), ['a'], 'with the Sampler section open and focused, the Sampler owns the key');
   await page.close();

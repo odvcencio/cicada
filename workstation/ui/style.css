@@ -1099,7 +1099,7 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
 
 /* Library tabs and compact sound picker. */
 .shell #studio-browser .library-tabs__list { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:3px; margin-bottom:8px; }
-.shell #studio-browser .library-tabs__list .gsx-tabs__tab { min-width:0; padding:6px 2px; text-align:center; font-size:11px; }
+.shell #studio-browser .library-tabs__list .gsx-tabs__tab { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:6px 2px; text-align:center; font-size:11px; }
 .shell #studio-browser [data-sound-search] { box-sizing:border-box; width:100%; min-width:0; }
 .shell #studio-browser .instrument-patch { display:flex; width:100%; height:44px; min-height:44px; gap:8px; padding:4px; text-align:left; color:var(--text); cursor:pointer; }
 .shell #studio-browser .instrument-patch[hidden], .shell #studio-browser [data-sound-detail][hidden], .shell #studio-browser [data-sound-empty][hidden] { display:none; }
@@ -1112,15 +1112,15 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
 .shell #studio-browser .selected-sound h3 { margin:0 0 6px; color:var(--muted); font:10px var(--mono); text-transform:uppercase; }
 .shell #studio-browser .selected-sound p { margin:4px 0 8px; color:var(--muted); font-size:11px; }
 .shell #studio-browser .selected-sound details { margin-top:6px; }
-.shell #studio-browser .selected-sound { display:grid; grid-template-columns:max-content 1fr; gap:0 8px; }
-.shell #studio-browser .selected-sound h3 { grid-column:1/-1; grid-row:1; }
+.shell #studio-browser .selected-sound { display:flex; flex-wrap:wrap; gap:0 8px; }
+.shell #studio-browser .selected-sound h3 { order:1; flex-basis:100%; }
 .shell #studio-browser .selected-sound [data-sound-detail]:not([hidden]) { display:contents; }
-.shell #studio-browser .selected-sound [data-sound-detail] > strong { grid-column:1/-1; grid-row:2; }
-.shell #studio-browser .selected-sound [data-sound-detail] > p { grid-column:1/-1; grid-row:3; }
-.shell #studio-browser .selected-sound [data-sound-preview] { grid-column:1; grid-row:4; }
-.shell #studio-browser .selected-sound [data-sound-stop] { grid-column:2; grid-row:4; justify-self:start; }
-.shell #studio-browser .selected-sound [data-sound-status] { grid-column:1/-1; grid-row:5; }
-.shell #studio-browser .selected-sound details { grid-column:1/-1; grid-row:6; }
+.shell #studio-browser .selected-sound [data-sound-detail] > strong { order:2; flex-basis:100%; }
+.shell #studio-browser .selected-sound [data-sound-detail] > p { order:3; flex-basis:100%; }
+.shell #studio-browser .selected-sound [data-sound-preview] { order:4; }
+.shell #studio-browser .selected-sound [data-sound-stop] { order:5; }
+.shell #studio-browser .selected-sound [data-sound-status] { order:6; flex-basis:100%; }
+.shell #studio-browser .selected-sound details { order:7; flex-basis:100%; }
 .shell #studio-browser :is(button, input, summary, a):focus-visible { outline:2px solid var(--amber); outline-offset:2px; }
 
 /* Mixer: aligned channel strips that scroll sideways, the master last. Each

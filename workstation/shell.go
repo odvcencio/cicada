@@ -260,9 +260,9 @@ func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, boo
 	browser := ui.Browser(ui.BrowserProps{Open: browserOpen, Width: strconv.Itoa(shellBrowserWidth)},
 		gosx.El("div", gosx.Attrs(gosx.Attr("id", "library-tabs"), gosx.Attr("data-gosx-tabs", ""), gosx.Attr("data-gosx-tabs-signal", "$layout.libraryTab")),
 			gosx.El("nav", gosx.Attrs(gosx.Attr("class", "gsx-tabs__list library-tabs__list"), gosx.Attr("role", "tablist"), gosx.Attr("aria-orientation", "horizontal"), gosx.Attr("aria-label", "Library")),
-				ui.Tab(ui.TabProps{ID: "library-tab-sounds", Value: "sounds", Href: "#library-panel-sounds", Panel: "library-panel-sounds", Selected: libraryTab == "sounds"}, gosx.Text("Sounds")),
-				ui.Tab(ui.TabProps{ID: "library-tab-samples", Value: "samples", Href: "#library-panel-samples", Panel: "library-panel-samples", Selected: libraryTab == "samples"}, gosx.Text("Samples")),
-				ui.Tab(ui.TabProps{ID: "library-tab-takes", Value: "takes", Href: "#library-panel-takes", Panel: "library-panel-takes", Selected: libraryTab == "takes"}, gosx.Text("Takes"))),
+				ui.Tab(ui.TabProps{ID: "library-tab-sounds", Value: "sounds", Href: shellLink(current, "library", "sounds"), Panel: "library-panel-sounds", Selected: libraryTab == "sounds"}, gosx.Text("Sounds")),
+				ui.Tab(ui.TabProps{ID: "library-tab-samples", Value: "samples", Href: shellLink(current, "library", "samples"), Panel: "library-panel-samples", Selected: libraryTab == "samples"}, gosx.Text("Samples")),
+				ui.Tab(ui.TabProps{ID: "library-tab-takes", Value: "takes", Href: shellLink(current, "library", "takes"), Panel: "library-panel-takes", Selected: libraryTab == "takes"}, gosx.Text("Takes"))),
 			ui.TabPanel(ui.TabPanelProps{ID: "library-panel-sounds", Tab: "library-tab-sounds", Hidden: libraryTab != "sounds"},
 				gosx.El("section", gosx.Attrs(gosx.Attr("id", "browser-instruments"), gosx.Attr("class", "shell-section")), p.region("browser-instruments")),
 				ui.BrowserSection(ui.BrowserSectionProps{ID: "browser-generate", Signal: "$layout.generateOpen", Title: "Generate"}, p.region("browser-generate"))),
@@ -435,7 +435,7 @@ func registerShell(ctx *server.Context, tab, dock, libraryTab string, browserOpe
 		return controller.Output{Name: name, Signal: "$layout." + name, Initial: initial}
 	}
 	var save, load []controller.StorageSlot
-	for _, name := range []string{"browserWidth", "codeWidth", "dockHeight", "browserOpen", "codeOpen", "instrumentsOpen", "generateOpen", "takesOpen", "samplerOpen"} {
+	for _, name := range []string{"browserWidth", "codeWidth", "dockHeight", "browserOpen", "codeOpen", "instrumentsOpen", "presetSaveOpen", "instrumentRecordOpen", "generateOpen", "takesOpen", "samplerOpen"} {
 		slot := controller.StorageSlot{Key: name, Signal: "$layout." + name}
 		save, load = append(save, slot), append(load, slot)
 	}
@@ -450,7 +450,7 @@ func registerShell(ctx *server.Context, tab, dock, libraryTab string, browserOpe
 			{Name: "placementSelectionActive", Signal: "$placementSelectionActive", Initial: false},
 			layout("browserWidth", shellBrowserWidth), layout("codeWidth", shellCodeWidth), layout("dockHeight", shellDockHeight),
 			layout("browserOpen", browserOpen), layout("codeOpen", codeOpen), layout("libraryTab", libraryTab),
-			layout("instrumentsOpen", true), layout("generateOpen", false), layout("takesOpen", false), layout("samplerOpen", false),
+			layout("instrumentsOpen", false), layout("presetSaveOpen", false), layout("instrumentRecordOpen", false), layout("generateOpen", false), layout("takesOpen", false), layout("samplerOpen", false),
 		},
 		Storage: &controller.Storage{Area: "local", Namespace: "studio:layout", Load: load, Save: save},
 	})

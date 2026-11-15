@@ -335,8 +335,14 @@ test('placement destinations reveal the browser on desktop and phone', {timeout:
       assert.equal(await page.locator('#studio-shell').getAttribute('data-phone-region'), 'browser');
       assert.equal(await page.locator('#browser-sampler').isVisible(), true);
       assert.equal(await page.locator('#library-tab-samples').first().evaluate(el => { const r = el.getBoundingClientRect(); return r.bottom > 0 && r.top < innerHeight; }), true, 'destination is in the viewport');
+      await page.reload();
+      await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
+      assert.equal(await page.locator('#library-tab-samples').getAttribute('aria-selected'), 'true', 'Samples remains selected after reload');
       await page.locator('#library-tab-sounds').click();
       assert.equal(await page.locator('#browser-sampler').isVisible(), false, 'switching tabs hides Sampler');
+      await page.reload();
+      await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
+      assert.equal(await page.locator('#library-tab-sounds').getAttribute('aria-selected'), 'true', 'Sounds remains selected after reload');
       await page.goto(new URL('/studio?reveal=takes&clip=audio1&region=browser', base).href);
       await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
       await page.locator('#browser-takes').waitFor();
