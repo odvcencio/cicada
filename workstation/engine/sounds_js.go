@@ -156,6 +156,9 @@ func mountSounds(host enginewasm.Context) (enginewasm.Handle, error) {
 	message := ""
 	if u.props.Pattern != "" {
 		message = "Preview leaves your song position unchanged."
+		if js.Global().Get("location").Get("pathname").String() == "/studio" {
+			message = ""
+		}
 	}
 	u.render(message)
 	go u.run()

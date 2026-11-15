@@ -45,6 +45,6 @@ func (s *studioApp) patternPreview(ctx *server.Context, v workspace, csrf string
 		gosx.Fragment(
 			gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")),
 				field("Hear with", gosx.El("select", gosx.Attrs(gosx.Attr("data-pattern-preview-track", ""), gosx.BoolAttr("data-studio-view-control"), gosx.Attr("aria-label", "Hear pattern with")), gosx.Fragment(choices...))),
-				gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-sound-preview", pattern.ID), gosx.Attr("data-sound-name", pattern.ID), gosx.Attr("aria-label", "Loop "+pattern.ID), gosx.Attr("aria-pressed", "false"), gosx.BoolAttr("disabled")), gosx.Text("Loop part"))),
+				gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-sound-preview", pattern.ID), gosx.Attr("data-sound-name", pattern.ID), gosx.Attr("aria-label", "Loop "+pattern.ID), gosx.Attr("aria-pressed", "false"), gosx.Attr("title", "Preview leaves your song position unchanged."), gosx.BoolAttr("disabled")), gosx.Text("Loop part"))),
 			gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted"), gosx.Attr("data-sound-status", ""), gosx.Attr("role", "status"), gosx.Attr("aria-live", "polite")), gosx.Text("Preparing part preview…"))))
 }
