@@ -363,6 +363,7 @@ test('a refresh request keeps unsaved Code lens text and shows a notice', async 
 // changing it back leaves nothing unsaved, so a refresh request still reloads.
 test('changing a select and changing it back is clean', async () => {
   const {page, requests, errors} = await openShell('?tab=session');
+  await page.locator('[data-live-midi-setup] summary').click();
   const select = page.locator('[data-live-target]');
   const values = await select.locator('option').evaluateAll(options => options.map(option => option.value));
   assert.ok(values.length >= 2, 'the learn-target select has options to change between');

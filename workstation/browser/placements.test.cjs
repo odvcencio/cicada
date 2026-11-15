@@ -102,7 +102,7 @@ test('placements edit visually and Session follows saved Score without reloading
   const far = page.locator('[data-placement-inspector="far-in"]');
   const selectFar = async (watchReentry=false) => {
     await idle();
-    await page.getByRole('link',{name:'Edit placement far-in',exact:true}).click();
+    await page.getByRole('link',{name:/^Edit placement far-in:/}).click();
     // Focusing the link runs a Go focusin listener inside the click. That one nest is by design; count from here on.
     if (watchReentry) await page.evaluate(()=>window.__goReentry.reset());
     await until(async()=>new URL(page.url()).searchParams.get('placement')==='far-in' && await block(page).getAttribute('data-placement-selected')==='true' && await far.getAttribute('open')!==null,'placement selection did not settle');
@@ -160,7 +160,7 @@ test('placements edit visually and Session follows saved Score without reloading
     assert.equal((await state()).source,fixture); assert.equal(await block(page).getAttribute('data-placement-at'),'16320');
     checks.push('Escape cancels a drag without a write');
 
-    await page.getByRole('link',{name:'Edit placement far-in',exact:true}).focus(); await page.keyboard.press('ArrowRight'); await at(16560);
+    await page.getByRole('link',{name:/^Edit placement far-in:/}).focus(); await page.keyboard.press('ArrowRight'); await at(16560);
     await page.keyboard.press('Shift+ArrowRight'); await at(20400);
     await page.getByRole('button',{name:'Undo',exact:true}).click(); await at(16560); await undo();
     await page.getByRole('button',{name:'Resize placement far-in',exact:true}).focus(); await page.keyboard.press('Shift+ArrowLeft');
@@ -177,7 +177,7 @@ test('placements edit visually and Session follows saved Score without reloading
     await selectFar(); await far.getByText('Make a copy',{exact:true}).click();
     await far.getByRole('button',{name:'Duplicate placement',exact:true}).click();
     await block(page,'far-in-copy').waitFor(); await idle(); assert.equal(await page.locator('[data-placement-block]').count(),10);
-    await page.getByRole('link',{name:'Edit placement far-in-copy',exact:true}).click(); await idle();
+    await page.getByRole('link',{name:/^Edit placement far-in-copy:/}).click(); await idle();
     await page.locator('[data-placement-inspector="far-in-copy"]').getByRole('button',{name:'Remove placement',exact:true}).click();
     await block(page,'far-in-copy').waitFor({state:'detached'}); await idle();
     await page.getByRole('button',{name:'Undo',exact:true}).click(); await block(page,'far-in-copy').waitFor(); await idle(); await undo();
@@ -245,7 +245,7 @@ test('placements edit visually and Session follows saved Score without reloading
     await until(async()=>await block(nativePage).getAttribute('data-placement-at')==='17280','native form did not refresh');
     assert.match(nativePage.url(),/placement=far-in/);
     await nativePage.getByRole('button',{name:'Undo',exact:true}).click(); await until(async()=>(await state()).source===fixture,'native Undo did not restore score');
-    await nativePage.getByRole('link',{name:'Edit placement far-in',exact:true}).click();
+    await nativePage.getByRole('link',{name:/^Edit placement far-in:/}).click();
     await nativePage.locator('[data-placement-inspector="far-in"]').getByRole('button',{name:'Loop solo',exact:true}).click();
     await until(async()=>(await transport()).listening?.mode==='solo','native placement audition failed');
     await nativePage.getByRole('button',{name:'Stop listening',exact:true}).click(); await until(async()=>!(await transport()).playing,'native listening did not stop'); await native.close();
@@ -265,7 +265,7 @@ test('placements edit visually and Session follows saved Score without reloading
 
     const mobileContext=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,deviceScaleFactor:1,reducedMotion:'reduce',storageState:await context.storageState()});
     const mobile=await mobileContext.newPage(); await mobile.goto(new URL('/?panel=session&placement=far-in',base).href,{waitUntil:'domcontentloaded'}); await ready(mobile);
-    await mobile.getByRole('link',{name:'Edit placement far-in',exact:true}).tap(); await ready(mobile);
+    await mobile.getByRole('link',{name:/^Edit placement far-in:/}).tap(); await ready(mobile);
     const mobileFar=mobile.locator('[data-placement-inspector="far-in"]');
     await mobileFar.getByRole('button',{name:'Loop in song',exact:true}).tap(); await until(async()=>(await transport()).listening?.mode==='context','mobile listening did not start');
     await mobile.getByRole('button',{name:'Stop listening',exact:true}).tap(); await until(async()=>!(await transport()).playing,'mobile listening did not stop');
