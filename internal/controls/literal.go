@@ -1,6 +1,7 @@
 package controls
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
@@ -39,6 +40,11 @@ func Literal(c Control, v float64) string {
 func Example(c Control) string {
 	switch v := c.Default.(type) {
 	case float64:
+		// A default below the range is the off state, which a score writes
+		// with its word (an echo's highpass).
+		if c.Min != nil && v < *c.Min && slices.Contains(c.Values, "off") {
+			return "off"
+		}
 		return Literal(c, v)
 	case string:
 		return v

@@ -272,3 +272,49 @@ func TestRecordedAutomationRecoveryIsScopedToEntryScore(t *testing.T) {
 		t.Fatal("discarding another score removed the retained pass", err)
 	}
 }
+
+func TestAutomationRecordUnsetEchoHighpass(t *testing.T) {
+	isolateState(t)
+	source := []byte("cicada 2\ntempo 120\nfx echo delay {}\ntrack bass acid { send echo = 0.5 }\npattern riff { 1 . 5 . }\nscene main { bass = riff }\nsong { main*4 }\n")
+	path := studioTestPath(t, string(source))
+	s, err := newStudio(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	score, err := compileLiveScore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	player, err := liveplay.New(score, liveSampleRate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.transport.stream, s.transport.playing, s.transport.audioNull, s.transport.sampleRate = player, true, true, liveSampleRate
+	t.Cleanup(func() { s.shutdown() })
+	id := beginAutomation(t, s, "echo.highpass", false)
+	if len(s.automationRecording.Points) != 0 {
+		t.Fatal("off was recorded as a value")
+	}
+	r := studioCall(t, s.routes(), "/api/automation/recording", studioEdit{Action: "value", Revision: studioRevision(source), Name: id, Value: json.RawMessage(`{"number":300}`)})
+	if r.Code != 200 {
+		t.Fatal(r.Code, r.Body.String())
+	}
+	r = studioCall(t, s.routes(), "/api/automation/recording", studioEdit{Action: "keep", Revision: studioRevision(source), Name: id})
+	if r.Code != 200 {
+		t.Fatal(r.Code, r.Body.String())
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := compileStudioSource(path, after)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, lane := range p.Automation {
+		if lane.Path == "echo.highpass" && len(lane.Points) == 1 && *lane.Points[0].Value.Number == 300 {
+			return
+		}
+	}
+	t.Fatalf("missing performed value: %s", after)
+}

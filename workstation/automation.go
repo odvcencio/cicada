@@ -55,6 +55,13 @@ func automationInput(value string, descriptor paramdefs.Descriptor) gosx.Node {
 	return textInput("value", value)
 }
 
+func automationDefault(value any, unit string) string {
+	if value == nil {
+		return "off"
+	}
+	return fmt.Sprint(value) + automationUnit(unit)
+}
+
 func (s *studioApp) automation(ctx *server.Context, v workspace, csrf string) gosx.Node {
 	if v.Project == nil || len(v.Project.Scenes) == 0 {
 		return gosx.Fragment()
@@ -70,7 +77,7 @@ func (s *studioApp) automation(ctx *server.Context, v workspace, csrf string) go
 		}
 		paths = append(paths, address.Address)
 		descriptors[address.Address] = resolved.Descriptor
-		values[address.Address] = fmt.Sprint(address.Value) + automationUnit(resolved.Descriptor.Unit)
+		values[address.Address] = automationDefault(address.Value, resolved.Descriptor.Unit)
 	}
 	// The scene tempo is the one bare setting a scene may carry. It steps at the
 	// scene boundary, so it is offered here beside the scene points. It stays out

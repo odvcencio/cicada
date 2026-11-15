@@ -3,6 +3,7 @@ package controls_test
 import (
 	"os"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -155,6 +156,14 @@ func TestEffectReferenceAgreesWithTheCatalog(t *testing.T) {
 			match := docRange.FindStringSubmatch(strings.ReplaceAll(row[1], "−", "-"))
 			if match == nil {
 				t.Errorf("%s: unreadable range %q", c.ID, row[1])
+				continue
+			}
+			// A control that is off by default is documented as "off": the
+			// catalog then lists the word and holds the off value, 0.
+			if row[2] == "off" {
+				if !slices.Contains(c.Values, "off") || c.Default != 0.0 || !close(docNumber(t, match[1]), *c.Min) || !close(docNumber(t, match[2]), *c.Max) {
+					t.Errorf("%s: the reference says %s default off, the catalog %v..%v default %v values %v", c.ID, row[1], *c.Min, *c.Max, c.Default, c.Values)
+				}
 				continue
 			}
 			if !close(docNumber(t, match[1]), *c.Min) || !close(docNumber(t, match[2]), *c.Max) || !close(docNumber(t, row[2]), c.Default.(float64)) {

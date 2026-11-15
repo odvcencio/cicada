@@ -342,6 +342,11 @@ func pathOwnerPrefix(path pathRegion, owner string) (int, int, bool) {
 }
 
 func formatDescriptorDefault(d paramdefs.Descriptor) string {
+	if d.Off && d.Max > d.Min && (d.Default < d.Min || d.Default > d.Max) {
+		// The default is off, which is no number in the range, as for an
+		// echo highpass.
+		return "off"
+	}
 	if (d.Curve == "enum" || d.Curve == "toggle") && int(d.Default) >= 0 && int(d.Default) < len(d.Values) {
 		if d.Curve == "enum" {
 			return d.Values[int(d.Default)]

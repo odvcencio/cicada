@@ -137,7 +137,7 @@ func (s *studio) restoreAutomationRecording() {
 	var draft studioAutomationRecording
 	decoder := json.NewDecoder(io.LimitReader(f, 256<<10))
 	decoder.DisallowUnknownFields()
-	if decoder.Decode(&draft) != nil || len(draft.ID) != 32 || len(draft.Path) > 512 || len(draft.Points) > 1024 || len(draft.Points) == 0 {
+	if decoder.Decode(&draft) != nil || len(draft.ID) != 32 || len(draft.Path) > 512 || len(draft.Points) > 1024 {
 		return
 	}
 	previous := int64(-1)
@@ -160,7 +160,7 @@ func (s *studio) automationRecordingState(w http.ResponseWriter, _ *http.Request
 	s.restoreAutomationRecording()
 	if recording := s.automationRecording; recording != nil && recording.Active && !recording.Saving {
 		state := s.transport.snapshot()
-		if !state.Playing || recording.Epoch != 0 && state.MIDIClockEpoch != recording.Epoch || automationTick(state, recording.End) < recording.Points[len(recording.Points)-1].Tick || recording.MonitorFollower != nil && recording.MonitorFollower.broken.Load() {
+		if !state.Playing || recording.Epoch != 0 && state.MIDIClockEpoch != recording.Epoch || len(recording.Points) > 0 && automationTick(state, recording.End) < recording.Points[len(recording.Points)-1].Tick || recording.MonitorFollower != nil && recording.MonitorFollower.broken.Load() {
 			recording.Active = false
 			if recording.Monitor && s.captureID != "" {
 				recording.Invalid = true
@@ -264,10 +264,12 @@ func (s *studio) automationRecordingCommand(w http.ResponseWriter, r *http.Reque
 			return
 		}
 		initial := 0.
+		hasInitial := false
 		for _, a := range project.ParamAddresses(p) {
 			if a.Address == request.Path {
 				if n, ok := a.Value.(float64); ok {
 					initial = n
+					hasInitial = true
 				}
 			}
 		}
@@ -281,6 +283,7 @@ func (s *studio) automationRecordingCommand(w http.ResponseWriter, r *http.Reque
 				}
 				if v, ok := project.AutomationValue(p, lane, tick); ok {
 					initial = v
+					hasInitial = true
 				}
 			}
 		}
@@ -293,7 +296,10 @@ func (s *studio) automationRecordingCommand(w http.ResponseWriter, r *http.Reque
 			fail(500, err)
 			return
 		}
-		s.automationRecording = &studioAutomationRecording{ID: hex.EncodeToString(id[:]), Path: request.Path, Revision: request.Revision, SourceRevision: request.SourceRevision, CaptureID: s.captureID, Unit: resolved.Descriptor.Unit, Active: true, End: end, Epoch: state.MIDIClockEpoch, Points: []recordedAutomationPoint{{tick, initial}}, Project: p}
+		s.automationRecording = &studioAutomationRecording{ID: hex.EncodeToString(id[:]), Path: request.Path, Revision: request.Revision, SourceRevision: request.SourceRevision, CaptureID: s.captureID, Unit: resolved.Descriptor.Unit, Active: true, End: end, Epoch: state.MIDIClockEpoch, Project: p}
+		if hasInitial {
+			s.automationRecording.Points = []recordedAutomationPoint{{tick, initial}}
+		}
 		if preparing {
 			if !strings.HasSuffix(request.Path, ".amp_drive") && !strings.HasSuffix(request.Path, ".amp_tone") && !strings.HasSuffix(request.Path, ".amp_output") {
 				s.automationRecording = nil
@@ -350,7 +356,7 @@ func (s *studio) automationRecordingCommand(w http.ResponseWriter, r *http.Reque
 			return
 		}
 		tick := automationTick(state, recording.End)
-		if tick < recording.Points[len(recording.Points)-1].Tick {
+		if len(recording.Points) > 0 && tick < recording.Points[len(recording.Points)-1].Tick {
 			recording.Active = false
 			if recording.Monitor && s.captureID != "" {
 				recording.Invalid = true
@@ -360,7 +366,7 @@ func (s *studio) automationRecordingCommand(w http.ResponseWriter, r *http.Reque
 			fail(409, fmt.Errorf("loop or seek ended this pass; keep or discard its movements"))
 			return
 		}
-		if tick > recording.Points[len(recording.Points)-1].Tick && len(recording.Points) == 1024 {
+		if len(recording.Points) == 1024 && tick > recording.Points[len(recording.Points)-1].Tick {
 			recording.Active = false
 			// A bound pass keeps its last preview audible until capture ends;
 			// do not apply a 1025th value that cannot be saved.
@@ -373,7 +379,7 @@ func (s *studio) automationRecordingCommand(w http.ResponseWriter, r *http.Reque
 			return
 		}
 		point := recordedAutomationPoint{tick, value.Number}
-		if tick == recording.Points[len(recording.Points)-1].Tick {
+		if len(recording.Points) > 0 && tick == recording.Points[len(recording.Points)-1].Tick {
 			recording.Points[len(recording.Points)-1] = point
 		} else {
 			recording.Points = append(recording.Points, point)

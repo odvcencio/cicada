@@ -153,9 +153,15 @@ func TestCatalogCounts(t *testing.T) {
 	t.Logf("owners %d, controls %d, in the registry %d, by kind %v, directions %+v", counts.Owners, counts.Controls, counts.Registry, counts.ByKind, counts.Directions)
 }
 
+// isolated reports whether a value outside the range is one the control
+// still takes: a number it lists as a word, or the off state below the range
+// of a control whose word for it is "off" (an echo's highpass).
 func isolated(c Control, v float64) bool {
 	for _, word := range c.Values {
 		if word == strconv.FormatFloat(v, 'f', -1, 64) {
+			return true
+		}
+		if word == "off" && c.Min != nil && v < *c.Min {
 			return true
 		}
 	}

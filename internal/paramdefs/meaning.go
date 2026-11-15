@@ -102,6 +102,7 @@ var meanings = map[string]string{
 	"fx.delay.time":     "delay time in milliseconds, or a note division such as 1/8 or 3/16",
 	"fx.delay.feedback": "how much of each echo feeds back into the delay; higher values give more repeats",
 	"fx.delay.damp":     "cutoff of the low-pass filter in the feedback path; lower values darken each repeat",
+	"fx.delay.highpass": "cutoff of the high-pass filter at the echo line's input; each repeat passes it once more and loses more low end; off by default",
 	"fx.delay.pingpong": "on bounces the echoes between left and right",
 	"fx.delay.width":    "stereo width of the echoes",
 	"fx.delay.mix":      "level of the delay return's echoes",
@@ -148,6 +149,7 @@ var meanings = map[string]string{
 	"fx.tape.flutter":    "depth of fast tape speed variation",
 	"fx.tape.saturation": "tape saturation of the echoes; higher values add harmonics",
 	"fx.tape.damp":       "cutoff of the low-pass filter on the echoes; lower values darken each repeat",
+	"fx.tape.highpass":   "cutoff of the high-pass filter at the echo line's input; each repeat passes it once more and loses more low end; off by default",
 
 	"fx.transient.attack":    "boost (positive) or cut (negative) of note attacks",
 	"fx.transient.sustain":   "boost (positive) or cut (negative) of the body after each attack",

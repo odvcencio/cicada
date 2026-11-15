@@ -201,7 +201,7 @@ func TestExplainJSONForControlsOwnersAndTracks(t *testing.T) {
 		Controls []catalogControl `json:"controls"`
 	}
 	oneJSONDocument(t, "explain owner", stdout.Bytes())
-	if err := json.Unmarshal(stdout.Bytes(), &owner); err != nil || owner.Kind != "owner" || len(owner.Controls) != 6 {
+	if err := json.Unmarshal(stdout.Bytes(), &owner); err != nil || owner.Kind != "owner" || len(owner.Controls) != 7 {
 		t.Fatalf("explain delay --json: %v %+v", err, owner)
 	}
 	stdout.Reset()

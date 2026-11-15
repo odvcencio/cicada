@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	edits "m31labs.dev/cicada/edit"
+	"m31labs.dev/cicada/host/scoreaudition"
 )
 
 const contractScore = "cicada 2\ntempo 120\ntrack bass acid {}\npattern riff { a1 . c2 . }\nscene main { bass = riff }\nsong { main*2 }\n"
@@ -465,17 +466,18 @@ func TestDocumentedExamplesDecode(t *testing.T) {
 		t.Fatal(err)
 	}
 	formats := map[string]func() any{
-		agentsSchema:       func() any { return &agentsDocument{} },
-		songSchema:         func() any { return &songDocument{} },
-		intentsIndexSchema: func() any { return &intentsIndexDocument{} },
-		helpSchema:         func() any { return &helpDocument{} },
-		intentsSchema:      func() any { return &intentsDocument{} },
-		diagnosticsSchema:  func() any { return &diagnosticsDocument{} },
-		checkSchema:        func() any { return &checkDocument{} },
-		applySchema:        func() any { return &applyDocument{} },
-		renderSchema:       func() any { return &renderDocument{} },
-		paramsSchema:       func() any { return &paramsDocument{} },
-		paramsIndexSchema:  func() any { return &paramsIndexDocument{} },
+		agentsSchema:         func() any { return &agentsDocument{} },
+		songSchema:           func() any { return &songDocument{} },
+		intentsIndexSchema:   func() any { return &intentsIndexDocument{} },
+		helpSchema:           func() any { return &helpDocument{} },
+		intentsSchema:        func() any { return &intentsDocument{} },
+		diagnosticsSchema:    func() any { return &diagnosticsDocument{} },
+		checkSchema:          func() any { return &checkDocument{} },
+		applySchema:          func() any { return &applyDocument{} },
+		renderSchema:         func() any { return &renderDocument{} },
+		scoreaudition.Schema: func() any { return &scoreaudition.Report{} },
+		paramsSchema:         func() any { return &paramsDocument{} },
+		paramsIndexSchema:    func() any { return &paramsIndexDocument{} },
 	}
 	// cicada.explain.v1 has one shape for each kind of thing explained.
 	explainKinds := map[string]func() any{
