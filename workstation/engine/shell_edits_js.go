@@ -148,7 +148,7 @@ func shellCaptures(form, submitter js.Value) bool {
 		workspacePresent(submitter) && (workspaceAttr(submitter, "formaction") != "" || workspaceAttr(submitter, "formmethod") != "") {
 		return false
 	}
-	if path := workspaceActionPath(workspaceAttr(form, "action")); path == "/__actions/track-rename" || path == "/__actions/revert" {
+	if path := workspaceActionPath(workspaceAttr(form, "action")); path == "/__actions/track-rename" || path == "/__actions/revert" || path == "/__actions/split-placement" {
 		return true
 	}
 	if id := workspaceAttr(form, "id"); id == "undo-form" || id == "redo-form" {

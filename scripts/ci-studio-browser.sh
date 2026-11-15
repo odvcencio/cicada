@@ -33,7 +33,7 @@ shard_count=4
 # shard_segments SHARD prints the segments the shard runs, in order.
 shard_segments() {
 	case "$1" in
-	1) echo "print_sources placements performance_pitch performance_sources placement_commands track_rename code_recovery pattern_machine portable_midi macro_controls preset_save" ;;
+	1) echo "print_sources placements performance_pitch performance_sources placement_commands track_rename split_placement code_recovery pattern_machine portable_midi macro_controls preset_save" ;;
 	2) echo "pattern_song precision first_song gestures portable_song sound_context continuity modulation_source collaboration columns midi_pickup shared_capture vocals vocal_levels dock_fit" ;;
 	3) echo "owner_session chrome_gpu_raster page_stall scene_launch_keys pattern_grid tempo_editor recording_sources autoscroll arrangement_sources solo_clock mixer_strips navigation sampler_waveform export_sources library_recording midi_binding studio_edits recording_setup recording_levels meter_performance performance amp_automation" ;;
 	4) echo "shutdown_proof live_write grid_sources shell direct_variation placement_variation editor performance_time startup tempo_clock export_stems chorus observation_clock note_editor engine_requests" ;;
@@ -74,6 +74,7 @@ segment_runs() {
 	autoscroll) echo placement-autoscroll ;;
 	placement_commands) echo placement-commands ;;
 	track_rename) echo track-rename ;;
+	split_placement) echo split-placement ;;
 	arrangement_sources) echo arrangement-sources@edit arrangement-sources@reopen ;;
 	tempo_editor) echo tempo-editor@primary-edit tempo-editor@primary-reopen tempo-editor@secondary-edit tempo-editor@secondary-reopen ;;
 	solo_clock) echo solo-clock ;;
@@ -571,6 +572,10 @@ seg_track_rename() {
 	node workstation/browser/track-rename.test.cjs --write-fixture "$browser_root/track-rename"
 	start_studio "$browser_root/track-rename/main.cicada" build/studio-track-rename-server.log
 	run_suite track-rename env CICADA_TRACK_RENAME_DIR="$browser_root/track-rename" node --test workstation/browser/track-rename.test.cjs | tee build/studio-track-rename-report.txt
+seg_split_placement() {
+	node workstation/browser/split-placement.test.cjs --write-fixture "$browser_root/split-placement"
+	start_studio "$browser_root/split-placement/main.cicada" build/studio-split-placement-server.log
+	run_suite split-placement env CICADA_SPLIT_DIR="$browser_root/split-placement" node --test workstation/browser/split-placement.test.cjs | tee build/studio-split-placement-report.txt
 	stop_studio
 }
 

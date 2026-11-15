@@ -2,11 +2,14 @@ package main
 
 import (
 	"encoding/json"
+	"html"
 	"io"
 	"m31labs.dev/cicada/kernel/seq"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -14,6 +17,33 @@ import (
 	"m31labs.dev/cicada/project"
 	"m31labs.dev/gosx"
 )
+
+func TestSceneClipsOpenTheirTrackAndOnlyDirectScene(t *testing.T) {
+	source := []byte("cicada 2\ntrack keys piano {}\ntrack upper piano {}\npattern shared notes { c4 . e4 . }\nscene main { keys=shared upper=shared }\nscene carry { keys=keep upper=keep }\nsong { main carry }\n")
+	score, diagnostics := notation.Parse(source)
+	p, more := project.FromScore(score)
+	if p == nil || len(diagnostics) != 0 || len(more) != 0 {
+		t.Fatalf("fixture: %v %v", diagnostics, more)
+	}
+	address, client, _ := testAppWorkspace(t, &workspace{Source: string(source), Revision: "current", SourceRevision: "sources", Valid: true, Project: p})
+	for _, pageURL := range []string{"/?panel=session", "/studio?tab=arrange&dock=device&region=center"} {
+		page := getPage(t, client, address+pageURL)
+		for _, tc := range []struct{ title, track, scene string }{
+			{"main / keys", "keys", "main"}, {"main / upper", "upper", "main"},
+			{"carry / keys", "keys", ""}, {"carry / upper", "upper", ""},
+		} {
+			match := regexp.MustCompile(`<a[^>]*title="` + regexp.QuoteMeta(tc.title) + `"[^>]*>`).FindString(page)
+			href := regexp.MustCompile(`href="([^"]+)"`).FindStringSubmatch(match)
+			if len(href) != 2 || !strings.Contains(match, "data-scene-pattern-open") {
+				t.Fatalf("%s: no opening link for %s: %q", pageURL, tc.title, match)
+			}
+			u, err := url.Parse(html.UnescapeString(href[1]))
+			if err != nil || u.Query().Get("pattern") != "shared" || u.Query().Get("track") != tc.track || u.Query().Get("scene") != tc.scene || u.Query().Get("dock") != "clip" || u.Query().Get("region") != "detail" {
+				t.Fatalf("%s: wrong context for %s: %q (%v)", pageURL, tc.title, href[1], err)
+			}
+		}
+	}
+}
 
 func TestNamedPlacementSessionShowsActualArrangement(t *testing.T) {
 	source, err := os.ReadFile("../examples/songs/tidal-glass.cicada")

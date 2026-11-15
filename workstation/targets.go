@@ -28,6 +28,10 @@ func songBlockKey(song []project.SongEntry, index int) string {
 	return ""
 }
 
+func placementTargetKey(p project.Placement) string {
+	return fmt.Sprintf("%q/%q/%q/%d/%d", p.ID, p.Track, p.Content, p.AtTick, p.LengthTicks)
+}
+
 func contourPointKey(points []project.ContourPoint, index int) string {
 	if index < 0 || index >= len(points) {
 		return ""
