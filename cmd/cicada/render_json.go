@@ -87,6 +87,7 @@ type renderLoudnessJSON struct {
 	Repeats                   int            `json:"repeats"`
 	PassLog                   []loudnessPass `json:"pass_log"`
 	GainStage                 string         `json:"gain_stage,omitempty"`
+	LastLimiterReductionDB    float64        `json:"last_limiter_reduction_db"`
 	MasterLimiterReductionDB  float64        `json:"master_limiter_reduction_db"`
 	LargestLimiterReductionDB float64        `json:"largest_limiter_reduction_db"`
 	DCCorrectionLeftFS        float64        `json:"dc_correction_left_fs"`
@@ -129,6 +130,9 @@ type renderErrorJSON struct {
 	Code    string            `json:"code"`
 	Message string            `json:"message"`
 	Remedy  *renderRemedyJSON `json:"remedy,omitempty"`
+	// Limit is, for a loudness shortfall, the limit that stopped the search,
+	// as a value with its unit (see shortfallLimit).
+	Limit string `json:"limit,omitempty"`
 	// ValidTracks lists the score's tracks for unknown_track.
 	ValidTracks []string `json:"valid_tracks,omitempty"`
 }
@@ -157,7 +161,8 @@ var renderErrorCodes = []string{
 	"usage", "unreadable_score", "invalid_score", "export_settings", "output_exists",
 	"sampler_memory", "unknown_track", "render_failed", "true_peak_and_dc_unmet", "loudness_unmeasurable",
 	"true_peak_over_ceiling", "limiter_reduction_over_maximum", "loudness_shortfall_at_limiter_maximum",
-	"loudness_shortfall_at_input_gain_cap", "loudness_shortfall_at_true_peak_ceiling", "loudness_target_missed",
+	"loudness_shortfall_at_input_gain_cap", "loudness_shortfall_at_true_peak_ceiling", "loudness_shortfall_at_gain_maximum",
+	"loudness_target_missed_at_pass_limit", "loudness_target_missed",
 }
 
 // takeJSONFlag removes --json from a command's flags and reports whether it
@@ -299,6 +304,7 @@ func renderJSONCommand(command, path, output string, opts render.Options, target
 			loudness.AppliedGainDB = finiteValue(report.AppliedGainDB)
 			loudness.GainStage = report.GainStage
 			loudness.MasterLimiterReductionDB = report.MasterLimiterReductionDB
+			loudness.LastLimiterReductionDB = report.LastLimiterReductionDB
 			loudness.LargestLimiterReductionDB = report.LargestLimiterReductionDB
 			loudness.DCCorrectionLeftFS, loudness.DCCorrectionRightFS = report.DCCorrection.LeftFS, report.DCCorrection.RightFS
 			loudness.TargetMet = err == nil
@@ -333,7 +339,7 @@ func renderJSONCommand(command, path, output string, opts render.Options, target
 func renderErrorFor(err error, path string, inspection scoreInspection) *renderErrorJSON {
 	var shortfall *loudnessShortfallError
 	if errors.As(err, &shortfall) {
-		failure := &renderErrorJSON{Code: shortfall.reason, Message: shortfall.message}
+		failure := &renderErrorJSON{Code: shortfall.reason, Message: shortfall.message, Limit: shortfall.limit}
 		if shortfall.limiterCeiling != nil {
 			failure.Remedy = limiterRemedy(path, inspection, *shortfall.limiterCeiling, shortfall.neededGainDB)
 		}
