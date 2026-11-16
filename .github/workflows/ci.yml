@@ -420,7 +420,7 @@ jobs:
           missing=0
           for name in TestEQDigestIsIdenticalOnEveryTarget TestMeterDigestIsIdenticalOnEveryTarget TestTruePeakWindowIsBlackman TestExportLoudnessWithoutLimiterKeepsCrestPreservingGain \
             TestIdentityDigest TestAccuracy TestPowAccuracy TestSpecialValues TestCompressorDigest TestDeesserDigest TestDelayDigest TestDriveDigest TestReverbDigest \
-            TestLimiterDigest TestTransientDigest TestWidthDigest TestRoomDigest TestChainDigest TestNormalizeDigest TestChorusDigest TestConvolutionDigest TestTapeDigest TestMixDigest TestAmpcabOutputDigest TestTrigOutOfRange \
+            TestLimiterDigest TestTransientDigest TestWidthDigest TestRoomDigest TestChainDigest TestNormalizeDigest TestChorusDigest TestConvolutionDigest TestTapeDigest TestEchoHighpassDigest TestTapeHighpassDigest TestMixDigest TestAmpcabOutputDigest TestTrigOutOfRange \
             TestTanh32Digest TestAtanDigest TestAtanAccuracy TestSinPiDigest TestSinPiAccuracy TestLog1pDigest TestLog1pAccuracy \
             TestNearDigest TestTanhNearAccuracy TestSinPiNearAccuracy TestFilterCoefficientDigest \
             TestDecayingStateIsNeverSubnormal TestHeldChordStateIsNeverSubnormal TestReleaseStateIsNeverSubnormal TestReverbTailIsNeverSubnormal TestControlsAreNeverSubnormal \

@@ -10,10 +10,13 @@ import (
 // real-time gate has Min, and a count gate has Exact, which takes no margin.
 type Gate struct {
 	Step   string
-	Metric string // median_ms, realtime, syntheses, peak_rss_mb, speedup or same_audio
+	Metric string // median_ms, realtime, syntheses, peak_rss_mb, report_bytes, speedup or same_audio
 	Max    float64
 	Min    float64
 	Exact  *int
+	// Why, when set, is printed with a failure: what the limit protects and
+	// how to stay under it.
+	Why string
 }
 
 func exactly(n int) *int { return &n }
@@ -54,6 +57,13 @@ var gates = []Gate{
 	{Step: "render:large", Metric: "realtime", Min: 1.65},
 	{Step: "loudness:medium", Metric: "syntheses", Exact: exactly(1)},
 	{Step: "audition:large", Metric: "peak_rss_mb", Max: 466},
+	// The default audition report is what an agent reads into its context on
+	// every listen, so its size is a cost of every loop. On the whole large
+	// song it was 63,790 bytes when the limit was set (pull request #339,
+	// 2026-11-12); the limit is 64 KiB. The step runs the whole song once
+	// with --jobs auto, whatever --large-bars says.
+	{Step: "audition-size:large", Metric: "report_bytes", Max: 65536,
+		Why: "the default audition --json report on the large song must stay within 65,536 bytes: per-bar and per-beat data belong under --detail"},
 	// Render lanes (plan.cicada.speed, row F2): the large song's first bars
 	// with --jobs 4 against --jobs 1, both measured in the same job. speedup
 	// is the jobs 1 median over the jobs 4 median; same_audio is 1 when every
@@ -69,6 +79,8 @@ type GateOutcome struct {
 	Limit  string  `json:"limit"`
 	Value  float64 `json:"value"`
 	Passed bool    `json:"passed"`
+	// Why says, on a failure, what the limit protects.
+	Why string `json:"why,omitempty"`
 }
 
 func (g GateOutcome) String() string {
@@ -76,7 +88,11 @@ func (g GateOutcome) String() string {
 	if !g.Passed {
 		verdict = "FAIL"
 	}
-	return fmt.Sprintf("%-4s %-16s %-11s %10.3f, limit %s", verdict, g.Step, g.Metric, g.Value, g.Limit)
+	line := fmt.Sprintf("%-4s %-16s %-11s %10.3f, limit %s", verdict, g.Step, g.Metric, g.Value, g.Limit)
+	if !g.Passed && g.Why != "" {
+		line += ": " + g.Why
+	}
+	return line
 }
 
 // checkGates checks every gate whose step ran. It reports whether all held.
@@ -110,6 +126,9 @@ func checkGates(results []Result) ([]GateOutcome, bool) {
 			if math.IsNaN(value) {
 				outcome.Passed = false
 			}
+			if !outcome.Passed {
+				outcome.Why = gate.Why
+			}
 			passed = passed && outcome.Passed
 			outcomes = append(outcomes, outcome)
 		}
@@ -127,6 +146,8 @@ func metric(r Result, name string) float64 {
 		return float64(r.Syntheses)
 	case "peak_rss_mb":
 		return r.PeakRSSMB
+	case "report_bytes":
+		return float64(r.ReportBytes)
 	}
 	return math.NaN()
 }

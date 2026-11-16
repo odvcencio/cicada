@@ -29,7 +29,7 @@ song { main*2 break }
 func structureCase(t *testing.T, source string, intent Intent, want string) {
 	t.Helper()
 	for _, newline := range []string{"\n", "\r\n"} {
-		got, err := applyEffectIntent(t, strings.ReplaceAll(source, "\n", newline), intent)
+		got, err := applyStructureIntent(t, strings.ReplaceAll(source, "\n", newline), intent)
 		if err != nil {
 			t.Fatalf("%q: %v", newline, err)
 		}
@@ -39,11 +39,24 @@ func structureCase(t *testing.T, source string, intent Intent, want string) {
 	}
 }
 
+func applyStructureIntent(t *testing.T, source string, intent Intent) (string, error) {
+	t.Helper()
+	env := Envelope{Version: 1, Intents: []Intent{intent}}
+	if voice, ok := intent.(*SetTrackVoice); ok && (voice.AcceptChanges || voice.DropParams) {
+		env.Revision = Revision([]byte(source))
+	}
+	result, err := Apply([]byte(source), env, Options{Compiler: parseCompiler{}})
+	if err != nil {
+		return "", err
+	}
+	return string(result.Source), nil
+}
+
 // structureRefusal applies one intent and requires a refusal with a reason,
 // a field, message words and, when given, the exact uses.
 func structureRefusal(t *testing.T, source string, intent Intent, reason, field, words string, uses ...string) {
 	t.Helper()
-	_, err := applyEffectIntent(t, source, intent)
+	_, err := applyStructureIntent(t, source, intent)
 	var refused *ReasonError
 	var located *IntentError
 	if !errors.As(err, &refused) || refused.Reason != reason || !strings.Contains(err.Error(), words) || !errors.As(err, &located) || located.Field != field {
@@ -73,6 +86,17 @@ func TestDeleteTrackRemovesItsBindings(t *testing.T) {
 	used := structureScore + "automate bass.cutoff {\n  @1.1.1 700Hz\n}\n"
 	structureRefusal(t, used, &DeleteTrack{Track: "bass"}, "track_in_use", "track", "track bass is still used by automation bass.cutoff (line 16)", "automation bass.cutoff (line 16)")
 	structureRefusal(t, structureScore, &DeleteTrack{Track: "nosuch"}, "unknown_track", "track", `unknown track "nosuch"`)
+}
+
+func TestSetTrackVoiceRefusesOrDropsSettings(t *testing.T) {
+	// keys plays chords, which acid plays as a tuplet: accepted here.
+	structureCase(t, structureScore, &SetTrackVoice{Track: "keys", Voice: "acid", AcceptChanges: true}, strings.Replace(structureScore, "track keys piano {}", "track keys acid {}", 1))
+	structureRefusal(t, structureScore, &SetTrackVoice{Track: "bass", Voice: "piano"}, "voice_params_unsupported", "voice", "piano has no setting cutoff", "setting cutoff (line 4)")
+	structureCase(t, structureScore, &SetTrackVoice{Track: "bass", Voice: "piano", DropParams: true}, strings.Replace(structureScore, "track bass acid { cutoff = 620Hz }", "track bass piano {}", 1))
+	structureRefusal(t, structureScore, &SetTrackVoice{Track: "keys", Voice: "nosuch"}, "voice_invalid", "voice", `a track cannot play "nosuch"`)
+	structureRefusal(t, structureScore, &SetTrackVoice{Track: "keys", Voice: "piano"}, "voice_unchanged", "voice", "track keys already plays piano")
+	acid := strings.Replace(structureScore, "pattern riff {", "pattern riff acid {", 1)
+	structureRefusal(t, acid, &SetTrackVoice{Track: "bass", Voice: "piano", DropParams: true}, "voice_change_invalid", "voice", "pattern kind differs from track instrument")
 }
 
 func TestAddAndDuplicateScene(t *testing.T) {

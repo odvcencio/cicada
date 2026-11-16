@@ -175,6 +175,9 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	if cfg.TapeA != nil {
 		return nil, imageError("portable images have no tape echo; use a delay")
 	}
+	if usesEchoHighpass(&cfg) {
+		return nil, imageError("portable images have no echo highpass; remove highpass from the delay, or play and render the score natively")
+	}
 	if cfg.Routing != nil && (len(cfg.Routing.Returns) > 0 || len(cfg.Routing.TrackSends) > 0) {
 		// Image version 19 will carry return slots C to H; until then a
 		// portable image refuses them rather than dropping their sends.

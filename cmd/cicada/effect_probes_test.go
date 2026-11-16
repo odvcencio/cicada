@@ -107,7 +107,11 @@ func TestEffectIntentProbesAreNamedRefusalsOrValidEdits(t *testing.T) {
 func probeApply(t *testing.T, score, intents string) string {
 	t.Helper()
 	envelope := filepath.Join(filepath.Dir(score), "intents.json")
-	if err := os.WriteFile(envelope, []byte(`{"version":1,"intents":[`+intents+`]}`), 0o644); err != nil {
+	source, err := os.ReadFile(score)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(envelope, []byte(`{"version":1,"revision":"`+studioRevision(source)+`","intents":[`+intents+`]}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	var stdout bytes.Buffer

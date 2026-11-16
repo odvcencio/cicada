@@ -30,6 +30,7 @@ type renderJSONResult struct {
 		Frames          int64    `json:"frames"`
 		DurationSeconds float64  `json:"duration_seconds"`
 		TailEndPeakDBFS *float64 `json:"tail_end_peak_dbfs"`
+		ClippedCount    *int64   `json:"clipped_count"`
 	} `json:"outputs"`
 	Levels      *renderLevelsJSON   `json:"levels"`
 	Loudness    *renderLoudnessJSON `json:"loudness"`
@@ -100,6 +101,20 @@ func TestStemsJSONListsEveryStem(t *testing.T) {
 	for _, out := range result.Outputs {
 		if !strings.HasPrefix(out.Role, "stem:") || out.Encoding != "float" || out.BitDepth != 32 || out.Frames != result.Outputs[0].Frames {
 			t.Fatalf("stem %+v", out)
+		}
+	}
+}
+
+func TestStemsJSONIntegerClippedCounts(t *testing.T) {
+	output := filepath.Join(t.TempDir(), "stems")
+	opts := render.Options{SampleRate: 48000, Bits: 16, Bars: 1}
+	result, code, _ := runRenderJSON(t, "stems", filepath.Join("..", "..", "examples", "first-acid.cicada"), output, opts, nil)
+	if code != 0 || !result.OK || len(result.Outputs) == 0 {
+		t.Fatalf("stems: %d %+v", code, result)
+	}
+	for _, out := range result.Outputs {
+		if out.ClippedCount == nil {
+			t.Errorf("missing clipped_count: %+v", out)
 		}
 	}
 }
