@@ -7,10 +7,14 @@ import "m31labs.dev/cicada/kernel/seq"
 // DefaultCountIn is one bar; zero bars skips it.
 type CountIn struct {
 	Frames int64
-	beats  [32]int64
+	beats  [maxCountInClicks]int64
 	count  int
 	perBar int // beats in a bar; the first of each is accented
 }
+
+// maxCountInClicks is the longest count-in the language allows: 8 bars of a
+// meter with the largest numerator, 32 beats.
+const maxCountInClicks = 8 * 32
 
 // DefaultCountIn is one bar of the meter map's first bar.
 func DefaultCountIn(meterMap seq.MeterMap, rate int, bpmMilli int64) (CountIn, error) {
@@ -27,6 +31,9 @@ func NewCountIn(meterMap seq.MeterMap, rate int, bpmMilli int64, bars int) (Coun
 		return CountIn{}, err
 	}
 	perBar := int(meterMap.BeatsInBar(0))
+	if bars*perBar > maxCountInClicks {
+		return CountIn{}, seq.Error("count-in has more clicks than a meter can have")
+	}
 	c := CountIn{Frames: clock.SampleAtTick(meterMap.BarStart(int64(bars))), count: bars * perBar, perBar: perBar}
 	for beat := 0; beat < c.count; beat++ {
 		c.beats[beat] = clock.SampleAtTick(int64(beat) * meterMap.BeatTicks(0))

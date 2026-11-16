@@ -199,7 +199,7 @@ func newStemOutput(dir string, p *project.Project, report Report, opts Options, 
 		}
 		stem := stemFile{file: file, buffer: make([]byte, 0, 4096*8)}
 		if bits == 32 {
-			err = writeFloatHeader(file, report.SampleRate, uint32(report.Frames*8), len(report.tempoChanges))
+			err = writeFloatHeader(file, report.SampleRate, uint32(report.Frames*8), metadataBytes(len(report.tempoChanges), report.meter))
 		} else {
 			// Each stem draws its own dither from the score seed and its
 			// position in the set, so the files are reproducible.
@@ -210,7 +210,7 @@ func newStemOutput(dir string, p *project.Project, report Report, opts Options, 
 				return nil, err
 			}
 			stem.encoder = &encoder
-			err = writeWAVHeaderTempo(file, report.SampleRate, bits, uint32(report.Frames*int64(bits/4)), len(report.tempoChanges))
+			err = writeWAVHeaderTempo(file, report.SampleRate, bits, uint32(report.Frames*int64(bits/4)), metadataBytes(len(report.tempoChanges), report.meter))
 		}
 		stems.files = append(stems.files, stem)
 		if err != nil {
@@ -304,7 +304,7 @@ func (s *stemOutput) finish(tempoMilli uint32) error {
 		if f.frames != s.report.Frames {
 			return fmt.Errorf("stem %d wrote %d frames, expected %d", i, f.frames, s.report.Frames)
 		}
-		if err := writeMetadata(f.file, tempoMilli, uint32(s.report.Bars), uint32(s.report.TailFrames), s.report.tempoChanges); err != nil {
+		if err := writeMetadata(f.file, s.report.meter, tempoMilli, uint32(s.report.Bars), uint32(s.report.TailFrames), s.report.tempoChanges); err != nil {
 			return err
 		}
 		if err := f.file.Sync(); err != nil {
@@ -347,10 +347,10 @@ func (s *stemOutput) abort() {
 	os.RemoveAll(s.temporary)
 }
 
-func writeFloatHeader(w io.Writer, sampleRate int, dataBytes uint32, tempoChanges int) error {
+func writeFloatHeader(w io.Writer, sampleRate int, dataBytes uint32, metadata int) error {
 	var header [44]byte
 	copy(header[:4], "RIFF")
-	binary.LittleEndian.PutUint32(header[4:8], dataBytes+36+uint32(metadataBytes(tempoChanges)))
+	binary.LittleEndian.PutUint32(header[4:8], dataBytes+36+uint32(metadata))
 	copy(header[8:12], "WAVE")
 	copy(header[12:16], "fmt ")
 	binary.LittleEndian.PutUint32(header[16:20], 16)

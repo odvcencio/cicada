@@ -59,6 +59,9 @@ func Fields() (FieldCatalog, error) {
 		if typ == reflect.TypeFor[Midi]() || typ == reflect.TypeFor[MidiMapping]() || typ == reflect.TypeFor[MidiRange]() || typ == reflect.TypeFor[Modulator]() || typ == reflect.TypeFor[ContourPoint]() || typ == reflect.TypeFor[ModRoute]() || typ == reflect.TypeFor[AutomationLane]() || typ == reflect.TypeFor[AutomationPoint]() || typ == reflect.TypeFor[Arrangement]() || typ == reflect.TypeFor[Placement]() || typ == reflect.TypeFor[Marker]() || typ == reflect.TypeFor[TempoChange]() || typ == reflect.TypeFor[Asset]() || typ == reflect.TypeFor[Clip]() || typ == reflect.TypeFor[Sampler]() || typ == reflect.TypeFor[SceneSetting]() || typ == reflect.TypeFor[SceneValue]() || typ == reflect.TypeFor[MixerSend]() || typ == reflect.TypeFor[Bus]() || typ == reflect.TypeFor[Master]() || typ == reflect.TypeFor[Export]() || typ == reflect.TypeFor[Live]() || typ == reflect.TypeFor[LiveMacro]() || typ == reflect.TypeFor[LiveMacroMapping]() || typ == reflect.TypeFor[LiveLayers]() || typ == reflect.TypeFor[LiveLayer]() {
 			introduced = "cicada.project/2"
 		}
+		if typ == reflect.TypeFor[Meter]() {
+			introduced = "cicada.project/3"
+		}
 		record := ConstructRecord{Name: construct, ChildRoles: []string{}, Variants: []string{}, Introduced: introduced, Profile: "M0", Layer: "semantic"}
 		variantSeen := map[string]bool{}
 		for i := 0; i < typ.NumField(); i++ {
@@ -95,6 +98,9 @@ func Fields() (FieldCatalog, error) {
 				fieldIntroduced = "cicada.project/1"
 				if typ == reflect.TypeFor[Modulator]() || typ == reflect.TypeFor[ContourPoint]() || typ == reflect.TypeFor[ModRoute]() || typ == reflect.TypeFor[AutomationLane]() || typ == reflect.TypeFor[AutomationPoint]() || typ == reflect.TypeFor[Arrangement]() || typ == reflect.TypeFor[Placement]() || typ == reflect.TypeFor[Marker]() || typ == reflect.TypeFor[TempoChange]() || typ == reflect.TypeFor[Asset]() || typ == reflect.TypeFor[Clip]() || typ == reflect.TypeFor[Sampler]() {
 					fieldIntroduced = "cicada.project/2"
+				}
+				if typ == reflect.TypeFor[Meter]() {
+					fieldIntroduced = "cicada.project/3"
 				}
 			}
 			catalog.Fields = append(catalog.Fields, Field{

@@ -131,7 +131,7 @@ func lowerModulators(p *Project, score *notation.Score) []notation.Diagnostic {
 	if len(ds) > 0 {
 		return ds
 	}
-	p.Format, p.Version = FormatID2, 2
+	p.useFormat2()
 	return fittedRateWarnings(p, score)
 }
 
@@ -343,7 +343,7 @@ func validateModulators(p *Project) error {
 	if len(p.Modulators) == 0 && len(p.Routes) == 0 {
 		return nil
 	}
-	if p.Format != FormatID2 {
+	if !p.formatAtLeast2() {
 		return fmt.Errorf("CICADA-VERSION: modulators require cicada.project/2")
 	}
 	if len(p.Modulators) > notation.MaxModulators {

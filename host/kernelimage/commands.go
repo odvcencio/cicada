@@ -22,6 +22,10 @@ const CapabilityLiveIdentity uint32 = 1 << 20
 // CapabilityLiveGroups supports owned live shared control bindings (32/33).
 const CapabilityLiveGroups uint32 = 1 << 22
 
+// CapabilityMeters reads the meter table behind header flag bit 7 (MeterFlag):
+// a song in a meter other than 4/4.
+const CapabilityMeters uint32 = 1 << 23
+
 // PatternCommands uploads one melodic slot through the unchanged 24-byte ABI.
 // A chord requires an advertised capability; no mono fallback is permitted.
 // cfg describes the currently loaded kernel, not the source project. Gate and

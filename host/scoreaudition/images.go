@@ -131,7 +131,7 @@ func (a *Analysis) barsPerPage(bars, maxWidth int) int {
 		fits := true
 		for b0 := 0; b0 < bars && fits; b0 += n {
 			b1 := min(bars, b0+n)
-			fits = a.barCols[b1]-a.barCols[b0]+1 <= maxWidth && (b1-b0)*16*chromaCell <= maxWidth
+			fits = a.barCols[b1]-a.barCols[b0]+1 <= maxWidth && (b1-b0)*a.framesPerBar*chromaCell <= maxWidth
 		}
 		if fits {
 			return n
@@ -243,7 +243,7 @@ func (a *Analysis) spectrogram(b0, b1, maxWidth int) (*image.NRGBA, bool) {
 // C at the bottom, a white line at each bar.
 func (a *Analysis) chromaImage(b0, b1, maxWidth int) (*image.NRGBA, bool) {
 	const ch = 14
-	first, last := b0*16, min(len(a.chroma), b1*16)
+	first, last := b0*a.framesPerBar, min(len(a.chroma), b1*a.framesPerBar)
 	if b1 <= b0 {
 		first, last = 0, len(a.chroma)
 	}
@@ -286,7 +286,7 @@ func (a *Analysis) chromaImage(b0, b1, maxWidth int) (*image.NRGBA, bool) {
 			}
 		}
 	}
-	for c := first; c < last; c += 16 {
+	for c := first; c < last; c += a.framesPerBar {
 		x := (c - first) * chromaCell
 		if scaled {
 			x = (c - first) * width / n
@@ -302,9 +302,9 @@ func (a *Analysis) chromaImage(b0, b1, maxWidth int) (*image.NRGBA, bool) {
 func (a *Analysis) rhythmImage() *image.NRGBA {
 	const cell = 24
 	rows := max(1, len(a.rhythmRows))
-	rhythm := image.NewNRGBA(image.Rect(0, 0, 16*cell, rows*cell))
+	rhythm := image.NewNRGBA(image.Rect(0, 0, a.framesPerBar*cell, rows*cell))
 	for r := 0; r < rows; r++ {
-		for s := 0; s < 16; s++ {
+		for s := 0; s < a.framesPerBar; s++ {
 			col := ramp(0)
 			if r < len(a.rhythmRows) {
 				col = ramp(a.rhythmRows[r][s])

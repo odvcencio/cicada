@@ -46,8 +46,16 @@ func ValidateProject(p *Project) error {
 	if applycount.Enabled {
 		applycount.ProjectValidation()
 	}
-	if p == nil || !((p.Format == FormatID && p.Version == 1) || (p.Format == FormatID2 && p.Version == 2)) {
+	if p == nil || !((p.Format == FormatID && p.Version == 1) || (p.Format == FormatID2 && p.Version == 2) || (p.Format == FormatID3 && p.Version == 3)) {
 		return fmt.Errorf("unsupported project format or version")
+	}
+	if p.Meter != nil {
+		if p.Format != FormatID3 {
+			return fmt.Errorf("CICADA-VERSION: a meter requires cicada.project/3")
+		}
+		if err := validMeter(p.Meter); err != nil {
+			return err
+		}
 	}
 	if err := validateArrangementProject(p); err != nil {
 		return err
@@ -56,7 +64,7 @@ func ValidateProject(p *Project) error {
 		return err
 	}
 	if p.Live != nil {
-		if p.Edition != 2 || p.Format != FormatID2 {
+		if p.Edition != 2 || !p.formatAtLeast2() {
 			return fmt.Errorf("CICADA-VERSION: live controls require edition 2 and cicada.project/2")
 		}
 		if p.Live.Macros == nil || p.Live.Layers == nil {
@@ -446,7 +454,7 @@ func ValidateProject(p *Project) error {
 		if track.Mixer.SendB > 0 && !hasEffectKind(effects, "reverb") {
 			return fmt.Errorf("track %s requires a declared reverb for send_b", track.ID)
 		}
-		if p.Format == FormatID2 {
+		if p.formatAtLeast2() {
 			seenSends := map[string]bool{}
 			for _, send := range track.Mixer.Sends {
 				effect, exists := effects[send.To]
@@ -499,7 +507,7 @@ func ValidateProject(p *Project) error {
 		seenBuses[bus.ID] = true
 		namespace[bus.ID] = "bus"
 	}
-	if p.Format == FormatID2 {
+	if p.formatAtLeast2() {
 		for _, bus := range p.Buses {
 			if bus.ID != "music" && bus.ID != "sfx" {
 				return fmt.Errorf("CICADA-UNSUPPORTED: user-declared bus %s is not implemented", bus.ID)

@@ -74,6 +74,7 @@ type Context struct {
 	running      int          // the index of the intent that runs
 	final        []finalCheck // checks that run after the last intent
 	warnings     []string     // what the running intent changed that its label does not say
+	meters       meterCache
 }
 
 // warn records, for the running intent, a change the result reports beside
@@ -100,9 +101,45 @@ func (c *Context) afterIntents(check func(*Context) error) {
 	c.final = append(c.final, finalCheck{index: c.running, kind: kind, check: check})
 }
 
-// MeterMap places the edited song's bar and beat lines. A score cannot declare
-// a meter yet, so it is the 4/4 map.
-func (c *Context) MeterMap() seq.MeterMap { return seq.MeterMap{} }
+// meterCache keeps the meter map of one working source.
+type meterCache struct {
+	source []byte
+	valid  bool
+	m      seq.MeterMap
+}
+
+// MeterMap places the edited song's bar and beat lines: the map of the whole
+// project as the working source stands, or 4/4 when no project file declares
+// a meter or the project does not parse. It is read again only when the
+// working source changes.
+func (c *Context) MeterMap() seq.MeterMap {
+	if c.meters.valid && bytes.Equal(c.meters.source, c.Source) {
+		return c.meters.m
+	}
+	var m seq.MeterMap
+	if c.declaresMeter() {
+		if score, _, err := c.ParseProject(); err == nil && score != nil {
+			m = score.MeterMap()
+		}
+	}
+	c.meters = meterCache{source: append(c.meters.source[:0], c.Source...), valid: true, m: m}
+	return m
+}
+
+// declaresMeter reports whether any project file could declare a meter, so
+// a song without one never pays for a parse.
+func (c *Context) declaresMeter() bool {
+	word := []byte("meter")
+	if bytes.Contains(c.Source, word) {
+		return true
+	}
+	for _, file := range c.Options.Sources {
+		if file.Path != c.Options.Path && bytes.Contains(file.Source, word) {
+			return true
+		}
+	}
+	return false
+}
 
 // Parse parses the working buffer. Recording token writers can retain the
 // complete project context when the buffer owns only part of the score.

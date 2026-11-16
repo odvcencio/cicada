@@ -35,7 +35,8 @@ func lowerArrangement(p *Project, s *notation.Score) {
 	if s.Arrange == nil {
 		return
 	}
-	p.Format, p.Version, p.p2Syntax = FormatID2, 2, true
+	p.useFormat2()
+	p.p2Syntax = true
 	p.Arrange = &Arrangement{Placements: []Placement{}, Markers: []Marker{}}
 	for _, v := range s.Arrange.Placements {
 		p.Arrange.Placements = append(p.Arrange.Placements, Placement{ID: v.Name, Track: v.Track, Content: v.Content, AtTick: v.AtTick, LengthTicks: v.LengthTicks})
@@ -70,7 +71,7 @@ func validateArrangementProject(p *Project) error {
 	if p.Arrange == nil {
 		return nil
 	}
-	if p.Format != FormatID2 || p.Edition != 2 || len(p.Song) != 0 {
+	if !p.formatAtLeast2() || p.Edition != 2 || len(p.Song) != 0 {
 		return fmt.Errorf("CICADA-ARRANGEMENT: arrange requires edition 2 and exclusive arrangement authority")
 	}
 	if err := musictime.ValidateTempoChanges(p.Arrange.Tempos); err != nil {
@@ -95,6 +96,10 @@ func validateArrangementProject(p *Project) error {
 		}
 	}
 	s := &notation.Score{Version: p.Edition, Arrange: &notation.Arrangement{}}
+	// The rebuilt score reads tempo positions on the project's meter.
+	if m := p.Meter; m != nil {
+		s.SetMeter(&notation.Meter{Beats: int64(m.Numerator), Unit: int64(m.Denominator)})
+	}
 	for _, t := range p.Tracks {
 		s.Tracks = append(s.Tracks, notation.Track{Name: t.ID, Kind: t.Kind})
 	}

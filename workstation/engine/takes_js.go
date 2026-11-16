@@ -149,7 +149,7 @@ func mountTakes(host enginewasm.Context) (enginewasm.Handle, error) {
 			renderInputMeter(root, update)
 			fields := root.Call("querySelectorAll", ".vocal-record select, .vocal-record input:not([type=hidden]), [data-vocal-level-control]")
 			for i := 0; i < fields.Length(); i++ {
-				fields.Index(i).Set("disabled", active)
+				fields.Index(i).Set("disabled", active || fields.Index(i).Call("getAttribute", "data-meter-unavailable").String() == "true")
 			}
 			status.Set(text)
 		}

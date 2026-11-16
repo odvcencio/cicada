@@ -49,10 +49,21 @@ func barLevels(s stereo, barSample func(int) int, bars, grace int, hasNotes bool
 		full[b] = rmsDB(s.Slice(lo, hi))
 		test[b] = full[b]
 		if hasNotes && (b >= len(noteStarts) || !noteStarts[b]) {
-			test[b] = rmsDB(s.Slice(min(lo+grace, hi), hi))
+			test[b] = rmsDB(s.Slice(graceEnd(lo, hi, grace), hi))
 		}
 	}
 	return full, test
+}
+
+// graceEnd is where a bar's test window starts: after the grace, or, in a bar
+// no longer than the grace, at the bar's middle, so the window is never
+// empty. The rule depends on the bar's length alone: every 4/4 bar is longer
+// than the grace (0.8 s at 300 BPM), so 4/4 songs keep their numbers.
+func graceEnd(lo, hi, grace int) int {
+	if hi-lo <= grace {
+		grace = (hi - lo) / 2
+	}
+	return lo + grace
 }
 
 // sounding reads the activity of one track from its bar levels.
