@@ -21,15 +21,16 @@ type renderJSONResult struct {
 	FromBar int    `json:"from_bar"`
 	Bars    int    `json:"bars"`
 	Outputs []struct {
-		Path            string  `json:"path"`
-		Role            string  `json:"role"`
-		SampleRate      int     `json:"sample_rate"`
-		BitDepth        int     `json:"bit_depth"`
-		Encoding        string  `json:"encoding"`
-		Channels        int     `json:"channels"`
-		Frames          int64   `json:"frames"`
-		DurationSeconds float64 `json:"duration_seconds"`
-		ClippedCount    *int64  `json:"clipped_count"`
+		Path            string   `json:"path"`
+		Role            string   `json:"role"`
+		SampleRate      int      `json:"sample_rate"`
+		BitDepth        int      `json:"bit_depth"`
+		Encoding        string   `json:"encoding"`
+		Channels        int      `json:"channels"`
+		Frames          int64    `json:"frames"`
+		DurationSeconds float64  `json:"duration_seconds"`
+		TailEndPeakDBFS *float64 `json:"tail_end_peak_dbfs"`
+		ClippedCount    *int64   `json:"clipped_count"`
 	} `json:"outputs"`
 	Levels      *renderLevelsJSON   `json:"levels"`
 	Loudness    *renderLoudnessJSON `json:"loudness"`

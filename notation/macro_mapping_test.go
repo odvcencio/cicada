@@ -38,3 +38,13 @@ song { main }
 		t.Fatalf("integer target should be rejected as non-continuous: %+v", ds)
 	}
 }
+
+func TestSendRangesRejectDB(t *testing.T) {
+	base := "cicada 2\nfx hall reverb {}\ntrack bass acid {}\npattern p { c3 }\nscene main { bass = p }\nsong { main }\n"
+	for _, row := range []string{"live { macro amount -> bass.send.reverb -60dB..0dB }\n", "midi { port keys\n keys cc 74 -> bass.send.reverb -60dB..0dB\n}\n"} {
+		_, ds := Parse([]byte(base + row))
+		if len(ds) == 0 || !strings.Contains(ds[0].Message, "range takes linear gain") || ds[0].Position.Line < 7 {
+			t.Fatalf("%s: %+v", row, ds)
+		}
+	}
+}

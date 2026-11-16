@@ -674,6 +674,7 @@ func parsePattern(w *loweringWalker, n *gts.Node) Pattern {
 			if p.Velocity != nil {
 				*w.diagnostics = append(*w.diagnostics, Diagnostic{Code: "CICADA-DUPLICATE", Severity: "error", Message: "duplicate velocity row", Position: w.position(c)})
 			}
+			p.VelocityPosition = w.position(c)
 			p.Velocity = []StepToken{}
 			for j := 0; j < c.ChildCount(); j++ {
 				value := c.Child(j)

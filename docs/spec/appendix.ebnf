@@ -17,7 +17,7 @@ _declaration ::= import_decl | title_decl | tempo_decl | key_decl | seed_decl | 
                  clip_decl | sampler_decl | live_decl | lfo_decl | envelope_decl | sway_decl |
                  contour_decl | mod_decl | midi_decl ;
 automate_decl ::= "automate" , parameter_path , "{" , { automation_point | automation_recall } , "}" ;
-automation_point ::= musical_position , number , [ identifier , [ number ] ] ;
+automation_point ::= musical_position , (number | identifier) , [ identifier , [ number ] ] ;
 musical_position ::= /@[0-9]+\.[0-9]+\.[0-9]+/ ;
 asset_decl ::= "asset" , _name , string , "{" , { param_decl } , "}" ;
 clip_decl ::= "clip" , _name , _name , "{" , { param_decl } , "}" ;

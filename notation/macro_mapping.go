@@ -31,11 +31,11 @@ func validateMappedMacros(s *Score) []Diagnostic {
 		if m.Curve != "" && m.Curve != "linear" && m.Curve != "exp" {
 			add("macro curve must be linear or exp")
 		}
-		if err := validateSceneValue(desc, m.Target, m.Min); err != nil {
+		if err := validateRangeValue(desc, m.Target, m.Min); err != nil {
 			add("invalid macro minimum: " + err.Error())
 			continue
 		}
-		if err := validateSceneValue(desc, m.Target, m.Max); err != nil {
+		if err := validateRangeValue(desc, m.Target, m.Max); err != nil {
 			add("invalid macro maximum: " + err.Error())
 			continue
 		}

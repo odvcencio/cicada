@@ -693,8 +693,8 @@ The same batch with the pattern's settings instead applies and writes:
 
 `cicada render ... --json` describes what it rendered: each file in `outputs`
 as its WAV header gives it (`sample_rate`, `bit_depth`, `encoding` `pcm` or
-`float`, `channels`, `frames` and `duration_seconds`), and the bar range
-(`from_bar`, `bars`). A render without a loudness target adds `levels`: the
+`float`, `channels`, `frames`, `duration_seconds` and `tail_end_peak_dbfs`), and the bar range
+(`from_bar`, `bars`). `tail_end_peak_dbfs` is the sample peak of the last 100 ms in dBFS, or null for digital silence; it helps identify a tail cut off while still sounding. A render without a loudness target adds `levels`: the
 pre-limiter peak and overs, the output peak, and the counts of samples at the
 ceiling and clipped (`ceiling_count`, `clipped_count`, as `verify-wav
 --report` names them), with peaks as linear full-scale values. `cicada stems ...
@@ -734,6 +734,8 @@ The audio and every other number are the same as when each pass synthesizes
 the song. With the environment variable `CICADA_RENDER_NO_REUSE=1` every pass
 does: `syntheses` equals `passes` and nothing is replayed or repeated. Use it
 to check whether reuse caused a difference you see.
+
+For a silent file ending, an output includes `"tail_end_peak_dbfs": null`; otherwise it contains the measured dBFS peak.
 
 <!-- agent-example: render song.cicada -o song.wav --bars 2 --loudness -14 --json -->
 
@@ -880,10 +882,17 @@ command prints and, when the documentation gives a fix for that cause, a
 
 <!-- render-error-codes -->
 - `usage`: the arguments are wrong.
+- `flag_out_of_range`: a flag value is outside the range the command takes;
+  `flag`, `value`, `bound` (`maximum` or `minimum`) and `limit` name it, as
+  in `--tail 61s` against the `60s` maximum. Exit status 2, as for `usage`.
 - `unreadable_score`: the score cannot be read.
 - `invalid_score`: the score has errors; `diagnostics` lists them.
 - `export_settings`: the `--export` profile is unknown or cannot be applied.
 - `output_exists`: the stems folder already exists.
+- `output_not_writable`: the folder of the `-o` WAV is missing and cannot be
+  created; `path` names that folder, in the form the document's other paths
+  use. A missing folder that can be created is created, as by every command
+  that writes to `-o`.
 - `sampler_memory`: the sampler packs exceed the resident PCM cap.
 - `unknown_track`: `stems --tracks` names a track the score does not have; `valid_tracks` lists the score's tracks.
 - `render_failed`: another render or write error; the message says which.

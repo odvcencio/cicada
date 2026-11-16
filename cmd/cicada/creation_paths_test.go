@@ -26,9 +26,13 @@ func TestCreatingCommandsDestinationParents(t *testing.T) {
 		existingParent bool
 		exclusive      bool
 	}{
+		// Every command that writes to -o creates missing parent folders, as
+		// stems, audition and Studio's export do (producer findings, 10
+		// November 2026): gen, convert, transcribe and import-midi used to
+		// refuse them with the name of a temporary file.
 		{"save-as", false, true}, {"new", false, true}, {"lib-new", false, true},
-		{"gen", true, false}, {"convert", true, false}, {"transcribe", true, true},
-		{"import-midi", true, true}, {"lib-vendor", false, false}, {"lib-update", false, false},
+		{"gen", false, false}, {"convert", false, false}, {"transcribe", false, true},
+		{"import-midi", false, true}, {"lib-vendor", false, false}, {"lib-update", false, false},
 	}
 	for _, command := range commands {
 		for _, kind := range []string{"missing-nested", "symlink-parent", "existing-parent"} {

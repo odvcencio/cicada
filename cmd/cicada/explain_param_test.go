@@ -259,3 +259,22 @@ func TestExplainSendPathNamesTheFirstReverb(t *testing.T) {
 		t.Fatalf("explain does not name the first reverb:\n%s", output.String())
 	}
 }
+
+func TestExplainSendAliases(t *testing.T) {
+	source := "cicada 2\ntempo 120\nfx hall reverb {}\ntrack keys acid {}\npattern p { c3 }\nscene main { keys = p keys.send.reverb = 0.3 }\nsong { main*2 }\nautomate keys.send.reverb { @1.1.1 0.5 }\n"
+	path := filepath.Join(t.TempDir(), "score.cicada")
+	if err := os.WriteFile(path, []byte(source), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"keys.send.hall", "keys.send.reverb"} {
+		var output strings.Builder
+		if err := explainParameter(path, name, "@1", &output); err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []string{"scene main (entered bar 1): 0.3", "automation at @1.1.1: 0.5", "computed: 0.5"} {
+			if !strings.Contains(output.String(), want) {
+				t.Fatalf("%s missing %s: %s", name, want, output.String())
+			}
+		}
+	}
+}

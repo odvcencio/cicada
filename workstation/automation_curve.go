@@ -76,15 +76,16 @@ func (s *studioApp) continuousAutomation(ctx *server.Context, v workspace, csrf 
 	props := automationCurveProps{Path: selected, Unit: automationUnit(d.Unit), Scale: d.Curve, Min: d.Min, Max: d.Max, End: end, Points: []automationCurvePoint{}}
 	var recallPositions []string
 	for _, lane := range p.Automation {
-		if lane.Path == selected {
+		if project.SameParameterPath(p, lane.Path, selected) {
 			recallTicks := append([]int64(nil), lane.Recalls...)
 			sort.Slice(recallTicks, func(i, j int) bool { return recallTicks[i] < recallTicks[j] })
 			for _, tick := range recallTicks {
 				recallPositions = append(recallPositions, vocalPosition(v.Project.MeterMap(), tick))
 			}
 			for _, point := range lane.Points {
-				if point.Value.Number != nil {
-					props.Points = append(props.Points, automationCurvePoint{point.Tick, *point.Value.Number, point.Shape, point.Curve})
+				if point.Value.Number != nil || point.Value.Unit == "enum" {
+					// A dB send point shows as its linear gain, the control's unit.
+					props.Points = append(props.Points, automationCurvePoint{point.Tick, project.AutomationPointValue(d, point), point.Shape, point.Curve})
 				}
 			}
 		}

@@ -155,6 +155,9 @@ func writeNewAtomic(path string, data []byte) error {
 		return err
 	}
 	path = target.Physical
+	if err := ensureOutputFolder(path); err != nil {
+		return err
+	}
 	mode := os.FileMode(0644)
 	if info, err := os.Stat(path); err == nil {
 		mode = info.Mode().Perm()

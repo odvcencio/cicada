@@ -110,7 +110,10 @@ func Validate(s *Score) (ds []Diagnostic) {
 	if applycount.Enabled {
 		applycount.NotationValidation()
 	}
-	defer func() { LocateDiagnostics(ds, s.Position) }()
+	defer func() {
+		OneCode(ds)
+		LocateDiagnostics(ds, s.Position)
+	}()
 	sourceEffects := s.Effects
 	s, ds = ResolvePresets(s)
 	ds = append(ds, ValidateAudio(s)...)
@@ -666,12 +669,22 @@ func Validate(s *Score) (ds []Diagnostic) {
 			}
 		}
 	}
-	if kindCounts["delay"]+kindCounts["tape"] > 1 {
-		message := "multiple delay instances are not implemented"
-		if kindCounts["tape"] > 0 {
-			message = "multiple delay or tape instances are not implemented: a tape echo is the delay return"
+	// Each extra delay or tape reports at its declaration and names the first.
+	var firstEcho *Effect
+	for i := range s.Effects {
+		effect := &s.Effects[i]
+		switch effect.Kind {
+		case "delay", "tape":
+			if firstEcho == nil {
+				firstEcho = effect
+				continue
+			}
+			message := "multiple delay instances are not implemented"
+			if kindCounts["tape"] > 0 {
+				message = "multiple delay or tape instances are not implemented: a tape echo is the delay return"
+			}
+			add("CICADA-UNSUPPORTED", fmt.Sprintf("%s; fx %s is the score's delay return already", message, firstEcho.Name), "error", effect.Position)
 		}
-		add("CICADA-UNSUPPORTED", message, "error", Position{Line: 1, Column: 1})
 	}
 	// The first reverb is return slot B; each later one takes a slot from C to
 	// H. Edition 1 addresses returns by kind (send_b), so it keeps one reverb.
