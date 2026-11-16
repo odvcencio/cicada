@@ -180,6 +180,8 @@ func TestMCPOutputSchemasDescribeTheResults(t *testing.T) {
 		{"library", `{"path":"std/drums"}`},
 		{"library", `{"path":"nosuch/library"}`},
 		{"params", `{}`},
+		{"params", `{"voice":"acid","control":"acid.cutoff"}`},
+		{"params", `{"scope":"not-a-scope"}`},
 	}
 	for _, call := range calls {
 		document, _ := mcpDocument(t, call.tool, call.arguments)

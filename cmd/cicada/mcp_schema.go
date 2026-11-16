@@ -184,45 +184,9 @@ type (
 	}
 )
 
-// paramRegistryEntrySchema is one entry of the parameter registry, which
-// project/params.json holds as data rather than as a Go type.
-var paramRegistryEntrySchema = map[string]any{
-	"type": "object", "additionalProperties": false,
-	"properties": map[string]any{
-		"id":           map[string]any{"type": "string"},
-		"path":         map[string]any{"type": "string", "description": "the parameter's path after param:<track>. or param:"},
-		"scope":        map[string]any{"type": "string", "description": "track, global, bus or master"},
-		"voices":       map[string]any{"type": []string{"array", "null"}, "items": map[string]any{"type": "string"}, "description": "the voices it applies to; null for every voice"},
-		"source":       map[string]any{"type": "string", "description": "the setting's name in the score"},
-		"unit":         map[string]any{"type": "string", "description": "the unit of min, max, default and display_step, such as dB or Hz; empty for a plain number"},
-		"min":          map[string]any{"type": "number"},
-		"max":          map[string]any{"type": "number"},
-		"default":      map[string]any{"type": "number"},
-		"curve":        map[string]any{"type": "string", "description": "how a control moves between min and max: linear, log, fader, toggle or enum"},
-		"display_step": map[string]any{"type": "number"},
-		"smoothing_ms": map[string]any{"type": "integer", "description": "milliseconds a live change takes"},
-		"live":         map[string]any{"type": "boolean", "description": "it can change while playing"},
-		"automatable":  map[string]any{"type": "boolean"},
-		"persist":      map[string]any{"type": "string"},
-		"type":         map[string]any{"type": "string"},
-		"values":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "the values of an enum"},
-		"off":          map[string]any{"type": "boolean", "description": "the minimum turns it off"},
-		"schema":       map[string]any{"type": "string"},
-	},
-}
-
-// mcpParamsSchema is the params tool's output schema.
+// mcpParamsSchema describes both catalog responses and their refusals.
 func mcpParamsSchema() json.RawMessage {
-	refusal, _ := json.Marshal(schemaOfType(reflect.TypeOf(jsonError{}), "error", nil, map[reflect.Type]bool{}))
-	data, _ := json.Marshal(map[string]any{
-		"type": "object", "additionalProperties": false, "required": []string{"schema"},
-		"properties": map[string]any{
-			"schema": map[string]any{"const": paramRegistrySchema},
-			"params": map[string]any{"type": "array", "items": paramRegistryEntrySchema},
-			"error":  json.RawMessage(refusal),
-		},
-	})
-	return data
+	return mcpOutputSchema(nil, paramsIndexDocument{Schema: paramsIndexSchema}, paramsDocument{Schema: paramsSchema})
 }
 
 // The output schemas of the song, check, intents, explain and library tools.

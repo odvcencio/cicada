@@ -210,6 +210,9 @@ func driveMCPServer(t *testing.T, bin string) {
 		{"explain", map[string]any{"construct": "pattern"}, []string{"explain", "pattern", "--json"}},
 		{"library", map[string]any{}, []string{"lib", "list", "--json"}},
 		{"library", map[string]any{"path": "std/drums"}, []string{"lib", "show", "std/drums", "--json"}},
+		{"params", map[string]any{}, []string{"params", "--json", "--index"}},
+		{"params", map[string]any{"voice": "fm_bass"}, []string{"params", "--json", "--voice", "fm_bass"}},
+		{"params", map[string]any{"scope": "effect", "control": "delay"}, []string{"params", "--json", "--scope", "effect", "delay"}},
 	} {
 		document, isError := c.call(c.modern("tools/call", map[string]any{"name": tc.tool, "arguments": tc.arguments}))
 		stdout, code := cicada(t, bin, root, tc.command...)
@@ -218,11 +221,9 @@ func driveMCPServer(t *testing.T, bin string) {
 			t.Fatalf("%s %v differs from cicada %v (isError %v):\n%s\n%s", tc.tool, tc.arguments, tc.command, isError, mustJSONString(document), stdout)
 		}
 	}
-	document, isError = c.call(c.modern("tools/call", map[string]any{"name": "params", "arguments": map[string]any{}}))
-	stdout, _ = cicada(t, bin, root, "params")
-	var registry any
-	if err := json.Unmarshal(stdout, &registry); err != nil || isError || document["schema"] != "cicada.param_registry.v1" || mustJSONString(document["params"]) != mustJSONString(registry) {
-		t.Fatalf("params differs from cicada params: %v %v", err, isError)
+	document, isError = c.call(c.modern("tools/call", map[string]any{"name": "params", "arguments": map[string]any{"voice": "nosuch"}}))
+	if !isError || document["schema"] != "cicada.params.v1" || document["error"].(map[string]any)["code"] != "no_match" {
+		t.Fatalf("params with an unknown voice: %v %v", isError, document)
 	}
 
 	// The guide resources are what cicada agents and cicada agents reference

@@ -317,35 +317,19 @@ func (q *quickStart) scoreClaims() {
 }
 
 // voiceClaims tries the voices the page names and the way it gives to find
-// their controls: each voice checks; cicada params has controls under the
-// engine the page names for it; for every one of them, cicada explain fails
-// exactly when the track lacks it (setparam then refuses it, and when
-// explain succeeds the track has it); and level and pan fit every track.
+// their controls: each voice checks; cicada explain track:<track> <score>
+// --json lists the controls of each voice's track with range, unit, value
+// and directions; setparam takes every one of them at its example value,
+// refuses a control the track lacks, and level and pan fit every track.
 func (q *quickStart) voiceClaims() {
 	q.t.Helper()
-	q.uses("cicada params", "path", "voices", "cicada explain", "level", "pan")
+	q.uses("cicada explain track:<track> <score> --json", "cicada params --json --voice <voice>", "level", "pan")
 	var voices []string
 	for _, match := range regexp.MustCompile("`([a-z_]+)`").FindAllStringSubmatch(q.line("`track <name> <voice> { settings }`"), -1) {
 		voices = append(voices, match[1])
 	}
-	engines := map[string]string{}
-	for _, match := range regexp.MustCompile("`([a-z_]+)`\\s+is\\s+`([a-z_]+)`").FindAllStringSubmatch(q.line("Guessing a name"), -1) {
-		engines[match[1]] = match[2]
-	}
-	if len(voices) < 5 || len(engines) == 0 {
-		q.t.Fatalf("voices %v, engines %v", voices, engines)
-	}
-	var params []struct {
-		ID      string   `json:"id"`
-		Path    string   `json:"path"`
-		Voices  []string `json:"voices"`
-		Unit    string   `json:"unit"`
-		Default *float64 `json:"default"`
-	}
-	stdout, code := q.run("params")
-	decode(q.t, "params", stdout, &params)
-	if code != 0 {
-		q.t.Fatalf("params: exit %d", code)
+	if len(voices) < 5 {
+		q.t.Fatalf("voices %v", voices)
 	}
 	q.in(filepath.Join(q.root, "voices"), func() {
 		var score strings.Builder
@@ -358,45 +342,66 @@ func (q *quickStart) voiceClaims() {
 		if check, code := q.checkScore("voices.cicada"); code != 0 || !check.Valid {
 			q.t.Fatalf("a score with the voices %v does not check: exit %d %+v", voices, code, check)
 		}
-		setparam := func(track, path string, value any) quickApply {
-			result, _ := q.applyTo("voices.cicada", map[string]any{"version": 1, "intents": []any{map[string]any{"kind": "setparam", "entity": "param:" + track + "." + path, "value": value}}}, false)
+		setparam := func(track, name string, value any) quickApply {
+			result, _ := q.applyTo("voices.cicada", map[string]any{"version": 1, "intents": []any{map[string]any{"kind": "setparam", "entity": "param:" + track + "." + name, "value": value}}}, false)
 			return result
 		}
 		for i, voice := range voices {
 			track := fmt.Sprintf("t%d", i)
-			engine := engines[voice]
-			if engine == "" {
-				engine = voice
+			var explained struct {
+				Schema string `json:"schema"`
+				Track  struct {
+					Owner    string `json:"owner"`
+					Controls []struct {
+						Owner      string   `json:"owner"`
+						Name       string   `json:"name"`
+						Unit       string   `json:"unit"`
+						Example    string   `json:"example"`
+						SetIn      []string `json:"set_in"`
+						Directions []any    `json:"directions"`
+						Value      any      `json:"value"`
+					} `json:"controls"`
+				} `json:"track"`
+			}
+			stdout, code := q.run("explain", "track:"+track, "voices.cicada", "--json")
+			decode(q.t, "explain track:"+track, stdout, &explained)
+			if code != 0 || explained.Schema != "cicada.explain.v1" {
+				q.t.Fatalf("explain track:%s (%s): exit %d", track, voice, code)
 			}
 			listed := 0
-			for _, param := range params {
-				if strings.HasPrefix(param.ID, "mix.") || !contains(param.Voices, engine) {
+			for _, control := range explained.Track.Controls {
+				if control.Owner == "mix" || !contains(control.SetIn, "track") || control.Example == "" {
 					continue
 				}
 				listed++
-				value := any(0.0)
-				if param.Default != nil {
-					value = *param.Default
-					switch param.Unit {
-					case "Hz", "ms", "dB":
-						value = strconv.FormatFloat(*param.Default, 'f', -1, 64) + param.Unit
-					}
-				}
-				_, explainCode := q.run("explain", "voices.cicada", track+"."+param.Path)
-				result := setparam(track, param.Path, value)
-				unknown := result.Error != nil && strings.Contains(result.Error.Message, "unknown parameter")
-				if explainCode != 0 && result.OK || explainCode == 0 && unknown {
-					q.t.Errorf("%s on a %s track: explain exits %d, setparam %+v", param.Path, voice, explainCode, result.Error)
+				if result := setparam(track, control.Name, control.Example); !result.OK {
+					q.t.Errorf("explain track:%s lists %s.%s, and setparam refuses %s: %+v", track, control.Owner, control.Name, control.Example, result.Error)
 				}
 			}
 			if listed == 0 {
-				q.t.Errorf("cicada params has no control under engine %s, the page's way to the controls of %s", engine, voice)
+				q.t.Errorf("explain track:%s lists no control of %s, the page's way to the controls of a voice", track, voice)
+			}
+			var params struct {
+				Schema   string `json:"schema"`
+				Controls []struct {
+					Owner string `json:"owner"`
+				} `json:"controls"`
+			}
+			if explained.Track.Owner != "" {
+				stdout, code = q.run("params", "--json", "--voice", explained.Track.Owner)
+				decode(q.t, "params --json --voice "+explained.Track.Owner, stdout, &params)
+				if code != 0 || params.Schema != "cicada.params.v1" || len(params.Controls) == 0 {
+					q.t.Errorf("params --json --voice %s: exit %d, %d controls", explained.Track.Owner, code, len(params.Controls))
+				}
 			}
 			for _, path := range []string{"level", "pan"} {
 				if result := setparam(track, path, 0); !result.OK {
 					q.t.Errorf("a %s track refuses %s: %+v", voice, path, result.Error)
 				}
 			}
+		}
+		if result := setparam(drumTrack(voices), "cutoff", 900); result.OK || result.Error == nil || result.Error.Field != "entity" {
+			q.t.Errorf("setparam accepts a control the drum track lacks: %+v", result.Error)
 		}
 		if _, code := q.run("explain", "voices.cicada", drumTrack(voices)+".cutoff"); code == 0 {
 			q.t.Error("cicada explain accepts a control the track lacks")

@@ -40,8 +40,9 @@ env:
 #     desktop and platform-contract jobs and the four M2 jobs (WASM parity,
 #     one-hour memory, AudioWorklet browser tests and gates);
 #   - the schedule and manual runs only: the WAV parity and render-cache
-#     sweeps, macOS desktop exhaustive, and the M2 soak, which a manual run
-#     gets only with its soak input.
+#     sweeps, macOS desktop exhaustive, the measured sound directions of every
+#     control, and the M2 soak, which a manual run gets only with its soak
+#     input.
 concurrency:
   group: cicada-ci-${{ github.ref }}-${{ github.event_name }}
   # A newer push to a pull request cancels its older run. Runs on main finish,
@@ -271,7 +272,30 @@ jobs:
           make test-agent-surface | tee "$RUNNER_TEMP/agent-surface.log"
           # go test exits 0 when -run matches nothing, for example after a rename.
           grep -q -- '^--- PASS: TestAgentTaskSuite ' "$RUNNER_TEMP/agent-surface.log"
+          grep -q -- '^--- PASS: TestAgentBrighterBassTask ' "$RUNNER_TEMP/agent-surface.log"
           grep -q -- '^--- PASS: TestAgentDocumentationExamples ' "$RUNNER_TEMP/agent-surface.log"
+
+  # Every probeable sound control rendered at three values and compared with
+  # internal/controls/directions.json, which cicada params and cicada explain
+  # read for their measured directions. Pull requests probe a sample in the
+  # host/soundprobe unit test; the nightly run probes all of them.
+  sound-probe-nightly:
+    name: Measured sound directions (every control)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Probe every control
+        run: |
+          set -euo pipefail
+          CICADA_PROBE_ALL=1 go test ./host/soundprobe -run '^TestMeasuredDirectionsMatchTheTable$' -count=1 -v -timeout 25m
 
   parity-amd64:
     name: PCM24 parity (amd64, WASM)
@@ -866,6 +890,7 @@ jobs:
           make test-agent-surface | tee build/agent-surface-report.txt
           # go test exits 0 when -run matches nothing, for example after a rename.
           grep -q -- '^--- PASS: TestAgentTaskSuite ' build/agent-surface-report.txt
+          grep -q -- '^--- PASS: TestAgentBrighterBassTask ' build/agent-surface-report.txt
           grep -q -- '^--- PASS: TestAgentDocumentationExamples ' build/agent-surface-report.txt
       - name: Save gate reports
         if: always()
@@ -1008,7 +1033,8 @@ jobs:
 
   # Holds every job of this run to its time budget in scripts/ci-job-budgets.tsv:
   # a warning above the budget, a failure above 20 minutes, the project's rule
-  # for pull-request jobs. It waits for every hosted job, so it is not part of
+  # for pull-request jobs. It waits for its hosted and self-hosted dependencies,
+  # so it is not part of
   # the required check, which would then finish only when CI does: a slow job
   # shows here, in red when it broke the rule, without holding up a merge. The
   # self-hosted M2 AudioWorklet gates are judged when they have finished.
@@ -1162,7 +1188,14 @@ jobs:
     name: Studio browser suites (shard ${{ matrix.shard }}/4)
     needs: [changes, studio-build]
     if: ${{ needs.changes.outputs.studio_browser == 'true' }}
-    runs-on: ubuntu-24.04
+    # With CI_TAILNET_POOL on, pushes and same-repository pull requests use
+    # the pool. A fork's unchanged workflow routes to hosted runners, but a
+    # fork can edit it: repository settings require approval for every outside
+    # contributor run, and reviewers must read .github/ changes before approval.
+    # Each shard has its own state and scratch folders. Before enabling the
+    # variable, the pool must pass all four shards repeatedly and the job budget
+    # must be re-measured on the pool. Unset it to return to hosted runners.
+    runs-on: ${{ (vars.CI_TAILNET_POOL == 'on' && (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository))) && fromJSON('["tailnet-pool"]') || 'ubuntu-24.04' }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -1173,6 +1206,9 @@ jobs:
       CHROME_VERSION: 152.0.7977.64
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        id: checkout
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: '1.27.3'
@@ -1194,7 +1230,7 @@ jobs:
         shell: bash
         run: bash scripts/ci-studio-browser.sh run ${{ matrix.shard }}
       - name: Save Studio continuity reports
-        if: always()
+        if: ${{ always() && steps.checkout.outcome == 'success' }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: studio-continuity-reports-${{ matrix.shard }}
@@ -1965,10 +2001,10 @@ jobs:
     # scripts/ci-changes.sh); pushes to main always run it.
     if: ${{ (github.event_name == 'pull_request' || github.event_name == 'push') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && needs.changes.outputs.m2_gates == 'true' }}
     # This job runs on the self-hosted reference machine, so a pull request from
-    # a fork must not run it. The machine has one runner: every queued run waits
-    # for the one before it, so this job holds only the CPU budget, which a
-    # hosted runner cannot measure (it measured 1.296 ms against 0.67 ms).
-    runs-on: [self-hosted, linux, x64]
+    # a fork must not run it. Its label pins it to the reference runner; pool
+    # runners cannot take it. It holds only the CPU budget, which a hosted
+    # runner cannot measure (it measured 1.296 ms against 0.67 ms).
+    runs-on: [self-hosted, linux, x64, audio-soak]
     timeout-minutes: 20
     env:
       GOWORK: off
@@ -2012,7 +2048,9 @@ jobs:
     if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.soak)
     # Its CPU gate (0.67 ms per callback) is measured on the reference machine.
     # A hosted runner measured 1.296 ms, so this job stays on the self-hosted one.
-    runs-on: [self-hosted, linux, x64]
+    # The reference machine only: these jobs measure CPU and timing, so they
+    # must not land on a pool runner.
+    runs-on: [self-hosted, linux, x64, audio-soak]
     timeout-minutes: 55
     env:
       GOWORK: off

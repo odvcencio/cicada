@@ -20,7 +20,7 @@ test('split uses render proof, refuses invalid and stale targets, and has one Un
  const ready=async()=>{await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();await until(async()=>await page.locator('#undo-form input[name=revision]').inputValue()===(await state()).revision,'revision did not settle')};
  const select=async name=>{await page.goto(new URL('/studio?placement='+encodeURIComponent(name),origin).href);await ready();const box=inspector(name);if(await box.getAttribute('open')===null)await box.locator('summary').first().click()};
  const inspector=name=>page.locator(`[data-placement-inspector="${name}"]`);
- const splitForm=async name=>{const section=inspector(name).locator('.placement-split');if(await section.getAttribute('open')===null)await section.locator('summary').click();return section.locator('form')};
+ const splitForm=async name=>{await page.locator('#cicada-workspace[aria-busy=true]').waitFor({state:'hidden'});const box=inspector(name);await box.waitFor({state:'visible'});if(await box.getAttribute('open')===null)await box.locator('summary').first().click();const section=box.locator('.placement-split');if(await section.getAttribute('open')===null)await section.locator('summary').click();return section.locator('form')};
  const split=async(form,tick)=>{await form.getByLabel('Split position').selectOption(String(tick));const response=page.waitForResponse(r=>r.url().includes('/__actions/split-placement'));await form.getByRole('button',{name:'Split placement',exact:true}).click();return response};
  await page.goto(new URL('/studio?placement=good',origin).href);await ready();
  // Native forms remain usable without JavaScript, including an audible refusal.
@@ -80,7 +80,7 @@ test('split uses render proof, refuses invalid and stale targets, and has one Un
  form=await splitForm('risk');const audible=await split(form,23040);assert.equal((await audible).status(),422);
  await until(async()=>/chance steps|restarts/i.test(await page.locator('body').innerText()),'audible refusal not explained');assert.equal(fs.readFileSync(owner,'utf8'),arrangement);
  const goodLink=page.getByRole('link',{name:/^Edit placement good:/});await goodLink.focus();await page.keyboard.press('Enter');
- await until(()=>new URL(page.url()).searchParams.get('placement')==='good','placement command blocked after refusal');await ready();form=await splitForm('good');
+ await until(()=>new URL(page.url()).searchParams.get('placement')==='good','placement command blocked after refusal');await page.waitForFunction(()=>document.documentElement.getAttribute('data-gosx-navigation-state')==='idle');await ready();form=await splitForm('good');
  // Replace the source after the browser submits its original target/receipt.
  const external=arrangement.replace('place good drums beat','place good drums chance')+'// external edit\r\n';let intercepted=false;
  await page.route('**/__actions/split-placement',async route=>{if(!intercepted){intercepted=true;fs.writeFileSync(owner,external)}await route.continue()});

@@ -36,7 +36,11 @@ func main() {
 	if *sceneSong && *primary {
 		panic("scene-song and primary-arrangement are separate fixture modes")
 	}
-	root, err := os.MkdirTemp("/tmp", "cicada-print-sources-")
+	parent := os.Getenv("CICADA_PRINT_TMPDIR")
+	if parent == "" {
+		parent = "/tmp"
+	}
+	root, err := os.MkdirTemp(parent, "cicada-print-sources-")
 	must(err)
 	entry := []byte(`cicada 2
 // cicada-print-sources-test: disposable fixture
