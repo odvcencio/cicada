@@ -161,7 +161,6 @@ func runApply(scorePath, intentsPath string, write bool, author, session string,
 	if env.Revision != "" && env.Revision != revision {
 		return fail("revision_mismatch", fmt.Errorf("score changed; intents target revision %s, file is at %s", env.Revision, revision))
 	}
-	env.Revision = revision
 	if author != "" {
 		env.Author = author
 	}
