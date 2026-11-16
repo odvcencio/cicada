@@ -12,14 +12,14 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"m31labs.dev/cicada/kernel/dsp/detmath"
+	"m31labs.dev/cicada/internal/paramdefs"
 )
 
 // MarshalJSON supplies the effect kind when a migrated in-memory /2 value
 // still carries the /1 shorthand representation for a built-in effect.
 func (p Project) MarshalJSON() ([]byte, error) {
 	copy := p
-	if p.Format == FormatID2 {
+	if p.formatAtLeast2() {
 		copy.Effects = append([]Effect{}, p.Effects...)
 		for i := range copy.Effects {
 			if copy.Effects[i].Kind == "" {
@@ -328,8 +328,13 @@ func canonicalProjectBytes(p *Project) ([]byte, error) {
 	for _, effect := range p.Effects {
 		useV2 = useV2 || effect.Kind != ""
 	}
+	// A meter needs /3, which keeps every /2 form.
+	useV2 = useV2 || p.Meter != nil
 	if useV2 {
 		normalized.Format, normalized.Version = FormatID2, 2
+	}
+	if p.Meter != nil {
+		normalized.Format, normalized.Version = FormatID3, 3
 	}
 	normalized.Tracks = append([]Track(nil), p.Tracks...)
 	for i := range normalized.Tracks {
@@ -526,7 +531,7 @@ func DecodeJSON(data []byte) (*Project, error) {
 			}
 			gain := *send.Level.Number
 			if send.Level.Unit == "db" {
-				gain = detmath.Pow(10, gain/20)
+				gain = paramdefs.SendGainFromDB(gain)
 			}
 			switch effectKinds[send.To] {
 			case "delay", "tape":
@@ -552,9 +557,9 @@ func DecodeJSON(data []byte) (*Project, error) {
 	if p.Master != nil && (p.Master.Mixer.Level == nil || p.Master.Mixer.Level.Unit == "enum" && p.Master.Mixer.Level.Text == "off") {
 		p.Master.Mixer.GainDB = 0
 	}
-	if !((p.Format == FormatID && p.Version == 1) || (p.Format == FormatID2 && p.Version == 2)) {
+	if !((p.Format == FormatID && p.Version == 1) || (p.Format == FormatID2 && p.Version == 2) || (p.Format == FormatID3 && p.Version == 3)) {
 		field := "format"
-		if p.Format == FormatID || p.Format == FormatID2 {
+		if p.Format == FormatID || p.Format == FormatID2 || p.Format == FormatID3 {
 			field = "version"
 		}
 		return nil, jsonError(data, "CICADA-VERSION", "/"+field, 0, fmt.Errorf("unsupported project format or version"))
@@ -563,7 +568,7 @@ func DecodeJSON(data []byte) (*Project, error) {
 	if err := json.Unmarshal(data, &root); err != nil {
 		return nil, jsonError(data, "CICADA-PARAM", "", 0, err)
 	}
-	p.p2Syntax = p.Format == FormatID2 && (p.Arrange != nil || p.Live != nil || p.MIDI != nil || projectHasSceneSettings(&p) || len(p.Buses) > 0 || p.Master != nil || len(p.Exports) > 0)
+	p.p2Syntax = p.formatAtLeast2() && (p.Arrange != nil || p.Live != nil || p.MIDI != nil || projectHasSceneSettings(&p) || len(p.Buses) > 0 || p.Master != nil || len(p.Exports) > 0)
 	for _, effect := range p.Effects {
 		p.p2Syntax = p.p2Syntax || effect.Kind != ""
 	}
@@ -596,6 +601,9 @@ func DecodeJSON(data []byte) (*Project, error) {
 	}
 	if err := ValidateProject(&p); err != nil {
 		return nil, jsonError(data, projectDiagnosticCode(err), "", 0, err)
+	}
+	if m := p.Meter; m != nil && m.Numerator == 4 && m.Denominator == 4 && len(m.Groups) == 0 {
+		p.Meter = nil
 	}
 	if _, err := canonicalProjectBytes(&p); err != nil {
 		code := "CICADA-PARAM"
@@ -709,7 +717,7 @@ func checkRequiredFields(data []byte) error {
 	if !ok {
 		return fmt.Errorf("project must be an object")
 	}
-	version2 := rootObject["format"] == FormatID2
+	version2 := rootObject["format"] == FormatID2 || rootObject["format"] == FormatID3
 	if version2 {
 		fieldsByConstruct["mixer"] = []string{}
 		optionalByConstruct["mixer"] = []string{"level", "pan", "mute", "solo", "inserts", "sends", "out"}

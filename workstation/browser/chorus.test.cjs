@@ -33,10 +33,10 @@ test('chorus mixer controls persist and support history', {timeout:120000}, asyn
   const open=async(name,channel)=>{await panel.getByRole('link',{name:`Open ${name} in Device`,exact:true}).click();await device.locator(`.device-groups[data-device-channel="${channel}"]`).waitFor();await page.locator('#detail-tab-device[aria-selected="true"]').waitFor()};
   const param=path=>device.locator('form').filter({has:page.locator(`input[name=path][value="${path}"]`)});
   const addEffect=panel.locator('.mixer-add-effect');
-  // The chorus form sits behind the tool strip's Add effect, with the same fields and action.
-  assert.equal(await addEffect.locator('form').isVisible(),false,'the chorus form is closed until asked for');
-  await addEffect.locator('summary').click();
   const create=addEffect.locator('form').filter({has:page.locator('input[name=action][value=add-chorus]')});
+  // The chorus form sits behind the tool strip's Add effect, with the same fields and action.
+  assert.equal(await create.isVisible(),false,'the chorus form is closed until asked for');
+  await addEffect.locator('summary').click();
   await create.locator('input[name=name]').fill('wide'); await create.getByRole('button',{name:'Create chorus'}).click();
   let saved=await waitSource(s=>s.includes('fx wide chorus')); await waitRevision(saved);
   // A new effect is on no insert chain yet: Add effect lists it and opens it in Device.

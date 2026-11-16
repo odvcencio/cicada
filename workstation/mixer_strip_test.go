@@ -442,9 +442,23 @@ func TestMixerToolStripFiltersInTheTabAndKeepsTheChorusForm(t *testing.T) {
 			t.Errorf("tool strip should not hold %s", banned)
 		}
 	}
-	// The view controls are outside every form, so they post nothing.
-	if form := regexp.MustCompile(`(?s)<form.*?</form>`).FindAllString(tools, -1); len(form) != 1 || strings.Contains(form[0], "data-mixer-show") {
-		t.Errorf("the tool strip holds one form, the chorus form: %d", len(form))
+	// The view controls are outside both forms, so they post nothing.
+	forms := regexp.MustCompile(`(?s)<form.*?</form>`).FindAllString(tools, -1)
+	if len(forms) != 2 {
+		t.Fatalf("the tool strip holds chorus and return forms: got %d", len(forms))
+	}
+	for i, wants := range [][]string{
+		{`action="/__actions/mixer"`, `name="action" value="add-chorus"`, `<span>Chorus name</span><input name="name" value="chorus"`, `>Create chorus</button>`},
+		{`action="/__actions/add-effect"`, `<select name="effectkind"`, `value="reverb"`, `<span>Name (optional)</span><input name="name" value=""`, `>Add return</button>`},
+	} {
+		for _, want := range wants {
+			if !strings.Contains(forms[i], want) {
+				t.Errorf("form %d missing %s: %s", i, want, forms[i])
+			}
+		}
+		if strings.Contains(forms[i], "data-mixer-show") || strings.Contains(forms[i], "data-mixer-meter") {
+			t.Errorf("view control inside form %d", i)
+		}
 	}
 }
 
@@ -535,5 +549,23 @@ func TestShellReadsTheMixerOncePerRequest(t *testing.T) {
 	defer mu.Unlock()
 	if reads != 0 {
 		t.Errorf("session render with a track header read /api/mixer %d times, want 0", reads)
+	}
+}
+
+// The echo highpass is off until set, and off is no number: the echo panel
+// shows "off" for it, not <nil>, and shows the cutoff once it is set.
+func TestEchoPanelShowsHighpassOffAndSet(t *testing.T) {
+	s := &studioApp{}
+	descriptor, ok := paramdefs.Lookup("fx.delay.highpass")
+	if !ok {
+		t.Fatal("no fx.delay.highpass row")
+	}
+	unset := gosx.RenderHTML(s.mixerField(workspace{Edition: 2}, "token", "highpass", mixerField{Path: "echo.highpass", Value: nil, Supported: true, Descriptor: descriptor}))
+	if strings.Contains(unset, "nil") || !strings.Contains(unset, `value="off"`) {
+		t.Fatalf("unset highpass: %s", unset)
+	}
+	set := gosx.RenderHTML(s.mixerField(workspace{Edition: 2}, "token", "highpass", mixerField{Path: "echo.highpass", Value: 300.0, Supported: true, Descriptor: descriptor}))
+	if !strings.Contains(set, `value="300"`) || !strings.Contains(set, "(Hz)") {
+		t.Fatalf("set highpass: %s", set)
 	}
 }

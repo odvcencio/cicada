@@ -84,6 +84,9 @@ func bundleCommand(args []string) error {
 		libraries = append(libraries, bundleLibrary{Path: lib.Path, Kind: lib.Kind, SHA256: lib.SHA256})
 	}
 	sort.Slice(libraries, func(i, j int) bool { return libraries[i].Path < libraries[j].Path })
+	if err := ensureOutputFolder(target.Physical); err != nil {
+		return err
+	}
 	archive, err := os.CreateTemp(filepath.Dir(target.Physical), ".cicada-bundle-*.zip")
 	if err != nil {
 		return err

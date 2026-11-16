@@ -7,16 +7,14 @@ score files. Its editor, forms, navigation, meters, and live performance use
 GoSX; Tymbal handles native audio devices.
 Changes to patterns, mixer settings, and arrangements write back to the score.
 
-In the desktop app, **Arrange** opens on the song timeline, with vocal recording
-below it. Edition-2 scores have **Song timeline** and **Record & comp vocals**
-links to jump between them.
+In the desktop app, **Arrange** opens on the song timeline, with a **Record & comp vocals** link to the Takes dock for Edition-2 scores.
 **Session** contains the launch matrix and live playing;
 **Mixer** contains mix controls. The left Library has Sounds, Samples, and
 Takes tabs. Search and select a sound to audition it or add it to the song;
 project instruments, preset saving, recording, and Generate are below the sounds.
 Samples opens the sampler. The detail dock's **Clip** tab edits patterns, **Device**
 edits the selected track's sound and processing, and **Automation** contains
-curve and scene-point editors. The **Code** lens shows the score. Older
+curve and scene-point editors. **Takes** contains vocal recording and comping. The **Code** lens shows the score. Older
 screenshots show these tools as standalone panels.
 
 Studio shows **Opening Studio controls…** while its interactive controls load.
@@ -274,9 +272,9 @@ open the matching curve. Automation belongs to the track even if its amp
 declaration is shared; changing the declaration itself affects its users.
 These curves normally change the track's playback, while input monitoring uses
 separate settings. To hear the movement on the input while recording, select
-the destination track's amp parameter and choose **Link Perform to the live
-input amp**, then choose **Prepare linked recording** before starting the
-audio take. Use **Record take** in Session and move **Perform**; the linked pass begins
+the destination track's amp parameter in the Automation tab and choose **Link Perform to the live
+input amp**, then choose **Prepare linked recording**. Open the Takes tab,
+choose **Record take**, and move **Perform** in Automation; the linked pass begins
 with recording. The monitor temporarily follows the track amp and cabinet and
 its other saved amp curves; other track effects are
 heard only on playback. The monitor's previous settings return after
@@ -716,8 +714,19 @@ fader shows the level and does not move; set it in Device.
 Above the strips, **Show** limits the view to tracks or to buses and returns,
 **Meter** shows peak, RMS or both, and **Reset peaks** clears the held peaks
 and clip marks at once. These change only what this tab shows, never the
-score. **Add effect** opens **Create chorus**, which adds a chorus declaration,
-and lists each effect that is on no insert chain.
+score. **Add effect** holds **Create chorus**, which adds a chorus declaration,
+and **Send return**, and lists each effect that is on no insert chain.
+
+To add an insert, open a channel in Device, choose a kind under Insert
+effects, then select Add insert. The effect appears at the end of the chain;
+open it there to adjust its parameters. Convolution also needs the name of a
+declared impulse asset. To add a send return, open Add effect in the Mixer
+tool strip, choose a return kind under Send return, and select Add return. The
+new return has its own Mixer strip. It receives no signal until a track sends
+to it: open the track in Device and use Send to and Add send to set its level.
+A name is optional in both forms: when the field is empty, Studio names the effect after its kind (`comp`, then `comp2`).
+Both changes support Undo; edition 1 asks for confirmation to upgrade the
+score.
 
 Select a strip's name to open that channel in **Device**; its strip takes an
 amber edge. Selecting a placement in Arrange opens its track, and **Channel**
@@ -922,7 +931,7 @@ Its gain only changes what you hear. Raw input is retained before monitoring,
 and a period-sized capture queue gives the disk writer at least one second of
 headroom without adding headphone latency.
 
-**Arrange → Record & comp vocals** records across the full song, including
+The detail dock’s **Takes** tab records across the full song, including
 arrange-only scores. The toolbar's **Record** button, **F9**, or
 **Command-Shift-R** on Mac (**Control-Shift-R** elsewhere) reveals these controls.
 When recording is available, the same command starts a take or finishes the
@@ -1165,6 +1174,16 @@ Studio adds the import once and updates the library pins before committing the
 validated source. Drive binds as an insert, delay and reverb bind as sends, and
 compression binds on the music bus. Unsupported combinations leave the score
 unchanged.
+
+Inserting an instrument or kit on an existing track changes what the track
+plays, with the same checks as the `settrackvoice` edit intent. When the new
+voice would play the track's patterns differently (notes an octave apart
+because a pitch written without an octave takes it from the voice, accents or
+rows the voice ignores, drum lanes it does not play), Studio lists each change
+and asks before it inserts; **Cancel** leaves the score unchanged. After a yes,
+the status line names what changed, and **Undo** restores the old voice in one
+step. A track setting the new voice does not have is refused: remove the
+setting first.
 
 **Preview** plays a fixed one-bar phrase at 120 BPM through the selected audio
 engine without changing the score. Only one preview plays at a time; starting

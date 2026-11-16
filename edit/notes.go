@@ -190,9 +190,10 @@ func (in *EditNotes) Validate() error {
 			}
 		}
 	case "quantize":
-		// The coarsest grid is one bar; a score declares no meter yet, so 4/4.
-		if bar := (seq.MeterMap{}).BarTicks(0); in.Grid < 30 || in.Grid > bar {
-			return fmt.Errorf("choose a quantize grid from 30 to %d ticks", bar)
+		// The coarsest grid is one bar. Validate has no song, so it allows the
+		// longest bar any meter has; editNotes checks the song's own bar.
+		if in.Grid < 30 || in.Grid > seq.MaxBarTicks {
+			return fmt.Errorf("choose a quantize grid from 30 to %d ticks", seq.MaxBarTicks)
 		}
 		if in.Strength < 0 || in.Strength > 100 {
 			return fmt.Errorf("quantize strength must be 1–100%%")
@@ -216,6 +217,9 @@ func editNotes(ctx *Context, intent Intent) error {
 	}
 	if err := in.Validate(); err != nil {
 		return err
+	}
+	if bar := ctx.MeterMap().BarTicks(0); in.Op == "quantize" && in.Grid > bar {
+		return fmt.Errorf("choose a quantize grid from 30 to %d ticks", bar)
 	}
 	plan, err := ctx.CurrentPlan()
 	if err != nil {

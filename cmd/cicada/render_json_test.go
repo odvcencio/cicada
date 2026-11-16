@@ -21,14 +21,16 @@ type renderJSONResult struct {
 	FromBar int    `json:"from_bar"`
 	Bars    int    `json:"bars"`
 	Outputs []struct {
-		Path            string  `json:"path"`
-		Role            string  `json:"role"`
-		SampleRate      int     `json:"sample_rate"`
-		BitDepth        int     `json:"bit_depth"`
-		Encoding        string  `json:"encoding"`
-		Channels        int     `json:"channels"`
-		Frames          int64   `json:"frames"`
-		DurationSeconds float64 `json:"duration_seconds"`
+		Path            string   `json:"path"`
+		Role            string   `json:"role"`
+		SampleRate      int      `json:"sample_rate"`
+		BitDepth        int      `json:"bit_depth"`
+		Encoding        string   `json:"encoding"`
+		Channels        int      `json:"channels"`
+		Frames          int64    `json:"frames"`
+		DurationSeconds float64  `json:"duration_seconds"`
+		TailEndPeakDBFS *float64 `json:"tail_end_peak_dbfs"`
+		ClippedCount    *int64   `json:"clipped_count"`
 	} `json:"outputs"`
 	Levels      *renderLevelsJSON   `json:"levels"`
 	Loudness    *renderLoudnessJSON `json:"loudness"`
@@ -103,6 +105,20 @@ func TestStemsJSONListsEveryStem(t *testing.T) {
 	}
 }
 
+func TestStemsJSONIntegerClippedCounts(t *testing.T) {
+	output := filepath.Join(t.TempDir(), "stems")
+	opts := render.Options{SampleRate: 48000, Bits: 16, Bars: 1}
+	result, code, _ := runRenderJSON(t, "stems", filepath.Join("..", "..", "examples", "first-acid.cicada"), output, opts, nil)
+	if code != 0 || !result.OK || len(result.Outputs) == 0 {
+		t.Fatalf("stems: %d %+v", code, result)
+	}
+	for _, out := range result.Outputs {
+		if out.ClippedCount == nil {
+			t.Errorf("missing clipped_count: %+v", out)
+		}
+	}
+}
+
 // TestRenderJSONLoudnessShortfallRemedyWorks renders scores without a master
 // limiter to a target they miss at the true-peak ceiling: with a master
 // chain, without a master, in edition 1, and with a full master chain. Where
@@ -164,6 +180,13 @@ func TestRenderJSONLoudnessShortfallRemedyWorks(t *testing.T) {
 				loudness := result.Loudness
 				if loudness == nil || loudness.TargetMet || loudness.IntegratedLUFS == nil || len(result.Outputs) != 1 {
 					t.Fatalf("loudness: %+v outputs %+v", loudness, result.Outputs)
+				}
+				wantStage := "master_input"
+				if tc.name == "master chain" || tc.name == "full master chain" {
+					wantStage = "post_chain"
+				}
+				if loudness.GainStage != wantStage || loudness.MasterLimiterReductionDB != 0 || loudness.LastLimiterReductionDB != 0 {
+					t.Fatalf("loudness gain placement: %+v", loudness)
 				}
 				if !strings.Contains(stderr, remedy.Summary) || remedy.File != filepath.ToSlash(score) || remedy.Revision != edits.Revision(source) || remedy.Replaces != tc.replaces {
 					t.Fatalf("remedy: %+v\n%s", remedy, stderr)

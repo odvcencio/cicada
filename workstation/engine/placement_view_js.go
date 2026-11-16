@@ -163,7 +163,8 @@ func (v *placementView) scale(preserve bool, anchors ...float64) {
 	if v.zoom == "fit" {
 		v.setScroll(0)
 	} else if preserve {
-		v.setScroll(math.Max(0, center*barWidth*v.bars()-anchor))
+		newWidth := v.world.Call("getBoundingClientRect").Get("width").Float() - v.labelWidth()
+		v.setScroll(math.Max(0, center*newWidth-anchor))
 	}
 }
 

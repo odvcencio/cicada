@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"m31labs.dev/cicada/internal/applycount"
 	"m31labs.dev/cicada/internal/paramdefs"
 	"strconv"
 	"strings"
@@ -15,6 +16,10 @@ import (
 
 const FormatID = "cicada.project/1"
 const FormatID2 = "cicada.project/2"
+
+// FormatID3 adds the song meter (time signatures phase 2). A project without
+// a meter keeps /1 or /2 and its bytes.
+const FormatID3 = "cicada.project/3"
 
 // Project is the semantic interchange model shared by source tooling and the
 // future workstation. Slice order follows source order; maps carry keyed data.
@@ -46,7 +51,9 @@ type Project struct {
 	Automation []AutomationLane `cicada:"Continuous song parameter lanes" json:"automation,omitempty" introduced:"cicada.project/2"`
 	Modulators []Modulator      `cicada:"Control sources: lfo, envelope, sway and contour" json:"modulators,omitempty" introduced:"cicada.project/2"`
 	Routes     []ModRoute       `cicada:"Modulator routes to registered parameters" json:"routes,omitempty" introduced:"cicada.project/2"`
-	p2Syntax   bool
+	// Meter is last so the field catalog keeps every earlier field's order.
+	Meter    *Meter `cicada:"Song meter; omitted for 4/4" json:"meter,omitempty" introduced:"cicada.project/3"`
+	p2Syntax bool
 }
 
 type Key struct {
@@ -275,6 +282,7 @@ func projectHasSceneSettings(p *Project) bool {
 // It does not silently omit a source declaration that has no v1 representation.
 func FromScore(score *notation.Score) (result *Project, diagnostics []notation.Diagnostic) {
 	defer func() {
+		notation.OneCode(diagnostics)
 		if score != nil {
 			notation.LocateDiagnostics(diagnostics, score.Position)
 		}
@@ -303,11 +311,26 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 	if err != nil {
 		return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-KEY", Severity: "error", Message: err.Error(), Position: notation.Position{Line: 1, Column: 1}})
 	}
+	if applycount.Enabled {
+		entities := len(score.Assets) + len(score.Clips) + len(score.Samplers) + len(score.Instruments) + len(score.Kits) + len(score.Effects) + len(score.Tracks) + len(score.Buses) + len(score.Exports) + len(score.Patterns) + len(score.Scenes) + len(score.Automation) + len(score.Modulators) + len(score.Routes)
+		if score.Arrange != nil {
+			entities += len(score.Arrange.Placements) + len(score.Arrange.Markers)
+		}
+		applycount.EntitiesCompiled(entities)
+	}
 	p := &Project{
 		Format: FormatID, Version: 1, Edition: score.Version, Title: score.Title, TempoMilli: int(score.TempoMilli),
 		Key: Key{Root: root, Scale: score.Scale}, Seed: uint32(score.Seed),
 		Instruments: []Instrument{}, Kits: []Kit{}, Tracks: []Track{}, Patterns: []Pattern{},
 		Scenes: []Scene{}, Song: []SongEntry{}, Effects: []Effect{},
+	}
+	// The meter comes first: every position below is read on its map.
+	if m := score.SongMeter(); m != nil {
+		p.Meter = &Meter{Numerator: int(m.Beats), Denominator: int(m.Unit)}
+		for _, g := range m.Groups {
+			p.Meter.Groups = append(p.Meter.Groups, int(g))
+		}
+		p.Format, p.Version = FormatID3, 3
 	}
 	lowerAudio(p, score)
 	lowerArrangement(p, score)
@@ -362,7 +385,7 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 	}
 	// Select /2 before lowering mixer fields. A later arrangement/automation
 	// upgrade must not discard levels or routing needed by its JSON wire form.
-	needsProject2 := sourceUsesNamedMixer(score) || sourceHasAudio(score) || score.Live != nil || score.MIDI != nil || score.Arrange != nil || len(score.Automation) > 0 || len(score.Modulators) > 0 || len(score.Routes) > 0
+	needsProject2 := sourceUsesNamedMixer(score) || sourceHasAudio(score) || score.Live != nil || score.MIDI != nil || score.Arrange != nil || len(score.Automation) > 0 || len(score.Modulators) > 0 || len(score.Routes) > 0 || score.SongMeter() != nil
 	p.Live = liveFromScore(score.Live)
 	p.MIDI = midiFromScore(score.MIDI)
 	for _, scene := range score.Scenes {
@@ -506,7 +529,7 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 	}
 	if needsProject2 {
 		p.p2Syntax = true
-		p.Format, p.Version = FormatID2, 2
+		p.useFormat2()
 	}
 	for _, source := range score.Patterns {
 		track := representativeTrack(score, source)
@@ -550,7 +573,7 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 		}
 		if len(scene.Settings) > 0 {
 			p.p2Syntax = true
-			p.Format, p.Version = FormatID2, 2
+			p.useFormat2()
 		}
 		p.Scenes = append(p.Scenes, scene)
 	}
@@ -591,6 +614,14 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 		return nil, append(diagnostics, notation.Diagnostic{Code: projectDiagnosticCode(err), Severity: "error", Message: err.Error(), Position: notation.Position{Line: 1, Column: 1}})
 	}
 	diagnostics = append(diagnostics, sceneEntryWarnings(p, score)...)
+	meterDiagnostics := meterWarnings(p, score)
+	diagnostics = append(diagnostics, meterDiagnostics...)
+	for _, d := range meterDiagnostics {
+		if d.Severity == "error" {
+			// Music the meter would split (swing) is refused, not played.
+			return nil, diagnostics
+		}
+	}
 	if _, err := canonicalProjectBytes(p); err != nil {
 		code := projectDiagnosticCode(err)
 		if errors.Is(err, errCanonicalJSONLimit) {

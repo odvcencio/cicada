@@ -23,7 +23,8 @@ test('arranging zooms, reveals and follows playback without editing the song', {
  const page=await context.newPage(); page.setDefaultTimeout(15000);
  const errors=[], posts=[], checks=[], nonGet=[];
  page.on('pageerror',e=>errors.push(e.message));
- page.on('request',r=>{if(r.method()!=='GET')nonGet.push(r.url()); if(r.method()==='POST' && new URL(r.url()).pathname.startsWith('/__actions/'))posts.push(new URL(r.url()).pathname)});
+ // The Code lens asks for an analysis of the score in the background (a POST that changes nothing); it is not a request of the view.
+ page.on('request',r=>{if(r.method()!=='GET' && new URL(r.url()).pathname!=='/__code/analysis')nonGet.push(r.url()); if(r.method()==='POST' && new URL(r.url()).pathname.startsWith('/__actions/'))posts.push(new URL(r.url()).pathname)});
  const state=async()=>(await page.request.get(base+'/api/state')).json();
  const transport=async()=>(await page.request.get(base+'/api/transport')).json();
  const ready=async()=>page.locator('[data-placement-navigation-ready]').waitFor();
@@ -48,7 +49,7 @@ test('arranging zooms, reveals and follows playback without editing the song', {
   await page.keyboard.down('Control'); await page.mouse.wheel(0,-120); await page.keyboard.up('Control');
   await until(async()=>await zoom.inputValue()==='384','wheel zoom did not apply');
   assert.ok(Math.abs((await tickAtPointer())-anchor)*(await width()-label)<=1);
-  assert.equal(nonGet.length,viewRequests); assert.equal((await state()).revision,viewRevision);
+  assert.deepEqual(nonGet.slice(viewRequests),[],'zooming sent a request'); assert.equal((await state()).revision,viewRevision);
   await zoom.selectOption('192');
   await page.getByRole('button',{name:'Show selected',exact:true}).click();
   await until(async()=>(await scroller.evaluate(el=>el.scrollLeft))>2500,'late placement was not revealed');

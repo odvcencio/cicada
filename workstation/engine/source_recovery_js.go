@@ -72,18 +72,34 @@ func (u *workspaceUI) captureSource(control js.Value) {
 		copy = &sourceRecovery{id: hex.EncodeToString(id[:]), file: file, base: base, parent: workspaceFieldValue(form, "recoveryId"), parentHash: workspaceFieldValue(form, "recoveryHash")}
 		u.sources[file] = copy
 	}
-	copy.sequence++
-	copy.content, copy.clean, copy.dirty, copy.control = control.Get("value").String(), clean, true, control
+	// An input event is a new edit only when it changes the text or the clean
+	// state the copy holds, or when the copy is new. One paste or one
+	// programmatic insertion of several lines fires an input event for each
+	// line and each line break, all with the same final text; giving each a
+	// new sequence would let a checkpoint sent during the burst differ from
+	// its own retry. The form's recovery fields and the status line are
+	// written either way, because a patch may have rendered them again.
+	text := control.Get("value").String()
+	changed := copy.sequence == 0 || copy.content != text || copy.clean != clean
+	if changed {
+		copy.sequence++
+		copy.content, copy.clean, copy.dirty = text, clean, true
+	}
+	copy.control = control
 	for name, value := range map[string]string{"recoveryId": copy.id, "recoverySequence": strconv.FormatUint(copy.sequence, 10), "recoveryParentId": copy.parent, "recoveryParentHash": copy.parentHash} {
 		if node := workspaceField(form, name); workspacePresent(node) {
 			node.Set("value", value)
 		}
 	}
-
-	u.sourceStatus("Keeping a private recovery copy… The score file is unchanged.")
+	if changed {
+		u.sourceStatus("Keeping a private recovery copy… The score file is unchanged.")
+	} else if u.sourceStatusText != "" {
+		u.sourceStatus(u.sourceStatusText)
+	}
 }
 
 func (u *workspaceUI) sourceStatus(text string) {
+	u.sourceStatusText = text
 	if node := u.root.Call("querySelector", "[data-source-recovery-status]"); workspacePresent(node) {
 		node.Set("textContent", text)
 	}
@@ -138,6 +154,9 @@ func (u *workspaceUI) checkpointSources() {
 			response, err := nativeRequest{Method: methodPost, Path: "/__actions/source-checkpoint", Body: data, Timeout: 5 * time.Second, Limit: 4096, Headers: map[string]string{
 				"Content-Type": "application/json", "Accept": "application/json", "X-CSRF-Token": u.props.CSRF,
 			}}.do(u.ctx)
+			// 409: Studio refuses a checkpoint whose copy is already closed at
+			// or after this edit (see below).
+			refused := err == nil && response.Status == statusConflict
 			if err == nil && response.Status != statusOK {
 				err = fmt.Errorf("recovery returned %d", response.Status)
 			}
@@ -163,7 +182,23 @@ func (u *workspaceUI) checkpointSources() {
 			if copy := u.sources[file]; copy == nil || copy.id != snapshot.id || copy.sequence != snapshot.sequence {
 				continue
 			}
+			if refused {
+				// A Save, a Discard or an editor back at the file's text closed
+				// this copy at or after this edit; one window's checkpoint is
+				// refused for nothing else. That happens to a checkpoint in
+				// flight while this window saves. The copy is finished, so this
+				// edit is not sent again and nothing failed; an edit typed after
+				// it has a higher sequence and is kept.
+				current.dirty = false
+				if workspacePresent(current.control) && current.control.Get("value").String() == current.control.Get("defaultValue").String() {
+					u.sourceStatus("No unsaved Code edits.")
+				} else {
+					u.sourceStatus("This recovery copy was closed by a Save or Discard. Your next edit keeps a new one.")
+				}
+				continue
+			}
 			if err != nil {
+				consoleWarn("Code recovery checkpoint", err)
 				u.sourceStatus("Recovery could not save. Keep this window open; another attempt will follow.")
 				continue
 			}

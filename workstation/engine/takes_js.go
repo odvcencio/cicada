@@ -65,7 +65,15 @@ func mountTakes(host enginewasm.Context) (enginewasm.Handle, error) {
 	}
 	releaseCapture := capturePublisher.acquire()
 	lastActive := props.Active
-	captureWatch := signal.Watch(func() {
+	releaseUnsaved := func() {}
+	if js.Global().Get("location").Get("pathname").String() == "/studio" {
+		releaseUnsaved = holdUnsavedWork("capture:"+root.Get("id").String(), func() bool { return lastActive != "" })
+	}
+	// paint draws the capture view from the current capture state: on each
+	// change, and after a workspace patch, which descends into this engine's
+	// markup (workspaceHTMLOpaque) and writes the server's placeholders back
+	// ("Checking microphone state…") while the state itself stays the same.
+	paint := func() {
 		update := nativeCapture.Get()
 		if !update.Ready || closed.Load() {
 			return
@@ -77,10 +85,11 @@ func mountTakes(host enginewasm.Context) (enginewasm.Handle, error) {
 		} else if !closed.Load() {
 			active, recording := state.Active != "", state.Capture != nil && state.Capture.Recording
 			root.Call("setAttribute", "data-capture-active", fmt.Sprint(active))
-			if lastActive != "" && state.Active == "" {
+			finished := lastActive != "" && state.Active == ""
+			lastActive = state.Active
+			if finished {
 				workspaceRefreshRequested.Update(func(n uint64) uint64 { return n + 1 })
 			}
-			lastActive = state.Active
 			buttons := root.Call("querySelectorAll", "[data-capture-control]")
 			for i := 0; i < buttons.Length(); i++ {
 				b := buttons.Index(i)
@@ -140,15 +149,25 @@ func mountTakes(host enginewasm.Context) (enginewasm.Handle, error) {
 			renderInputMeter(root, update)
 			fields := root.Call("querySelectorAll", ".vocal-record select, .vocal-record input:not([type=hidden]), [data-vocal-level-control]")
 			for i := 0; i < fields.Length(); i++ {
-				fields.Index(i).Set("disabled", active)
+				fields.Index(i).Set("disabled", active || fields.Index(i).Call("getAttribute", "data-meter-unavailable").String() == "true")
 			}
 			status.Set(text)
 		}
+	}
+	captureWatch := signal.Watch(paint)
+	releaseUpdated := workspaceUpdated.add(func() {
+		if closed.Load() || !root.Get("isConnected").Bool() {
+			return
+		}
+		paint()
+		root.Call("querySelector", "[data-capture-status]").Set("textContent", status.Get())
 	})
 	return enginewasm.HandleFunc(func() {
 		if closed.Swap(true) {
 			return
 		}
+		releaseUpdated()
+		releaseUnsaved()
 		releaseCapture()
 		captureWatch.Dispose()
 		watch.Dispose()

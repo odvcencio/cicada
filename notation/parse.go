@@ -12,6 +12,7 @@ import (
 
 	gts "github.com/odvcencio/gotreesitter"
 	"github.com/odvcencio/gotreesitter/taproot/walk"
+	"m31labs.dev/cicada/internal/applycount"
 	"m31labs.dev/cicada/kernel/seq"
 )
 
@@ -40,6 +41,9 @@ func parseSyntax(src []byte) (*gts.Tree, *walk.Walker, error) {
 	parsers, err := syntaxParsers()
 	if err != nil {
 		return nil, nil, err
+	}
+	if applycount.Enabled {
+		applycount.SyntaxParse(len(src))
 	}
 	tree, err := parsers.Parse(src)
 	if err != nil {
@@ -169,8 +173,11 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 		for i := 0; i < root.NamedChildCount(); i++ {
 			n := root.NamedChild(i)
 			kind := w.Type(n)
+			if applycount.Enabled && kind != "comment" && kind != "integer" {
+				applycount.ItemsLowered(1)
+			}
 			switch kind {
-			case "title_decl", "tempo_decl", "key_decl", "seed_decl", "song_decl", "master_decl", "live_decl", "midi_decl", "arrange_decl":
+			case "title_decl", "tempo_decl", "key_decl", "seed_decl", "song_decl", "master_decl", "live_decl", "midi_decl", "arrange_decl", "meter_decl":
 				if first, exists := seenDeclarations[kind]; exists {
 					diagnostics = append(diagnostics, Diagnostic{
 						Code: "CICADA-DUPLICATE", Severity: "error",
@@ -229,6 +236,14 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 				value := childText(w, n, "number")
 				s.TempoMilli = parseMilli(value)
 				s.TempoPosition = w.position(n)
+			case "meter_decl":
+				m, code, message := ParseMeter(w.Text(w.Field(n, "meter")), w.Text(w.Field(n, "groups")))
+				if code != "" {
+					diagnostics = append(diagnostics, Diagnostic{Code: code, Severity: "error", Message: message, Position: w.position(n)})
+				} else if s.Meter == nil {
+					m.Position = w.position(n)
+					s.Meter = &m
+				}
 			case "key_decl":
 				s.KeyRoot = childText(w, n, "key_root")
 				s.KeyPosition = w.position(n)
@@ -323,6 +338,7 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 	if syntaxFailed {
 		return nil, diagnostics
 	}
+	resolveMeter(s)
 	resolveArrangementTicks(s)
 	s.Assets, s.Clips, s.Samplers, _ = resolveAudio(s)
 	diagnostics = append(diagnostics, expandPhrases(s)...)
@@ -667,6 +683,7 @@ func parsePattern(w *loweringWalker, n *gts.Node) Pattern {
 			if p.Velocity != nil {
 				*w.diagnostics = append(*w.diagnostics, Diagnostic{Code: "CICADA-DUPLICATE", Severity: "error", Message: "duplicate velocity row", Position: w.position(c)})
 			}
+			p.VelocityPosition = w.position(c)
 			p.Velocity = []StepToken{}
 			for j := 0; j < c.ChildCount(); j++ {
 				value := c.Child(j)

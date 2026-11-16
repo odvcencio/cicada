@@ -35,7 +35,10 @@ async function until(predicate, message) {
     if (await predicate()) return;
     await new Promise(resolve=>setTimeout(resolve,30));
   }
-  assert.fail(message);
+  // Building a detailed message must never replace the failure it describes.
+  let text = message;
+  if (typeof message === 'function') { try { text = await message(); } catch (error) { text = `timed out (the failure detail could not be read: ${error.message.split('\n')[0]})`; } }
+  assert.fail(text);
 }
 
 // The Studio engine is one Go/WebAssembly program. When goroutines made Go-to-JavaScript calls that ran Go code inside
@@ -97,6 +100,11 @@ test('placements edit visually and Session follows saved Score without reloading
   const pollsRan = async () => { const from={...polls}; const names=['/api/capture','/api/transport','/api/automation/recording']; await until(async()=>names.every(name=>(polls[name]||0)-(from[name]||0)>=2),'the Studio polls did not run'); };
   const ready = async target => { await target.locator('#cicada-workspace[data-workspace-reactive=ready]').waitFor(); };
   const block = (target,id='far-in') => target.locator(`[data-placement-block="${id}"]`);
+  const transportFailure = (target, message) => async () => {
+    // One snapshot in the page: no waiting on a status node that goes away.
+    const visible = await target.locator('[role=status], [data-workspace-status]').evaluateAll(nodes => nodes.filter(node => node.getClientRects().length > 0).map(node => node.innerText.trim()).filter(Boolean));
+    return `${message}; visible status: ${JSON.stringify(visible)}; transport: ${JSON.stringify(await transport())}`;
+  };
   const at = async (ticks,target=page) => { await until(async()=>Number(await block(target).getAttribute('data-placement-at'))===ticks,`far-in did not move to ${ticks}`); await idle(); };
   const undo = async () => { await page.getByRole('button',{name:'Undo',exact:true}).click(); await until(async()=>(await state()).source===fixture,'Undo did not restore the exact fixture'); await at(16320); };
   const far = page.locator('[data-placement-inspector="far-in"]');
@@ -243,15 +251,16 @@ test('placements edit visually and Session follows saved Score without reloading
     const nativeFar=nativePage.locator('[data-placement-inspector="far-in"]'); await nativeFar.getByLabel('Start',{exact:true}).fill('@5.3.1');
     await nativeFar.getByRole('button',{name:'Update placement',exact:true}).click();
     await until(async()=>await block(nativePage).getAttribute('data-placement-at')==='17280','native form did not refresh');
+    await at(17280); // Let this tab observe the other tab's edit before Undo.
     assert.match(nativePage.url(),/placement=far-in/);
-    await nativePage.getByRole('button',{name:'Undo',exact:true}).click(); await until(async()=>(await state()).source===fixture,'native Undo did not restore score');
+    await nativePage.getByRole('button',{name:'Undo',exact:true}).click(); await until(async()=>(await state()).source===fixture,'native Undo did not restore score'); await at(16320);
     await nativePage.getByRole('link',{name:/^Edit placement far-in:/}).click();
     await nativePage.locator('[data-placement-inspector="far-in"]').getByRole('button',{name:'Loop solo',exact:true}).click();
     await until(async()=>(await transport()).listening?.mode==='solo','native placement audition failed');
     await nativePage.getByRole('button',{name:'Stop listening',exact:true}).click(); await until(async()=>!(await transport()).playing,'native listening did not stop'); await native.close();
     checks.push('native forms work without JavaScript and preserve selection');
 
-    await page.getByRole('button',{name:'Play',exact:true}).click(); await until(async()=>(await transport()).playing,'transport did not start');
+    await page.getByRole('button',{name:'Play',exact:true}).click(); await until(async()=>(await transport()).playing,transportFailure(page,'transport did not start'));
     await page.getByRole('link',{name:'Score',exact:true}).click(); await page.getByRole('textbox',{name:'Cicada score',exact:true}).waitFor();
     await page.getByRole('link',{name:'Session',exact:true}).click(); await block(page).waitFor();
     await ready(page);
@@ -264,10 +273,13 @@ test('placements edit visually and Session follows saved Score without reloading
     assert.equal(desktop.bodyWidth,desktop.width);
 
     const mobileContext=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,deviceScaleFactor:1,reducedMotion:'reduce',storageState:await context.storageState()});
-    const mobile=await mobileContext.newPage(); await mobile.goto(new URL('/?panel=session&placement=far-in',base).href,{waitUntil:'domcontentloaded'}); await ready(mobile);
-    await mobile.getByRole('link',{name:/^Edit placement far-in:/}).tap(); await ready(mobile);
+    const mobile=await mobileContext.newPage(); await mobile.goto(new URL('/?panel=session',base).href,{waitUntil:'domcontentloaded'}); await ready(mobile);
+    await mobile.getByRole('link',{name:/^Edit placement far-in:/}).tap();
+    await until(async()=>new URL(mobile.url()).searchParams.get('placement')==='far-in' && await block(mobile).getAttribute('data-placement-selected')==='true' && await mobile.locator('[data-placement-inspector="far-in"]').getAttribute('open')!==null,'mobile placement selection did not settle');
+    await until(async()=>await mobile.locator('#cicada-workspace input[name=revision]').first().inputValue()===(await state()).revision,'mobile selection did not refresh the saved revision');
+    await mobile.locator('#cicada-workspace[aria-busy=true]').waitFor({state:'hidden'});
     const mobileFar=mobile.locator('[data-placement-inspector="far-in"]');
-    await mobileFar.getByRole('button',{name:'Loop in song',exact:true}).tap(); await until(async()=>(await transport()).listening?.mode==='context','mobile listening did not start');
+    await mobileFar.getByRole('button',{name:'Loop in song',exact:true}).tap(); await until(async()=>(await transport()).listening?.mode==='context',transportFailure(mobile,'mobile listening did not start'));
     await mobile.getByRole('button',{name:'Stop listening',exact:true}).tap(); await until(async()=>!(await transport()).playing,'mobile listening did not stop');
     await mobileFar.getByLabel('Start',{exact:true}).fill('@5.3.1'); await mobileFar.getByRole('button',{name:'Update placement',exact:true}).tap(); await at(17280,mobile);
     await mobile.getByRole('button',{name:'Undo',exact:true}).tap(); await at(16320,mobile);

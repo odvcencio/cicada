@@ -29,7 +29,10 @@ import (
 //
 // Each score renders four ways: plain, --normalize, -14 LUFS / -1 dBTP and
 // -9 LUFS / -1.5 dBTP. A render that fails is recorded with its exit status, so
-// a score that fails on one machine and not the other is a difference too.
+// a score that fails on one machine and not the other is a difference too. The
+// full sweep also fails when a score that cicada check accepts does not render
+// plainly: check must refuse what render refuses (TestCheckedExamplesRender
+// checks the first bar of each on every pull request).
 //
 // Every score under examples/ also records its compiled engine configuration
 // and its portable kernel image ("score config" and "score image"; see
@@ -71,6 +74,13 @@ func TestExampleWAVParity(t *testing.T) {
 	if t.Failed() {
 		return
 	}
+	if os.Getenv("CICADA_WAV_PARITY_ALL") == "1" {
+		// The sweep renders every song whole, which TestCheckedExamplesRender
+		// leaves to it: a score that check accepts must render.
+		for _, problem := range checkedRenderFailures(root, scores, got) {
+			t.Error(problem)
+		}
+	}
 	// Two renders that fail alike compare as identical; a flush case must
 	// write a file in every mode, so it cannot pass that way.
 	for _, c := range wavFlushCases {
@@ -102,6 +112,22 @@ func TestExampleWAVParity(t *testing.T) {
 	}
 }
 
+// checkedRenderFailures names each score that cicada check accepts and whose
+// plain render failed.
+func checkedRenderFailures(root string, scores []string, got map[string]wavHash) []string {
+	var problems []string
+	for _, score := range scores {
+		result, ok := got[score+" plain"]
+		if !ok || result.status == 0 {
+			continue
+		}
+		if report := checkScoreJSON(filepath.Join(root, filepath.FromSlash(score)), checkOptions{profile: profileDesktop}); report.Valid {
+			problems = append(problems, fmt.Sprintf("%s: cicada check accepts it, and cicada render exits %d", score, result.status))
+		}
+	}
+	return problems
+}
+
 // wavParitySubset is what every pull request renders. It holds every score
 // whose WAV differed between amd64 and arm64 on main at fa08d308 (sweep of
 // 2026-11-10, 42 of 584 renders) except the four full-length songs, which
@@ -117,6 +143,10 @@ var wavParitySubset = []string{
 	"examples/modeled-kit/reggae-one-drop-after-room.cicada",
 	"examples/modeled-kit/rock-after-room.cicada",
 	"examples/modeled-kit/soca-after-room.cicada",
+	// Songs in 3/4 and 6/8: time-signatures phase 2 requires them to render
+	// identically on every target.
+	"examples/meter-waltz.cicada",
+	"examples/meter-jig.cicada",
 }
 
 // wavFlushCases drive state and smoothed controls into the subnormal numbers
@@ -499,8 +529,16 @@ var wavPins = map[string]string{
 	// anywhere-you-are changed again by #338: 22 note starts at section
 	// changes now sound (the engine dropped the first note of a scene-bound
 	// pass whose previous pass released at the switch).
-	"examples/songs/anywhere-you-are.cicada lufs-14":      "1f1aa87558deec7a80ab5082a4468ca4edfce7c06afb1f45042590a6bca0db35",
-	"examples/songs/anywhere-you-are.cicada lufs-9":       "1f1aa87558deec7a80ab5082a4468ca4edfce7c06afb1f45042590a6bca0db35",
+	// Its two loudness renders changed again when the export gain moved from
+	// the master input to just ahead of the last master limiter: the song's
+	// air EQ and glue compressor now run at playback level instead of up to
+	// 12 dB hotter. -14 LUFS: +11.46 dB, -14.26 LUFS, loudness range 6.93 LU
+	// (before: the +12 dB cap, -14.42 LUFS, 6.07 LU). -9 LUFS still stops at
+	// the +12 dB cap, now at -13.81 LUFS and 6.83 LU (before: -14.42 LUFS and
+	// 6.07 LU, the same file as -14). Pinned from amd64 Linux and arm64 macOS,
+	// which agree.
+	"examples/songs/anywhere-you-are.cicada lufs-14":      "1e23111f2fb950756a2121ebc0fada9149105159a8fcc3b2cb979dedb0c08cc6",
+	"examples/songs/anywhere-you-are.cicada lufs-9":       "8aa89ab2190d3e390cdf202d640f76b0334a6c2b6ae887fdae9939c834beddd3",
 	"examples/songs/anywhere-you-are.cicada normalize":    "5c4ebeb4803f2d45f1a0db8a77644e250008c3a794e4c19db1cc6dc4422267d2",
 	"examples/songs/anywhere-you-are.cicada plain":        "f084bbbf40601d3e8206af4ecc46586e29599a273815b6cc60bcfa665da45610",
 	"examples/songs/lanterns-after-rain.cicada lufs-14":   "68123218cd22ed9e74092a7099b728a79909a82be408061b7eb9c96da89a4f07",

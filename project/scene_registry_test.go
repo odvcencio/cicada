@@ -30,6 +30,10 @@ func TestLiveSceneRegistryValueFormsValidateAndCompile(t *testing.T) {
 			{name: "default", source: sceneRegistryNumber(descriptor, descriptor.Default)},
 			{name: "max", source: sceneRegistryNumber(descriptor, descriptor.Max)},
 		}
+		if descriptor.Off && (descriptor.Default < descriptor.Min || descriptor.Default > descriptor.Max) {
+			// The default is off (an echo highpass), which the off form below writes.
+			forms = append(forms[:1], forms[2])
+		}
 		for _, value := range descriptor.Values {
 			forms = append(forms, sceneRegistryValueForm{name: "enum-" + value, source: value})
 		}

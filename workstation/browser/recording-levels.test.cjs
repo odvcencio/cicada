@@ -12,6 +12,8 @@ test('Microphone levels and recording transport protection remain usable across 
  const browser=await chromium.launch({headless:true,executablePath:process.env.CICADA_CHROME_PATH,args:['--no-sandbox']});const watches=[];stall.teardown(t, browser, {watch: watches, exitWhenDone: true});
  const context=await browser.newContext({viewport:{width:1440,height:1100},reducedMotion:'reduce'}),page=await (async()=>{watches.push(await stall.watchContext(context, {serverLog: process.env.CICADA_STUDIO_STARTUP_LOG}));return context.newPage()})(),errors=[],checks=[];
  page.on('pageerror',e=>errors.push(e.message));
+ // Workspace refreshes, by start time (see the Session step after Stop).
+ const refreshes=[];page.on('request',r=>{if(new URL(r.url()).pathname==='/__workspace')refreshes.push(Date.now())});
  const ready=async()=>{await page.locator('#cicada-workspace[data-workspace-reactive=ready]').waitFor();await page.locator('#cicada-workspace[aria-busy=true]').waitFor({state:'hidden'})};
  await page.goto(base+'/?panel=session',{waitUntil:'domcontentloaded'});await ready();
  const original=await(await page.request.get(base+'/api/state')).json();assert.ok(original.source.includes('cicada-pro-recording-test: disposable fixture'));
@@ -32,10 +34,16 @@ test('Microphone levels and recording transport protection remain usable across 
  await page.locator('.vocal-setup').evaluate(e=>e.open=false);
  const proof=process.env.CICADA_LEVELS_PROOF_DIR;if(proof){fs.mkdirSync(proof,{recursive:true});await page.locator('#vocals').screenshot({path:path.join(proof,'recording-levels-1440.png')});await page.locator('.toolbar').screenshot({path:path.join(proof,'recording-transport-1440.png')});await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);await page.locator('#vocals').screenshot({path:path.join(proof,'recording-levels-390.png')});await page.setViewportSize({width:1440,height:1100})}
  await page.getByRole('link',{name:'Mixer',exact:true}).click();await ready();await until(async()=>await page.getByRole('button',{name:'Play',exact:true}).first().isDisabled(),'recording truth was lost on Mixer');assert.equal(await page.getByRole('button',{name:'Stop & save take',exact:true}).first().isEnabled(),true);checks.push('recording disables conflicting transport actions across panels and keeps Stop available');
- await page.getByRole('button',{name:'Stop & save take',exact:true}).first().click();await ready();
+ const stoppedAt=Date.now();await page.getByRole('button',{name:'Stop & save take',exact:true}).first().click();await ready();
  simulated={...simulated,activeCapture:'',capture:null,input:{...simulated.input,active:false}};
  await until(async()=>await page.getByRole('button',{name:'Play',exact:true}).first().isEnabled(),'transport did not unlock after capture ended');
- await page.getByRole('link',{name:'Session',exact:true}).click();await ready();await until(async()=>(await page.locator('[data-input-status]').innerText())==='Clipped input','stopping hid the overload');await until(async()=>await page.getByLabel('Punch in',{exact:true}).isEnabled(),'finished capture did not restore Punch in');checks.push('finished capture restores controls while retaining its peak warning');
+ await page.getByRole('link',{name:'Session',exact:true}).click();
+ // The end of the capture asks for a workspace refresh, which can land after the
+ // Session panel drew the held overload and wrote the server's placeholder over
+ // it (CI, three times on 11 and 12 November). Wait up to 2 s for that refresh,
+ // so the check below always runs after it; without one, carry on.
+ for(const end=Date.now()+2000;Date.now()<end&&!refreshes.some(at=>at>=stoppedAt);)await new Promise(r=>setTimeout(r,20));
+ await ready();await until(async()=>(await page.locator('[data-input-status]').innerText())==='Clipped input','stopping hid the overload');await until(async()=>await page.getByLabel('Punch in',{exact:true}).isEnabled(),'finished capture did not restore Punch in');checks.push('finished capture restores controls while retaining its peak warning');
  await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'mobile page overflow');
 
  simulated={...simulated,input:{enabled:true,active:true,channels:1,peakL:.125,peakR:.125,heldPeakL:.125,heldPeakR:.125,clipped:false,session:2}};

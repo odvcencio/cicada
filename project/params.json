@@ -70,7 +70,8 @@
     "live": true,
     "automatable": true,
     "persist": "source",
-    "schema": "mixer.send_a"
+    "schema": "mixer.send_a",
+    "note": "The value is a linear gain from 0 to 1, or a level from -60dB to 0dB as a track block's send line takes it. An automation lane uses one of the two units for all its points: in dB (off for silence) it ramps in dB, in linear gain it ramps in gain. The path also takes the declared name of the delay or tape effect: <track>.send.<name>."
   },
   {
     "id": "mix.send_b",
@@ -94,7 +95,8 @@
     "live": true,
     "automatable": true,
     "persist": "source",
-    "schema": "mixer.send_b"
+    "schema": "mixer.send_b",
+    "note": "The value is a linear gain from 0 to 1, or a level from -60dB to 0dB as a track block's send line takes it. An automation lane uses one of the two units for all its points: in dB (off for silence) it ramps in dB, in linear gain it ramps in gain. The path also takes the declared name of the reverb effect: <track>.send.<name>."
   },
   {
     "id": "mix.mute",
@@ -966,8 +968,9 @@
     "min": 10,
     "max": 100,
     "default": 55,
-    "curve": "linear",
-    "display_step": 0.01,
+    "curve": "integer",
+    "type": "integer",
+    "display_step": 1,
     "smoothing_ms": 5,
     "live": false,
     "automatable": false,
@@ -3810,5 +3813,41 @@
   {"id": "instrument.p5", "path": "instrument.p5", "scope": "track", "voices": [], "source": "p5", "unit": "", "min": -1000000, "max": 1000000, "default": 0, "curve": "linear", "display_step": 0.01, "smoothing_ms": 20, "live": true, "automatable": true, "persist": "source"},
   {"id": "instrument.p6", "path": "instrument.p6", "scope": "track", "voices": [], "source": "p6", "unit": "", "min": -1000000, "max": 1000000, "default": 0, "curve": "linear", "display_step": 0.01, "smoothing_ms": 20, "live": true, "automatable": true, "persist": "source"},
   {"id": "instrument.p7", "path": "instrument.p7", "scope": "track", "voices": [], "source": "p7", "unit": "", "min": -1000000, "max": 1000000, "default": 0, "curve": "linear", "display_step": 0.01, "smoothing_ms": 20, "live": true, "automatable": true, "persist": "source"},
-  {"id": "instrument.p8", "path": "instrument.p8", "scope": "track", "voices": [], "source": "p8", "unit": "", "min": -1000000, "max": 1000000, "default": 0, "curve": "linear", "display_step": 0.01, "smoothing_ms": 20, "live": true, "automatable": true, "persist": "source"}
+  {"id": "instrument.p8", "path": "instrument.p8", "scope": "track", "voices": [], "source": "p8", "unit": "", "min": -1000000, "max": 1000000, "default": 0, "curve": "linear", "display_step": 0.01, "smoothing_ms": 20, "live": true, "automatable": true, "persist": "source"},
+  {
+    "id": "fx.delay.highpass",
+    "path": "delay.highpass",
+    "scope": "global",
+    "voices": null,
+    "source": "highpass",
+    "unit": "Hz",
+    "min": 20,
+    "max": 2000,
+    "default": 0,
+    "curve": "log",
+    "off": true,
+    "display_step": 1.0,
+    "smoothing_ms": 5,
+    "live": true,
+    "automatable": true,
+    "persist": "source"
+  },
+  {
+    "id": "fx.tape.highpass",
+    "path": "tape.highpass",
+    "scope": "global",
+    "voices": null,
+    "source": "highpass",
+    "unit": "Hz",
+    "min": 20,
+    "max": 2000,
+    "default": 0,
+    "curve": "log",
+    "off": true,
+    "display_step": 1.0,
+    "smoothing_ms": 5,
+    "live": true,
+    "automatable": true,
+    "persist": "source"
+  }
 ]

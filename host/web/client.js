@@ -1,5 +1,5 @@
 (() => {
-  const CapabilityChords = 1, CapabilityUnifiedImage = 65536, CapabilityPerformance = 262144, CapabilityGestures = 524288, CapabilitySharedControls = 2097152;
+  const CapabilityChords = 1, CapabilityUnifiedImage = 65536, CapabilityPerformance = 262144, CapabilityGestures = 524288, CapabilitySharedControls = 2097152, CapabilityMeters = 8388608, MeterFlag = 128;
   // Older servers omit the header and keep the one-bar default.
   const countInBars = response => { const value = response.headers.get('X-Cicada-Count-In-Bars'); return /^[0-8]$/.test(value || '') ? Number(value) : 1; };
   // Match the worklet allowlist, including when an older cached worklet runs.
@@ -14,6 +14,7 @@
     if (version >= 15 && capabilities !== undefined && !(capabilities & CapabilityUnifiedImage)) throw new Error('Unified image15 requires CapabilityUnifiedImage (bit16); update the audio kernel');
     if (version >= 16 && capabilities !== undefined && !(capabilities & CapabilityPerformance)) throw new Error('Played timing requires CapabilityPerformance (bit18); update the audio kernel');
     if (version >= 17 && capabilities !== undefined && !(capabilities & CapabilityGestures)) throw new Error('Played expression requires CapabilityGestures (bit19); update the audio kernel');
+    if (capabilities !== undefined && (new DataView(image).getUint32(8, true) & MeterFlag) && !(capabilities & CapabilityMeters)) throw new Error('A song meter other than 4/4 requires an updated audio kernel');
     if (version === 18 && capabilities !== undefined && !(capabilities & CapabilitySharedControls)) throw new Error('Shared gesture lanes require CapabilitySharedControls (bit21); update the audio kernel');
     return new DataView(image).getUint32(12, true);
   };

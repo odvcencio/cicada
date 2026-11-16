@@ -154,6 +154,8 @@ async function studio() {
   // Every foreground write goes through this route, so the steps can hold,
   // rewrite or inspect one. Recovery checkpoints pass straight through.
   const gates = [];
+  // answers hold a write's answer after the service applied it.
+  const answers = [];
   const rewrites = [];
   await page.route('**/__actions/**', async route => {
     const request = route.request();
@@ -172,6 +174,8 @@ async function studio() {
       const response = await route.fetch({postData: JSON.stringify(payload), maxRedirects: 0});
       record.status = response.status();
       record.result = await response.json();
+      const answer = answers.shift();
+      if (answer) await answer;
       await route.fulfill({response, body: JSON.stringify(record.result)});
     } finally {
       inFlight--;
@@ -188,6 +192,7 @@ async function studio() {
   const region = id => page.locator(`#update-${id}`);
   const revisionOf = id => region(id).getAttribute('data-region-revision');
   const hold = () => { let release; gates.push(new Promise(resolve => { release = resolve; })); return () => release(); };
+  const holdAnswer = () => { let release; answers.push(new Promise(resolve => { release = resolve; })); return () => release(); };
   // A cell is confirmed when it shows the wanted state, carries no pending
   // marker, and its region carries the revision the edit produced.
   const confirmed = async (selector, active, revision) => page.waitForFunction(({selector, active, revision}) => {
@@ -203,7 +208,7 @@ async function studio() {
     assert.equal(documents, 1, 'a document request ran during an edit');
     assert.deepEqual(errors, []);
   };
-  session = {page, base, state, posts, reads, sent, readOnly, refused, refusedRead, caughtUp, cell, region, revisionOf, hold, rewrites, confirmed, settled, status, noNavigation, original,
+  session = {page, base, state, posts, reads, sent, readOnly, refused, refusedRead, caughtUp, cell, region, revisionOf, hold, holdAnswer, rewrites, confirmed, settled, status, noNavigation, original,
     maxInFlight: () => maxInFlight, documentID: () => page.evaluate(() => window.__studioEdits.document)};
   return session;
 }
@@ -211,40 +216,156 @@ async function studio() {
 test('a piano-roll draw paints at once and is confirmed without a navigation', async () => {
   const {page, state, posts, cell, revisionOf, hold, confirmed, settled, noNavigation, original} = await studio();
   const before = await revisionOf('dock-clip');
-  const grid = await page.evaluateHandle(() => document.querySelector('#detail-panel-clip .piano-roll'));
-  assert.equal(await page.locator(cell(15)).getAttribute('data-active'), 'false');
-  const release = hold();
-  await page.locator(cell(15)).click();
-  // The answer is held, so this state can only be the pending paint.
-  await page.waitForFunction(selector => {
-    const el = document.querySelector(selector);
-    return el.getAttribute('data-active') === 'true' && el.hasAttribute('data-workspace-pending') && el.textContent === '●';
-  }, cell(15));
-  assert.equal(await revisionOf('dock-clip'), before, 'the pending paint advanced the region revision');
-  release();
-  await settled(1);
-  const record = posts[0];
-  assert.equal(record.status, 200, record.result?.message);
-  assert.match(record.payload.__cicada_regions, /(^|,)dock-clip:[0-9a-f]{16}(,|$)/, 'the edit names the visible Clip region with its digest');
-  assert.doesNotMatch(record.payload.__cicada_regions, /(^|,)center-session:/, 'a hidden tab is not visible');
-  const revision = record.result.data.revision;
-  assert.ok(revision && revision !== original.revision);
-  await confirmed(cell(15), true, revision);
-  assert.notEqual((await state('/api/state')).source, original.source, 'the draw was not saved');
-  assert.equal(await grid.evaluate(node => node.isConnected && node === document.querySelector('#detail-panel-clip .piano-roll')), true, 'the piano roll was replaced instead of patched');
-  // Rule R1: every region the response confirmed carries the new revision in
-  // its forms; a hidden region the response did not render keeps its own.
-  const fields = await page.evaluate(() => [...document.querySelectorAll('[data-update-region]')].map(wrapper => ({
-    id: wrapper.dataset.updateRegion, stale: wrapper.hasAttribute('data-region-stale'), revision: wrapper.dataset.regionRevision,
-    inputs: [...wrapper.querySelectorAll('input[type=hidden][name=revision]')].map(input => input.value),
-  })));
-  for (const field of fields) {
-    if (field.stale) continue;
-    assert.equal(field.revision, revision, `region ${field.id} is fresh but carries another revision`);
-    for (const value of field.inputs) assert.equal(value, revision, `region ${field.id} kept an old revision field`);
+  await page.evaluate(before => {
+    window.__regionRevisionGaps = [];
+    const observer = new MutationObserver(() => {
+      const revision = document.querySelector('#update-dock-clip').dataset.regionRevision;
+      if (revision === before) return;
+      window.__regionRevisionGaps.push(...[...document.querySelectorAll('[data-update-region]:not([data-region-stale])')]
+        .filter(node => node.dataset.regionRevision !== revision).map(node => node.dataset.updateRegion));
+    });
+    observer.observe(document.querySelector('#studio-shell'), {subtree: true, attributes: true, attributeFilter: ['data-region-revision', 'data-region-stale']});
+    window.__stopRegionRevisionObserver = () => observer.disconnect();
+  }, before);
+  try {
+    const grid = await page.evaluateHandle(() => document.querySelector('#detail-panel-clip .piano-roll'));
+    assert.equal(await page.locator(cell(15)).getAttribute('data-active'), 'false');
+    const release = hold();
+    await page.locator(cell(15)).click();
+    // The answer is held, so this state can only be the pending paint.
+    await page.waitForFunction(selector => {
+      const el = document.querySelector(selector);
+      return el.getAttribute('data-active') === 'true' && el.hasAttribute('data-workspace-pending') && el.textContent === '●';
+    }, cell(15));
+    assert.equal(await revisionOf('dock-clip'), before, 'the pending paint advanced the region revision');
+    release();
+    await settled(1);
+    const record = posts[0];
+    assert.equal(record.status, 200, record.result?.message);
+    assert.match(record.payload.__cicada_regions, /(^|,)dock-clip:[0-9a-f]{16}(,|$)/, 'the edit names the visible Clip region with its digest');
+    assert.doesNotMatch(record.payload.__cicada_regions, /(^|,)center-session:/, 'a hidden tab is not visible');
+    const revision = record.result.data.revision;
+    assert.ok(revision && revision !== original.revision);
+    await confirmed(cell(15), true, revision);
+    assert.notEqual((await state('/api/state')).source, original.source, 'the draw was not saved');
+    assert.equal(await grid.evaluate(node => node.isConnected && node === document.querySelector('#detail-panel-clip .piano-roll')), true, 'the piano roll was replaced instead of patched');
+    // Rule R1: every region the response confirmed carries the new revision in
+    // its forms; a hidden region the response did not render keeps its own.
+    const fields = await page.evaluate(() => [...document.querySelectorAll('[data-update-region]')].map(wrapper => ({
+      id: wrapper.dataset.updateRegion, stale: wrapper.hasAttribute('data-region-stale'), revision: wrapper.dataset.regionRevision,
+      inputs: [...wrapper.querySelectorAll('input[type=hidden][name=revision]')].map(input => input.value),
+    })));
+    for (const field of fields) {
+      if (field.stale) continue;
+      assert.equal(field.revision, revision, `region ${field.id} is fresh but carries another revision`);
+      for (const value of field.inputs) assert.equal(value, revision, `region ${field.id} kept an old revision field`);
+    }
+    await page.waitForFunction(() => !document.querySelector('#studio-shell').hasAttribute('aria-busy'));
+    const visible = await page.evaluate(() => [...document.querySelectorAll('[data-update-region]')].filter(wrapper => {
+      for (let node = wrapper.parentElement; node; node = node.parentElement) {
+        if (node.hidden || (node.tagName === 'DETAILS' && !node.open)) return false;
+      }
+      return wrapper.parentElement?.getClientRects().length > 0;
+    }).map(wrapper => ({id: wrapper.dataset.updateRegion, stale: wrapper.hasAttribute('data-region-stale'), revision: wrapper.dataset.regionRevision})));
+    for (const field of visible) {
+      assert.equal(field.stale, false, `visible region ${field.id} is stale`);
+      assert.equal(field.revision, revision, `visible region ${field.id} has another revision`);
+    }
+    assert.deepEqual(await page.evaluate(() => window.__regionRevisionGaps), [], 'a region was fresh at an older revision during the patch');
+    assert.equal(new URL(page.url()).searchParams.get('step'), '15', 'the inspected step follows the drawn cell');
+    await noNavigation();
+  } finally {
+    await page.evaluate(() => window.__stopRegionRevisionObserver());
   }
-  assert.equal(new URL(page.url()).searchParams.get('step'), '15', 'the inspected step follows the drawn cell');
-  await noNavigation();
+});
+
+test('an edit aborts the background read in flight', async () => {
+  const {page, posts, cell, confirmed, settled, caughtUp, refused} = await studio();
+  await caughtUp();
+  let release, heldResponse, heldURL, finished, claimed = false;
+  const gate = new Promise(resolve => { release = resolve; });
+  const done = new Promise(resolve => { finished = resolve; });
+  const handler = async route => {
+    if (claimed) return route.continue();
+    claimed = true;
+    heldURL = route.request().url();
+    try {
+      const response = await route.fetch();
+      heldResponse = await response.json();
+      await gate;
+      await route.fulfill({response, body: JSON.stringify(heldResponse)}).catch(() => {});
+    } finally {
+      finished();
+    }
+  };
+  await page.route('**/__studio/regions**', handler);
+  try {
+    let start = posts.length;
+    await page.locator(cell(15)).click();
+    await settled(start + 1);
+    const oldRevision = posts[start].result.data.revision;
+    await confirmed(cell(15), false, oldRevision);
+    await until(() => heldResponse, 'the stale-region read did not produce a response');
+    assert.equal(heldResponse.revision, oldRevision);
+
+    start = posts.length;
+    const refusedStart = refused.length;
+    await page.locator(cell(15)).click();
+    await until(() => refused.slice(refusedStart).some(url => url.href === heldURL), 'the in-flight region read was not aborted');
+    await settled(start + 1);
+    const revision = posts[start].result.data.revision;
+    assert.notEqual(revision, oldRevision);
+    await confirmed(cell(15), true, revision);
+    release();
+    await done;
+    await page.waitForFunction(() => !document.querySelector('#studio-shell').hasAttribute('aria-busy'));
+    const freshOld = await page.evaluate(old => [...document.querySelectorAll('[data-update-region]:not([data-region-stale])')]
+      .filter(node => node.dataset.regionRevision === old).map(node => node.dataset.updateRegion), oldRevision);
+    assert.deepEqual(freshOld, [], 'the released read left regions fresh at the old revision');
+  } finally {
+    release();
+    await page.unroute('**/__studio/regions**', handler);
+  }
+});
+
+test('a submit between region patches is sent once', async () => {
+  const {page, posts, sent, cell, settled, caughtUp} = await studio();
+  await caughtUp();
+  const before = await page.locator('#update-dock-clip').getAttribute('data-region-revision');
+  const start = posts.length, undoCount = sent('/__actions/undo');
+  await page.evaluate(before => {
+    window.__submitDuringApply = null;
+    const observer = new MutationObserver(() => {
+      if (document.querySelector('#update-dock-clip').dataset.regionRevision === before) return;
+      observer.disconnect();
+      const region = document.querySelector('#update-actions');
+      const form = document.querySelector('#undo-form');
+      const button = form.querySelector('button[type=submit]');
+      const stale = region.hasAttribute('data-region-stale');
+      form.requestSubmit(button);
+      window.__submitDuringApply = {stale, held: button.hasAttribute('data-workspace-held')};
+    });
+    observer.observe(document.querySelector('#update-dock-clip'), {attributes: true, attributeFilter: ['data-region-revision']});
+    window.__stopSubmitObserver = () => observer.disconnect();
+  }, before);
+  try {
+    await page.locator(cell(15)).click();
+    await settled(start + 2);
+    // Whether the submit is held or queued depends on which region was patched
+    // first; what must hold either way is that it was made during the apply
+    // and is sent exactly once.
+    assert.notEqual(await page.evaluate(() => window.__submitDuringApply), null, 'the submit was not made during the apply');
+    assert.deepEqual(posts.slice(start, start + 2).map(record => record.action), ['pattern', 'undo']);
+    assert.equal(posts[start + 1].status, 200, posts[start + 1].result?.message);
+    await page.waitForFunction(() => !document.querySelector('#studio-shell').hasAttribute('aria-busy'));
+    assert.equal(sent('/__actions/undo') - undoCount, 1, 'the held Undo was not sent exactly once');
+    const revision = posts[start + 1].result.data.revision;
+    const freshOld = await page.evaluate(revision => [...document.querySelectorAll('[data-update-region]:not([data-region-stale])')]
+      .filter(node => node.dataset.regionRevision !== revision).map(node => node.dataset.updateRegion), revision);
+    assert.deepEqual(freshOld, [], 'a region remained fresh at another revision');
+  } finally {
+    await page.evaluate(() => window.__stopSubmitObserver());
+  }
 });
 
 test('the answer to one draw keeps the pending paint of the next', async () => {
@@ -643,7 +764,7 @@ test('a checkpoint of the saved text that lands after the save keeps no copy, an
   // whatever the timing.
   const {answers, refused, release, stop} = await checkpointAnswers(other, {refuse: true});
   try {
-    // One input event, so every checkpoint carries the whole text.
+    // fill inserts the whole text at once, so every checkpoint carries it.
     await other.locator('#score textarea').first().fill(text);
     await until(() => refused.count > 0, 'the other window sent no checkpoint');
     await typeAtEnd(page, phrase);
@@ -732,6 +853,128 @@ test('a save does not stop another window that typed the same text from keeping 
   assert.equal((await state('/api/state')).source, before.source, 'the other window changed the score');
 });
 
+test('a checkpoint answer that cannot be read is a failed attempt, and the window sends the same checkpoint again', async () => {
+  const {state} = await studio();
+  const other = await otherClient();
+  const before = await state('/api/state');
+  const editor = other.locator('#score textarea').first();
+  const original = await editor.inputValue();
+  const text = original + '\n// an answer that cannot be read';
+  // The first checkpoint is answered 200 with a body that is not JSON; the
+  // next ones reach Studio.
+  const sent = [], warnings = [];
+  const handler = async route => {
+    const body = route.request().postDataJSON();
+    sent.push({id: body.recoveryId, sequence: body.recoverySequence, content: body.content});
+    if (sent.length === 1) return route.fulfill({status: 200, contentType: 'application/json', body: 'not json'});
+    return route.fallback();
+  };
+  const onConsole = message => { if (message.type() === 'warning') warnings.push(message.text()); };
+  await other.route('**/__actions/source-checkpoint', handler);
+  other.on('console', onConsole);
+  try {
+    await other.evaluate(() => {
+      window.__recoveryStatus = [];
+      new MutationObserver(() => window.__recoveryStatus.push(document.querySelector('[data-source-recovery-status]')?.textContent))
+        .observe(document.body, {subtree: true, childList: true, characterData: true});
+    });
+    await editor.fill(text);
+    // One fill fires an input event for each line and each line break, all
+    // with the same final text. Those events, and any later event that
+    // changes no text, must not turn the retry into a different checkpoint:
+    // the copy is new, so its one edit has sequence 1.
+    await until(() => sent.length >= 1, 'the window did not send a checkpoint');
+    assert.equal(sent[0].sequence, '1', 'input events that changed no text advanced the sequence');
+    for (let i = 0; i < 3; i++) await editor.dispatchEvent('input');
+    await until(() => sent.length >= 2, 'the window did not send the checkpoint again');
+    assert.equal(sent[0].content, text, 'the first checkpoint did not carry the text');
+    assert.deepEqual(sent[1], sent[0], 'the second attempt was not the same checkpoint');
+    await until(async () => await other.locator('[data-source-recovery-status]').textContent() === 'Recovery copy kept on this device. Use Save file to apply edits to the song.',
+      'the second attempt was not kept');
+    assert.ok(await other.evaluate(() => window.__recoveryStatus.includes('Recovery could not save. Keep this window open; another attempt will follow.')),
+      'the window did not say that the first attempt failed');
+    assert.ok(warnings.some(text => text.startsWith('Cicada: Code recovery checkpoint: recovery answer could not be read')),
+      `the console does not name the cause: ${JSON.stringify(warnings)}`);
+  } finally {
+    other.off('console', onConsole);
+    await other.unroute('**/__actions/source-checkpoint', handler);
+  }
+  // Back to the file's text: the window closes its copy for good.
+  await editor.fill(original);
+  await until(async () => await other.locator('[data-source-recovery-status]').textContent() === 'No unsaved Code edits.',
+    'the window did not close its copy');
+  assert.equal((await state('/api/state')).source, before.source, 'the window changed the score');
+});
+
+// A checkpoint still out when this window saves lands after the Save closed
+// its copy, and Studio refuses it (409). That is the copy being finished,
+// not a failure: the window neither sends it again nor reports a failure.
+// The panel view saves without a navigation, so its checkpoint loop lives on.
+test('a checkpoint refused because this window saved is not sent again or reported as a failure', async () => {
+  const {base, state, page} = await studio();
+  const {context} = await sharedBrowser();
+  const panel = await context.newPage();
+  panel.setDefaultTimeout(15_000);
+  const sent = [], answers = [], warnings = [];
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const handler = async route => {
+    const body = route.request().postDataJSON();
+    sent.push(`${body.recoveryId}/${body.recoverySequence}`);
+    if (sent.length === 1) await gate;
+    const response = await route.fetch();
+    answers.push(response.status());
+    await route.fulfill({response});
+  };
+  panel.on('console', message => { if (message.type() === 'warning') warnings.push(message.text()); });
+  await panel.route('**/__actions/source-checkpoint', handler);
+  const before = await state('/api/state');
+  try {
+    await panel.goto(new URL('/?panel=code', base).href);
+    await panel.locator('#cicada-workspace[data-workspace-reactive="ready"]').waitFor({timeout: 30_000});
+    await panel.evaluate(() => {
+      window.__recoveryStatus = [];
+      new MutationObserver(() => window.__recoveryStatus.push(document.querySelector('[data-source-recovery-status]')?.textContent))
+        .observe(document.body, {subtree: true, childList: true, characterData: true});
+    });
+    const editor = panel.locator('#score textarea').first();
+    const text = (await editor.inputValue()) + '\n// saved while its checkpoint was out';
+    await editor.fill(text);
+    await until(() => sent.length > 0, 'the window sent no checkpoint');
+    await codeForm(panel).getByRole('button', {name: 'Save file', exact: true}).click();
+    await until(async () => (await state('/api/state')).source.replace(/\r\n/g, '\n') === text, 'the save did not write');
+    release();
+    await until(() => answers.length > 0, 'the held checkpoint was not answered');
+    assert.equal(answers[0], 409, 'Studio did not refuse the checkpoint of the saved copy');
+    // Longer than the window's one-second wait before it sends again.
+    await panel.evaluate(() => new Promise(resolve => setTimeout(resolve, 1500)));
+    assert.equal(sent.filter(key => key === sent[0]).length, 1, `the refused checkpoint was sent again: ${JSON.stringify(sent)}`);
+    assert.deepEqual(warnings.filter(text => text.includes('Code recovery')), [], 'the refusal was logged as a failure');
+    assert.ok(!(await panel.evaluate(() => window.__recoveryStatus.some(text => /Recovery could not save/.test(text || '')))), 'the window reported the refusal as a failure');
+    // Take the save back.
+    const saved = await state('/api/state');
+    await panel.locator('form[action="/__actions/undo"] button[type=submit]').first().click();
+    await until(async () => (await state('/api/state')).revision !== saved.revision, 'Undo did not run');
+    assert.equal((await state('/api/state')).source, before.source, 'Undo did not restore the score');
+  } finally {
+    release();
+    await panel.unroute('**/__actions/source-checkpoint', handler);
+    await panel.close();
+  }
+  // The suite's page has not seen that save and its Undo. A link to another
+  // step (a GoSX navigation) renders it again at the current revision.
+  const next = (await page.evaluate(() => new URL(location.href).searchParams.get('step'))) === '2' ? 3 : 2;
+  await page.locator('#detail-panel-clip .piano-roll .step-number').nth(next - 1).click();
+  await page.waitForFunction(step => new URL(location.href).searchParams.get('step') === step, String(next));
+  await page.locator('#studio-shell[data-shell-edits="ready"]').waitFor();
+  await until(async () => await page.locator('#undo-form input[name=revision]').inputValue() === (await state('/api/state')).revision, 'the page did not catch up with the score');
+  // The steps after this one count only their own navigations. The step link's
+  // navigation event arrives after the address changes, so wait for it before
+  // clearing the counter; otherwise it would land in the next test's count.
+  await until(() => page.evaluate(() => window.__studioEdits.navigations > 0), 'no navigation', 5_000).catch(() => {});
+  await page.evaluate(() => { window.__studioEdits.navigations = 0; });
+});
+
 test('the Code editor stays mounted while other regions are patched', async () => {
   const {page, posts, cell, settled, confirmed, region, noNavigation} = await studio();
   const editor = await page.locator('#score textarea').elementHandle();
@@ -756,6 +999,49 @@ test('the Code editor stays mounted while other regions are patched', async () =
   await until(async () => await region('code').getAttribute('data-region-revision') === revision, 'the opened Code lens was not read');
   assert.equal(await editor.evaluate(node => node.isConnected && node === document.querySelector('#score textarea')), true, 'opening Code replaced its editor');
   await noNavigation();
+});
+
+test('a placement nudge during Undo is refused while the arrangement is saving', async () => {
+  const {page, state, posts, sent, settled, caughtUp, holdAnswer, status} = await studio();
+  const original = (await state('/api/state')).source;
+  const arranged = original.replace(/song\s*\{\s*main\*999\s*\}/, 'arrange { place hold-test keys continuity { at=@1.1.1 length=4bars } }');
+  assert.notEqual(arranged, original, 'the fixture song was not found');
+  const editor = page.locator('#score textarea').first();
+  await editor.fill(arranged);
+  await saveCode(page, state, arranged);
+  const block = () => page.locator('[data-placement-block="hold-test"]');
+  await page.keyboard.press('Alt+Shift+Digit1');
+  await block().waitFor();
+  await caughtUp();
+  const before = (await state('/api/state')).source;
+  const length = await block().getAttribute('data-placement-length');
+  await block().locator('[data-placement-resize]').focus();
+  await page.keyboard.press('ArrowLeft');
+  await until(async () => await block().getAttribute('data-placement-length') !== length, 'the resize did not save');
+  await until(async () => (await state('/api/state')).source !== before, 'the resize did not change the score');
+  await caughtUp();
+  const release = holdAnswer();
+  const start = posts.length;
+  try {
+    await page.locator('#undo-form button[type=submit]').click();
+    await until(() => posts.length > start && posts[start].status !== 0, 'the Undo did not reach the service');
+    assert.equal(posts[start].action, 'undo');
+    assert.ok(posts[start].status < 400, 'the Undo was refused');
+    const count = sent('/__actions/arrange');
+    await block().locator('.placement-select').focus();
+    await page.keyboard.press('ArrowRight');
+    assert.match(await status(), /arrangement is still saving.*try again/i);
+    release();
+    await settled(start + 1);
+    await caughtUp();
+    await page.waitForTimeout(400);
+    assert.equal(sent('/__actions/arrange'), count, 'the nudge sent an arrangement request');
+    assert.equal((await state('/api/state')).source, before, 'the nudge changed the Undo result');
+  } finally {
+    release();
+    await editor.fill(original);
+    await saveCode(page, state, original);
+  }
 });
 
 test('Code typed while a response is applied is held with its file revision', async () => {
@@ -837,6 +1123,58 @@ test('a form in a stale region is sent only after its region is read', async () 
   await until(async () => await mute().getAttribute('aria-pressed') !== pressed, 'the mute did not apply');
   await mute().click();
   await until(async () => await mute().getAttribute('aria-pressed') === pressed, 'the mute was not undone');
+});
+
+// Undo writes the file before its answer reaches the page, and the regions
+// it leaves behind are marked stale only once that answer is applied. A form
+// that GoSX sends itself (Mute) carries the revision its region shows, so a
+// click in between sent the revision from before the Undo and the service
+// refused it: "score changed on disk; reload before saving".
+test('a form clicked while an Undo is being answered is sent with the revision the Undo leaves', async () => {
+  const {page, posts, sent, cell, settled, caughtUp, holdAnswer} = await studio();
+  let mixerPost = null;
+  const onRequest = request => { if (!mixerPost && request.method() === 'POST' && new URL(request.url()).pathname === '/__actions/mixer') mixerPost = request; };
+  page.on('request', onRequest);
+  const mute = () => page.locator('#view-panel-mixer button[data-toggle=mute]').first();
+  try {
+    let start = posts.length;
+    await page.locator(cell(35)).click();
+    await settled(start + 1);
+    await page.keyboard.press('Alt+Shift+Digit3');
+    await page.locator('#view-tab-mixer[aria-selected="true"]').waitFor();
+    await caughtUp();
+    const pressed = await mute().getAttribute('aria-pressed');
+    const mixerCount = sent('/__actions/mixer');
+    const release = holdAnswer();
+    start = posts.length;
+    try {
+      await page.locator('#undo-form button[type=submit]').click();
+      await until(() => posts.length > start && posts[start].status !== 0, 'the Undo did not reach the service');
+      assert.equal(posts[start].action, 'undo');
+      assert.ok(posts[start].status < 400, `the Undo was refused: ${posts[start].status}`);
+      await mute().click();
+      await page.waitForTimeout(300);
+      if (mixerPost) {
+        release();
+        const early = await mixerPost.response();
+        assert.fail(`Mute was sent before the Undo was answered, with the revision from before the Undo; the service answered ${early ? early.status() : 'nothing'}`);
+      }
+    } finally {
+      release();
+    }
+    await settled(start + 1);
+    await until(() => mixerPost !== null, 'Mute was not sent once the Undo was applied');
+    const response = await mixerPost.response();
+    assert.ok(response && response.status() < 400, `Mute was refused: ${response && response.status()}`);
+    await until(async () => await mute().getAttribute('aria-pressed') !== pressed, 'the mute did not apply');
+    assert.equal(sent('/__actions/mixer'), mixerCount + 1, 'the held Mute was not sent exactly once');
+    // Put the track back as it was.
+    await mute().click();
+    await until(async () => await mute().getAttribute('aria-pressed') === pressed, 'the mute was not undone');
+  } finally {
+    page.off('request', onRequest);
+    await page.keyboard.press('Alt+Shift+Digit1');
+  }
 });
 
 test('a stale region whose text changed still sends a form whose values did not, once', async () => {
@@ -1268,6 +1606,168 @@ test('a held Undo is dropped after a refused edit', async () => {
   await page.waitForTimeout(400);
   assert.equal(posts.length, start + 1, 'the held Undo was sent after a refused edit');
   assert.match(await status(), /Undo or Redo waiting behind it was not sent/, 'the dropped Undo was not reported');
+});
+
+// Transport commands the service runs without a revision check (play, pause,
+// stop, return to start) never wait behind a score write and are never
+// dropped when a read finds another client's save.
+test('Play in the shell starts while a read that finds another save is held', async () => {
+  const {caughtUp, page, state, posts, cell, settled} = await studio();
+  const held = [];
+  await page.route('**/__studio/regions**', route => { held.push(route); });
+  try {
+    const start = posts.length;
+    await page.locator(cell(50)).click();
+    await settled(start + 1);
+    await until(() => held.length > 0, 'the write was not followed by a read');
+    const other = await otherClient();
+    await other.locator(cell(51)).click();
+    await other.waitForFunction(selector => document.querySelector(selector)?.getAttribute('data-active') === 'true' && !document.querySelector(selector).hasAttribute('data-workspace-pending'), cell(51));
+    await page.locator('#transport-form button[value=play]').click();
+    await until(async () => (await state('/api/transport')).playing, 'Play did not start while a read was held');
+  } finally {
+    await page.unroute('**/__studio/regions**');
+    for (const route of held) await route.continue().catch(() => {});
+  }
+  // The held read finds the other save; playback goes on.
+  await caughtUp();
+  assert.equal((await state('/api/transport')).playing, true, 'the read that found another save stopped playback');
+  await page.locator('#transport-form button[value=stop]').click();
+  await until(async () => !(await state('/api/transport')).playing, 'Stop did not stop playback');
+});
+
+test('Play in the panel view is not dropped by a refresh that finds another save, and a dropped edit is named', async () => {
+  const {base, state, cell} = await studio();
+  const {context} = await sharedBrowser();
+  const panel = await context.newPage();
+  panel.setDefaultTimeout(15_000);
+  // The panel view polls the project revision each second and queues a
+  // refresh when it moves. Hold that refresh.
+  let refresh = null, release;
+  const released = new Promise(resolve => { release = resolve; });
+  await panel.route('**/__workspace**', async route => {
+    if (route.request().method() === 'GET' && !refresh) {
+      refresh = route;
+      await released;
+    }
+    await route.continue().catch(() => {});
+  });
+  try {
+    await panel.goto(new URL('/?panel=patterns&pattern=continuity&step=1', base).href);
+    await panel.locator('#cicada-workspace[data-workspace-reactive="ready"]').waitFor({timeout: 30_000});
+    const other = await otherClient();
+    await other.locator(cell(52)).click();
+    await other.waitForFunction(selector => document.querySelector(selector)?.getAttribute('data-active') === 'true' && !document.querySelector(selector).hasAttribute('data-workspace-pending'), cell(52));
+    await until(() => refresh !== null, 'the panel view did not refresh after another save');
+    // Play goes out at once; a draw waits behind the refresh, which finds the
+    // other save, so the draw is dropped and named.
+    await panel.locator('.toolbar form[action="/__actions/transport"] button[value="play"]').click();
+    await until(async () => (await state('/api/transport')).playing, 'Play waited behind the refresh');
+    await panel.locator('[data-workspace-tool=draw]').click();
+    const target = panel.locator(cell(53).replace('#detail-panel-clip ', ''));
+    const label = await target.getAttribute('aria-label');
+    await target.click();
+    release();
+    await until(async () => /Another change to the song was saved, so this was not sent: /.test(await panel.locator('[data-workspace-status]').textContent()), 'the dropped draw was not reported');
+    assert.match(await panel.locator('[data-workspace-status]').textContent(), new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), 'the report did not name the dropped draw');
+    assert.equal((await state('/api/transport')).playing, true, 'the refresh stopped playback');
+    // A successful Stop says nothing, so the report of the dropped draw stays.
+    const notice = await panel.locator('[data-workspace-status]').textContent();
+    await panel.evaluate(() => {
+      window.__statusAfterStop = [];
+      const node = document.querySelector('[data-workspace-status]');
+      new MutationObserver(() => window.__statusAfterStop.push(node.textContent)).observe(node, {subtree: true, childList: true, characterData: true});
+    });
+    const stopReply = panel.waitForResponse(response => new URL(response.url()).pathname === '/__actions/transport' && response.request().method() === 'POST');
+    await panel.locator('.toolbar form[action="/__actions/transport"] button[value="stop"]').click();
+    await stopReply;
+    await until(async () => !(await state('/api/transport')).playing, 'Stop did not stop playback');
+    // The engine handles the reply as soon as the page's fetch settles.
+    await panel.evaluate(() => new Promise(resolve => setTimeout(resolve, 250)));
+    assert.equal(await panel.locator('[data-workspace-status]').textContent(), notice,
+      `Stop replaced the report of the dropped draw: ${JSON.stringify(await panel.evaluate(() => window.__statusAfterStop))}`);
+  } finally {
+    release();
+    await panel.close();
+  }
+  // The suite's page has not seen the other client's save. A step link (a
+  // GoSX navigation) renders it again at the saved revision.
+  const {page} = await studio();
+  await page.locator('#detail-panel-clip .piano-roll .step-number').nth(1).click();
+  await page.waitForFunction(() => new URL(location.href).searchParams.get('step') === '2');
+  await page.locator('#studio-shell[data-shell-edits="ready"]').waitFor();
+  await until(async () => await page.locator('#undo-form input[name=revision]').inputValue() === (await state('/api/state')).revision, 'the page did not catch up with the saved song');
+});
+
+// Transport commands sent beside the queue go one at a time, in click order:
+// Stop pressed just after Play is sent after Play's answer, so playback ends.
+test('Play then Stop pressed 10 ms apart in the panel view ends stopped, every time', async () => {
+  const {base, state} = await studio();
+  const {context} = await sharedBrowser();
+  const panel = await context.newPage();
+  panel.setDefaultTimeout(15_000);
+  let replies = 0;
+  panel.on('response', response => {
+    if (new URL(response.url()).pathname === '/__actions/transport' && response.request().method() === 'POST') replies++;
+  });
+  try {
+    await panel.goto(new URL('/?panel=patterns&pattern=continuity&step=1', base).href);
+    await panel.locator('#cicada-workspace[data-workspace-reactive="ready"]').waitFor({timeout: 30_000});
+    for (let run = 1; run <= 30; run++) {
+      const before = replies;
+      await panel.evaluate(() => {
+        const button = value => document.querySelector(`.toolbar form[action="/__actions/transport"] button[value="${value}"]`);
+        button('play').click();
+        setTimeout(() => button('stop').click(), 10);
+      });
+      await until(() => replies >= before + 2, `run ${run}: Play and Stop were not both answered`);
+      await until(async () => !(await state('/api/transport')).playing, `run ${run}: playback did not end stopped`);
+    }
+  } finally {
+    await panel.close();
+  }
+});
+
+test('a transport reply does not restore the previous panel selection', async () => {
+  const {base, cell} = await studio();
+  const {context} = await sharedBrowser();
+  const panel = await context.newPage();
+  panel.setDefaultTimeout(15_000);
+  let readHeld = false, transportHeld = false, releaseRead, releaseTransport;
+  const readGate = new Promise(resolve => { releaseRead = resolve; });
+  const transportGate = new Promise(resolve => { releaseTransport = resolve; });
+  await panel.route('**/__workspace**', async route => {
+    if (!readHeld && route.request().method() === 'GET') {
+      readHeld = true;
+      await readGate;
+    }
+    await route.continue().catch(() => {});
+  });
+  await panel.route('**/__actions/transport', async route => {
+    const response = await route.fetch();
+    transportHeld = true;
+    await transportGate;
+    await route.fulfill({response}).catch(() => {});
+  });
+  try {
+    await panel.goto(new URL('/?panel=patterns&pattern=continuity&step=1', base).href);
+    await panel.locator('#cicada-workspace[data-workspace-reactive="ready"]').waitFor({timeout: 30_000});
+    await panel.locator(cell(2).replace('#detail-panel-clip ', '')).click();
+    await until(() => readHeld, 'the selection read did not start');
+    await panel.locator('.toolbar form[action="/__actions/transport"] button[value="play"]').click();
+    await until(() => transportHeld, 'Play did not return');
+    releaseRead();
+    await panel.waitForFunction(() => new URL(location.href).searchParams.get('step') === '2');
+    const transportReply = panel.waitForResponse(response => new URL(response.url()).pathname === '/__actions/transport');
+    releaseTransport();
+    await transportReply;
+    await panel.waitForTimeout(250);
+    assert.equal(new URL(panel.url()).searchParams.get('step'), '2', 'Play restored the old selection');
+  } finally {
+    releaseRead();
+    releaseTransport();
+    await panel.close();
+  }
 });
 
 test('closing the shell while a write is in flight leaves no error and the next edit works', async () => {

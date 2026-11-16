@@ -255,3 +255,16 @@ func TestTransportSnapshotTracksSongWithoutEventDelivery(t *testing.T) {
 		t.Fatalf("stale recording target: %+v", state)
 	}
 }
+
+func TestLiveRecordingRefusesOtherMeter(t *testing.T) {
+	source := "meter 3/4\n" + studioScore
+	path := studioTestPath(t, source)
+	s, err := newStudio(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := studioCall(t, s.routes(), "/api/record", studioEdit{Revision: studioRevision([]byte(source)), SourceRevision: studioProjectReceipt(t, path), Track: "bass", Pattern: "pulse", Take: []studioTakeNote{{Note: 60, Velocity: 90, EndTick: 60}}})
+	if response.Code != 422 || !strings.Contains(response.Body.String(), "live note recording") {
+		t.Fatalf("response: %d %s", response.Code, response.Body.String())
+	}
+}

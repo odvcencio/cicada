@@ -6,7 +6,7 @@ import (
 	"m31labs.dev/gosx"
 )
 
-func arrangementTools(placement bool, barTicks, beatTicks int64) gosx.Node {
+func arrangementTools(placement bool, barTicks, beatTicks int64, meter string) gosx.Node {
 	viewButton := func(action, label string) gosx.Node {
 		return gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-placement-view", action), gosx.BoolAttr("data-studio-view-control")), gosx.Text(label))
 	}
@@ -25,7 +25,12 @@ func arrangementTools(placement bool, barTicks, beatTicks int64) gosx.Node {
 		if option.value == "240" {
 			attrs = append(attrs, gosx.BoolAttr("selected"))
 		}
-		snapOptions = append(snapOptions, gosx.El("option", attrs, gosx.Text(option.label)))
+		label := option.label
+		if (label == "Bar" && option.value != fourFourBar) || (label == "Beat" && option.value != fourFourBeat) {
+			attrs = append(attrs, gosx.BoolAttr("disabled"))
+			label += " (off until Studio draws " + meter + ")"
+		}
+		snapOptions = append(snapOptions, gosx.El("option", attrs, gosx.Text(label)))
 	}
 	class := "arrange-view-tools"
 	snap := gosx.El("span", gosx.Text("Snap: whole bars"))

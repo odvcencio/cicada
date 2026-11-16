@@ -44,6 +44,10 @@ func (t *Transport) SetMeterMap(m MeterMap) { t.meters, t.barStart, t.barEnd = m
 // Bar returns the zero-based bar that holds the tick and the tick's offset
 // into it, as MeterMap().BarAt(Tick()) does. The engine asks once per audio
 // frame, so the bar is kept and the map is asked only when the tick leaves it.
+// The kept bar relies on the tick never being negative: it starts at 0,
+// SeekTick refuses a negative tick, and Advance only moves it forward. Below 0
+// a bar's offset is not a distance from its first tick, so the kept range
+// would not match BarAt there.
 func (t *Transport) Bar() (bar, offset int64) {
 	if t.tick < t.barStart || t.tick >= t.barEnd {
 		bar, offset := t.meters.BarAt(t.tick)

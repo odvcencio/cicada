@@ -224,6 +224,7 @@ func (s *studioApp) actions() map[string]action.Handler {
 	return map[string]action.Handler{
 		"track-rename":    s.renameTrack,
 		"split-placement": s.splitPlacement,
+		"add-effect":      s.addEffect,
 		"midi-learn":      s.learnPortableMIDI,
 		"midi-bind":       s.bindPortableMIDI,
 		"preset-save": s.mutation("/api/library/save", func(f map[string]string) (any, error) {

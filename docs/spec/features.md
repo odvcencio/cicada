@@ -92,6 +92,33 @@ song { main }
 
 **Edition history:** Named mixer forms are implemented in edition 2. Edition 2 requires named mixer spellings; `cicada fix` migrates the edition-1 aliases.
 
+## Echo highpass
+
+**Syntax (EBNF):** `highpass` is a setting of a `delay` or `tape` effect block, `highpass = frequency | "off"`, and the parameter path `<echo>.highpass` in scene settings and `automate` lanes.
+
+**Meaning:** A one-pole high-pass filter where the signal enters the echo line, the send and the feedback together, beside the `damp` low-pass, which filters the feedback alone. The first repeat has passed it once and each later repeat once more, so repeat n has passed the high-pass n times and `damp` n − 1 times. Turning the filter on or off fades its effect in or out over the echo's 5 ms smoother; a new cutoff glides through the same smoother. See [Echo highpass](../audio/mix-chain.md#echo-highpass) for the measured effect per repeat.
+
+**Types and units:** A frequency from 20 Hz to 2 kHz, or `off`. Automation interpolates on a logarithmic curve.
+
+**Defaults:** Off. An echo without `highpass` renders the same bits as before the setting existed.
+
+**Errors:** A frequency outside 20 Hz to 2 kHz, or a value without Hz, reports `CICADA-PARAM` in the effect block and `CICADA-UNIT` in a scene setting or an automation point. A modulation route to it reports `CICADA-ROUTE`, as for `damp`. Portable browser and WAM images refuse a score that sets or moves it.
+
+**Example:** A tape echo whose repeats thin out, then thin to their snap:
+
+```cicada
+cicada 2
+tempo 74
+fx echo tape { time = 3/16 feedback = 0.75 damp = 4kHz highpass = 250Hz }
+track rim drums { send echo = 0.8 pre }
+pattern hit drums { rs: ..x. ..x. ..x. ..x. }
+scene main { rim = hit }
+song { main*8 }
+automate echo.highpass { @1.1.1 250Hz @5.1.1 1200Hz exponential }
+```
+
+**Edition history:** Added in source editions 1 and 2 as registry rows `fx.delay.highpass` and `fx.tape.highpass`, appended after the existing rows so no parameter ID moves. Portable kernel images do not carry it.
+
 ## Audio assets, clips and samplers
 
 **Syntax (EBNF):**
@@ -230,6 +257,37 @@ song { main }
 
 **Edition history:** Expression rows and these settings are additive in source editions 1 and 2 and semantic formats /1 and /2. The optional `patterns[].expression` array stores resolved pitch cents, pressure, timbre, and per-note vibrato depth.
 
+## Song meter
+
+**Status:** A song-wide meter is implemented in source, semantic JSON (`cicada.project/3`), native and WASM playback, WAV timing metadata, MIDI export and the edit intents. Meter changes inside `arrange` and Studio's ruler and grid follow in later phases.
+
+**Syntax (EBNF):**
+
+```ebnf
+meter_decl  ::= "meter" , fraction , [ beat_groups ] ;
+beat_groups ::= integer , { "+" , integer } ;   (* one token, no spaces: 2+2+3 *)
+```
+
+**Meaning:** A song has one meter, `N/D`: N beats of a 1/D note in each bar. A bar lasts `N * 3840 / D` ticks, so a 3/4 bar is 2,880 ticks and a 6/8 bar is 2,880 ticks of six 480-tick beats. Positions `@bar.beat.step` count bars and beats of the meter; `Nbars` is N bars of it; song entries (`a*16`) count its bars. Note values (`1/16`, `step = 1/8`) stay fractions of a whole note, and `tempo` still counts quarter notes. Beat groups split the beats for accents and never move a position. MIDI export keeps only the first group, as the time signature's clocks per click (one beat when the group's clicks exceed 255); the other groups are not written. A pattern that swings is refused when a bar holds an odd number of its cells, because swing delays every other cell counted from the song's start and would delay different cells in alternate bars. A pattern keeps its own length and crosses bar lines when it does not fill whole bars.
+
+**Types and units:** N is 1 to 32; D is 2, 4, 8 or 16; a bar may be at most 30,720 ticks. Beat runs 1 to N and step runs 1 to 16/D. Beat groups are 1 to 32 each and add up to N.
+
+**Defaults:** A score without a meter declaration is 4/4 and keeps its source, semantic JSON format (/1 or /2), kernel image bytes and rendered bytes. `meter` is additive in editions 1 and 2, appears at most once, and may sit in any file of a project; a library cannot declare it.
+
+**Errors:** An invalid meter or beat groups that do not add up report `CICADA-METER`; a bar over 30,720 ticks reports `CICADA-LIMIT`; a second declaration reports `CICADA-DUPLICATE`; a position outside its bar reports the bar and the meter, for example `@3.4.1 is outside bar 3, which is in 3/4 (beats 1 to 3, steps 1 to 4)`. A pattern that does not fill whole bars of a declared meter gets a `CICADA-METER` warning.
+
+**Example:**
+
+```cicada
+cicada 2
+tempo 132
+meter 3/4
+track bass acid {}
+pattern oom { step = 1/4 c2 g2 g2 }
+scene a { bass = oom }
+song { a*16 }
+```
+
 ## Automation blocks
 
 **Status:** Song continuous numeric lanes are implemented in source, semantic JSON, native/WASM playback and Studio.
@@ -246,11 +304,11 @@ shape ::= "step" | "linear" | "smooth" | "exponential" | "curve" , number ;
 
 **Meaning:** A lane changes a registered parameter over song time. Lanes are top-level declarations with absolute song positions. Interpolation uses the parameter's control space: for frequency and time parameters that space is logarithmic, so `exponential` has the same meaning as `linear` there. `linear_period` is not a supported shape.
 
-**Types and units:** Positions are one-based bar.beat.sixteenth values (beats and steps 1–4), within the song including its end boundary. Point values use the addressed parameter's registered type and unit. Shapes are step, linear, smooth, exponential-as-linear-in-control-space, or a curve with numeric tension.
+**Types and units:** Positions are one-based bar.beat.sixteenth values (beats and steps 1–4), within the song including its end boundary. Point values use the addressed parameter's registered type and unit. A send lane (`a.send.reverb`, or `a.send.hall` by the first reverb effect's declared name) takes the unit of its points, the same for every point: levels from −60 dB to 0 dB, with `off` for silence, or linear gains from 0 to 1. A lane in dB ramps linearly in dB, as `level` does, and each point is the track block's conversion of its level (`send hall = -6dB`); a segment that starts or ends at `off` ramps linearly in gain. A lane in linear gains ramps in gain and compiles exactly as before. A lane that mixes the two reports `CICADA-UNIT` at the first point in the other unit, naming both points. Shapes are step, linear, smooth, exponential-as-linear-in-control-space, or a curve with numeric tension.
 
 **Defaults:** `linear` is the default incoming segment shape. The lane contributes no value before its first point and holds its last value afterward. Song loops repeat the lane; seeks reconstruct the current value. At authored scene boundaries, automation takes precedence over scene settings on the same path.
 
-**Errors:** Invalid positions and out-of-order points report `CICADA-POSITION`; unresolved paths report `CICADA-REFERENCE`; incompatible units report `CICADA-UNIT`. Unsupported shapes, including `linear_period`, report `CICADA-UNSUPPORTED`. Duplicate paths report `CICADA-DUPLICATE`.
+**Errors:** Invalid positions and out-of-order points report `CICADA-POSITION`; unresolved paths report `CICADA-REFERENCE`; incompatible units report `CICADA-UNIT`, whose message names the unit the parameter takes and the value it refused. Unsupported shapes, including `linear_period`, report `CICADA-UNSUPPORTED`. Duplicate paths report `CICADA-DUPLICATE`, as do two spellings of one control, such as `a.send.hall` and `a.send.reverb`.
 
 **Example:** `exponential` uses the existing linear interpolation rule in control space:
 

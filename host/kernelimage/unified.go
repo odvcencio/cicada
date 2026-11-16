@@ -92,5 +92,9 @@ func validateUnifiedFields(cfg *engine.Config) error {
 		}
 	}
 	// Images carry no meter table yet, so every image is 4/4.
-	return engine.ValidateTempoSchedule(cfg.Schedule, seq.MeterMap{})
+	meterMap, err := configMeterMap(cfg)
+	if err != nil {
+		return err
+	}
+	return engine.ValidateTempoSchedule(cfg.Schedule, meterMap)
 }

@@ -83,8 +83,14 @@ func placementTimeline(p *project.Project, placements []project.Placement, selec
 			gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-lane"), gosx.Attr("data-placement-ticks", strconv.FormatInt(ticks, 10)), gosx.Attr("style", fmt.Sprintf("height:%dpx", max(1, len(laneEnds))*68+8)), gosx.Attr("role", "group"), gosx.Attr("aria-label", track.ID+" placements")), gosx.Fragment(blocks...))))
 	}
 
-	return gosx.El("section", gosx.Attrs(gosx.BoolAttr("data-placement-navigation"), gosx.Attr("data-placement-bars", strconv.FormatInt(bars, 10))),
-		arrangementTools(true, meterMap.BarTicks(0), meterMap.BeatTicks(0)),
+	navigation := gosx.Attrs(gosx.BoolAttr("data-placement-navigation"), gosx.Attr("data-placement-bars", strconv.FormatInt(bars, 10)))
+	meter := ""
+	if p.Meter != nil {
+		meter = meterName(p.Meter)
+		navigation = append(navigation, gosx.Attr("data-placement-bar-moves-off", "Shift+Arrow moves by a 4/4 bar, so it is off in this "+meter+" song until Studio draws its meter. Move with the arrow keys or type a position."))
+	}
+	return gosx.El("section", navigation,
+		arrangementTools(true, meterMap.BarTicks(0), meterMap.BeatTicks(0), meter),
 		gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll placement-scroll"), gosx.Attr("aria-label", "Placement editor")),
 			gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-timeline"), gosx.Attr("style", fmt.Sprintf("--placement-bars:%d", bars))),
 				gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-playhead"), gosx.BoolAttr("data-placement-playhead"), gosx.BoolAttr("hidden"), gosx.Attr("aria-hidden", "true"))), gosx.Fragment(rows...))))

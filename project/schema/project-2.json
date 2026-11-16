@@ -1101,6 +1101,44 @@
                 }
               }
             },
+          "highpass": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "unit",
+                  "number"
+                ],
+                "properties": {
+                  "unit": {
+                    "const": "hz"
+                  },
+                  "number": {
+                    "type": "number",
+                    "minimum": 20,
+                    "maximum": 2000
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "unit",
+                  "text"
+                ],
+                "properties": {
+                  "unit": {
+                    "const": "enum"
+                  },
+                  "text": {
+                    "const": "off"
+                  }
+                }
+              }
+            ]
+          },
             "pingpong": {
               "type": "object",
               "additionalProperties": false,

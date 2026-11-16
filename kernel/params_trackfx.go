@@ -60,7 +60,7 @@ var Params = [...]ParamSpec{
 	{45, "track", "linear", 0, 1, 0.2, 0.01, 5, false, false, false},
 	{46, "track", "log", 5, 500, 30, 0.1, 5, false, false, false},
 	{47, "track", "log", 20, 200, 60, 0.1, 5, false, false, false},
-	{48, "track", "linear", 10, 100, 55, 0.01, 5, false, false, false},
+	{48, "track", "integer", 10, 100, 55, 1, 5, false, false, false},
 	{49, "track", "enum", 0, 1, 0, 0.01, 0, false, false, false},
 	{50, "track", "toggle", 0, 1, 0, 0.01, 0, false, false, false},
 	{51, "track", "enum", 0, 6, 2, 0.01, 0, false, false, false},
@@ -213,4 +213,6 @@ var Params = [...]ParamSpec{
 	{198, "track", "linear", -1e+06, 1e+06, 0, 0.01, 20, true, true, false},
 	{199, "track", "linear", -1e+06, 1e+06, 0, 0.01, 20, true, true, false},
 	{200, "track", "linear", -1e+06, 1e+06, 0, 0.01, 20, true, true, false},
+	{201, "global", "log", 20, 2000, 0, 1, 5, true, true, true},
+	{202, "global", "log", 20, 2000, 0, 1, 5, true, true, true},
 }

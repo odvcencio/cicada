@@ -17,6 +17,16 @@ type Meter struct {
 	Unit  int64 // denominator: 2, 4, 8 or 16
 }
 
+// ValidMeterFraction reports whether the numerator and denominator are supported.
+func ValidMeterFraction(beats, unit int64) bool {
+	return beats >= 1 && beats <= 32 && (unit == 2 || unit == 4 || unit == 8 || unit == 16)
+}
+
+// ValidMeter reports whether the fraction is supported and fits the bar limit.
+func ValidMeter(beats, unit int64) bool {
+	return ValidMeterFraction(beats, unit) && beats*(TicksPerWhole/unit) <= MaxBarTicks
+}
+
 // MeterChange starts a meter at a zero-based bar.
 type MeterChange struct {
 	Bar   int64
@@ -73,12 +83,12 @@ func NewMeterMap(changes []MeterChange) (MeterMap, error) {
 	segments := make([]meterSegment, len(changes))
 	for i, change := range changes {
 		meter := change.Meter
-		if meter.Beats < 1 || meter.Beats > 32 || meter.Unit != 2 && meter.Unit != 4 && meter.Unit != 8 && meter.Unit != 16 {
+		if !ValidMeterFraction(meter.Beats, meter.Unit) {
 			return MeterMap{}, validationError("meter must be N/D with N from 1 to 32 and D of 2, 4, 8 or 16")
 		}
 		beat := TicksPerWhole / meter.Unit
 		s := meterSegment{bar: change.Bar, barTicks: meter.Beats * beat, beatTicks: beat}
-		if s.barTicks > MaxBarTicks {
+		if !ValidMeter(meter.Beats, meter.Unit) {
 			return MeterMap{}, validationError("a bar may last at most 30720 ticks")
 		}
 		if i > 0 {

@@ -216,6 +216,10 @@ td button { width:100%; }
 .notices:not(:empty) { margin:14px 28px; padding:12px 16px; background:var(--raised); border-left:3px solid var(--amber); }
 .workspace-feedback { position:fixed; bottom:14px; right:14px; z-index:20; display:flex; gap:10px; align-items:center; max-width:calc(100vw - 28px); padding:8px 12px; background:var(--raised); border:1px solid var(--border); border-radius:6px; font-size:13px; }
 .workspace-feedback:has([data-workspace-status]:empty):has([data-workspace-retry][hidden]) { display:none; }
+/* The message never takes a click meant for what lies under it (the phone
+   navigation sits there); only the recovery button does. */
+.workspace-feedback { pointer-events:none; }
+.workspace-feedback [data-workspace-retry] { pointer-events:auto; }
 .lane .action-form { display:flex; align-items:center; gap:6px; }
 .error { color:var(--coral); }
 #export .form-status { flex-basis:100%; margin:0; }
@@ -884,14 +888,22 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
 
 /* Detail dock: tabs and the selection they edit share one 38px bar. */
 .shell #studio-detail { background:var(--panel); }
-.shell #detail-tabs { display:grid; grid-template-columns:minmax(0,1fr) auto; grid-template-rows:auto minmax(0,1fr); }
-.shell #detail-tabs > .gsx-tabs__list { grid-column:1; grid-row:1; min-height:38px; background:var(--panel); border-bottom:1px solid var(--border); }
-.shell #detail-tabs .shell-dock-selection { grid-column:2; grid-row:1; display:flex; align-items:baseline; gap:8px; margin:0; padding:0 12px; align-self:stretch; align-items:center; border-bottom:1px solid var(--border); white-space:nowrap; overflow:hidden; }
+/* The tabs keep their width and stay on one row; the selection label takes what is left and truncates. */
+.shell #detail-tabs { display:grid; grid-template-columns:auto minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); min-width:0; }
+/* When the dock is narrower than its tabs, the tab row scrolls sideways inside itself. */
+.shell #detail-tabs > .gsx-tabs__list > * { flex:none; }
+.shell #detail-tabs > .gsx-tabs__list { grid-column:1; grid-row:1; flex-wrap:nowrap; min-width:0; overflow-x:auto; min-height:38px; background:var(--panel); border-bottom:1px solid var(--border); }
+.shell #detail-tabs .shell-dock-selection { grid-column:2; grid-row:1; display:flex; justify-content:flex-end; gap:8px; min-width:0; margin:0; padding:0 12px; align-self:stretch; align-items:center; border-bottom:1px solid var(--border); white-space:nowrap; overflow:hidden; }
+.shell #detail-tabs .shell-dock-selection > * { flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.shell #detail-tabs .shell-dock-selection > strong { flex-shrink:0; max-width:100%; }
 .shell #detail-tabs .shell-dock-selection strong { color:var(--amber); font-size:14px; font-weight:650; }
 .shell #detail-tabs .shell-dock-selection span { color:var(--muted); font:11px var(--mono); }
-.shell #detail-tabs .shell-dock-selection:has(> strong:empty) { visibility:hidden; }
+/* An empty label keeps its box, so the header's bottom border still runs to the edge. */
+.shell #detail-tabs .shell-dock-selection:has(> strong:empty) > * { visibility:hidden; }
+.shell #detail-tabs:not(:has(#detail-tab-clip[aria-current="page"])) [data-dock-selection=clip],
 .shell #detail-tabs:has(#detail-tab-clip[aria-current="page"]) [data-dock-selection=track],
-.shell #detail-tabs:not(:has(#detail-tab-clip[aria-current="page"])) [data-dock-selection=clip] { display:none; }
+.shell #detail-tabs:has(#detail-tab-takes[aria-current="page"]) [data-dock-selection=track],
+.shell #detail-tabs:not(:has(#detail-tab-takes[aria-current="page"])) [data-dock-selection=takes] { display:none; }
 .shell #detail-tabs > .shell-scroll { grid-column:1/-1; grid-row:2; }
 /* Update regions wrap the parts of the shell that an edit response patches in
    place. The wrapper and its body add no box, so layout ignores them. */
@@ -1039,6 +1051,12 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
 .shell #arrangement .scene-timeline .timeline-heading { min-width:0; overflow:hidden; }
 .shell #arrangement .scene-timeline .timeline-row:nth-child(2) > .timeline-track::before { content:none; }
 
+/* Keep the scene controls compact while retaining playback status for assistive technology. */
+.shell #arrangement .arrange-view-tools { flex:0 1 auto; min-width:0; }
+.shell #arrangement .arrange-tools-spacer { min-width:0; }
+.shell #arrangement .arrange-view-tools .field > span { white-space:nowrap; min-width:6.5em; }
+.shell #arrangement .arrange-view-tools [data-placement-playback-status] { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; border:0; }
+
 /* Clip dock: the pattern list, one tool row, then the grid. The dock bar
    already names the pattern, so the panel's own heading is for screen readers. */
 .shell #detail-panel-clip #patterns { margin:0; padding:0; border:0; border-radius:0; background:none; }
@@ -1151,6 +1169,7 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
 .shell #detail-panel-device .device-controls .field { flex:1 1 auto; }
 .shell #detail-panel-device .device-controls .field span { font:10px var(--mono); }
 .shell #detail-panel-device .device-controls :is(input,select,button) { min-height:26px; padding:2px 7px; font-size:12px; }
+.shell #detail-panel-device .device-controls .action-form > button { flex:none; white-space:nowrap; }
 .shell #detail-panel-device .device-controls .muted,
 .shell #detail-panel-device .device-controls small { font-size:10px; }
 
@@ -1244,6 +1263,9 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
 .shell #view-panel-mixer .mixer-add-effect__body { position:absolute; top:100%; right:12px; z-index:6; width:min(360px,calc(100% - 24px)); padding:10px; border:1px solid var(--border); border-radius:4px; background:var(--raised); box-shadow:0 8px 24px #0008; }
 .shell #view-panel-mixer .mixer-add-effect__body .action-form { display:flex; flex-wrap:wrap; align-items:end; gap:6px 8px; margin:0; }
 .shell #view-panel-mixer .mixer-add-effect__body .field { flex:1 1 140px; min-width:0; margin:0; }
+.shell #view-panel-mixer .mixer-add-return { margin-top:10px; padding-top:8px; border-top:1px solid var(--border); }
+.shell #view-panel-mixer .mixer-add-return > strong { display:block; margin-bottom:6px; color:var(--muted); font-size:11px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; }
+.shell #view-panel-mixer .mixer-add-return > p { margin:0 0 6px; color:var(--muted); }
 .shell #view-panel-mixer .mixer-unplaced { margin-top:10px; padding-top:8px; border-top:1px solid var(--border); }
 .shell #view-panel-mixer .mixer-unplaced p { margin:0 0 4px; }
 .shell #view-panel-mixer .mixer-unplaced ul { display:flex; flex-wrap:wrap; gap:4px 12px; margin:0; padding:0; list-style:none; }

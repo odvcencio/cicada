@@ -73,12 +73,29 @@ func TestValidateChecksEachPackFromItsManifest(t *testing.T) {
 	}
 }
 
-func TestValidateRefusesAnAssetOverTheResidentBudget(t *testing.T) {
-	// A sampler asset cannot stream, so it must fit the resident budget.
-	frames := rules.ResidentBudget/4 + 1
+func TestValidateRefusesAnAssetOverTheFrameLimit(t *testing.T) {
+	// A sampler asset cannot stream, so it must fit the frame limit, and the
+	// refusal names that limit rather than the shared budget.
+	frames := int64(rules.MaxFrames) + 1
 	p := compile(t, fmt.Sprintf("cicada 2\ntempo 120\nasset wave \"wave.wav\" { sha256 = %q format = wav frames = %d rate = 48000Hz channels = 1 }\nsampler hit { asset = wave root = c3 mode = oneshot voices = 2 }\ntrack lead hit {}\npattern melody { c3 . . . }\nscene main { lead = melody }\nsong { main }\n", strings.Repeat("0", 64), frames))
 	err := rules.Validate(p, 48000, 128, &packs{})
-	if err == nil || !strings.Contains(err.Error(), "64 MiB resident PCM budget: asset wave needs") {
+	want := fmt.Sprintf("asset wave exceeds the resident limit of %d frames (found %d)", int64(rules.MaxFrames), frames)
+	if err == nil || err.Error() != want {
+		t.Fatalf("over the frame limit: %v, want %q", err, want)
+	}
+}
+
+func TestValidateRefusesAssetsOverTheResidentBudget(t *testing.T) {
+	// Each asset is under the frame limit; together they exceed 64 MiB.
+	const frames = 5_000_000
+	asset := func(name string) string {
+		return fmt.Sprintf("asset %s \"%s.wav\" { sha256 = %q format = wav frames = %d rate = 48000Hz channels = 2 }\n", name, name, strings.Repeat("0", 64), frames)
+	}
+	p := compile(t, "cicada 2\ntempo 120\n"+asset("one")+asset("two")+
+		"sampler hit { asset = one root = c3 mode = oneshot voices = 2 }\nsampler tap { asset = two root = c3 mode = oneshot voices = 2 }\n"+
+		"track lead hit {}\ntrack second tap {}\npattern melody { c3 . . . }\nscene main { lead = melody second = melody }\nsong { main }\n")
+	err := rules.Validate(p, 48000, 128, &packs{})
+	if err == nil || !strings.Contains(err.Error(), "64 MiB resident PCM budget: asset two needs 38.1 MiB on top of 38.1 MiB already resident") {
 		t.Fatalf("over the budget: %v", err)
 	}
 }

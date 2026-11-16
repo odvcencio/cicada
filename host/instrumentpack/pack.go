@@ -450,5 +450,5 @@ func outsideProject(dir, rel string, err error) error {
 	if inside, relErr := filepath.Rel(base, resolved); relErr == nil && inside != ".." && !strings.HasPrefix(inside, ".."+string(filepath.Separator)) {
 		return err
 	}
-	return fmt.Errorf("%s leads outside the project folder through a symlink (it resolves to %s); packs are read only inside the project, so copy or hard-link the pack folder into it", rel, resolved)
+	return fmt.Errorf("%s leads outside the project folder through a symlink (it resolves to %s); packs are read only inside the project, so copy or hard-link the pack folder into it (cp -al <folder> <copy> makes hard links on the same file system); see docs/sampler/packs.md", rel, resolved)
 }

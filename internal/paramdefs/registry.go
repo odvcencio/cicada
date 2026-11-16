@@ -39,6 +39,10 @@ type Descriptor struct {
 	// registry row does.
 	Isolated     []float64 `json:"isolated,omitempty"`
 	IsolatedNote string    `json:"isolated_note,omitempty"`
+	// Note says what the other fields cannot, such as the other spellings a
+	// send's path and value take. It is for authors and agents; the kernel
+	// tables ignore it.
+	Note string `json:"note,omitempty"`
 }
 
 // Registry is loaded from the single checked-in data source in stable order;
@@ -118,7 +122,7 @@ func keysSplit() int {
 		}
 	}
 	for _, d := range Registry[split:] {
-		if !strings.HasPrefix(d.ID, "keys.") && !strings.HasPrefix(d.ID, "amp.") && !strings.HasPrefix(d.ID, "chorus.") && !strings.HasPrefix(d.ID, "fx.chorus.") && !strings.HasPrefix(d.ID, "fx.tape.") && !strings.HasPrefix(d.ID, "instrument.p") {
+		if !strings.HasPrefix(d.ID, "keys.") && !strings.HasPrefix(d.ID, "amp.") && !strings.HasPrefix(d.ID, "chorus.") && !strings.HasPrefix(d.ID, "fx.chorus.") && !strings.HasPrefix(d.ID, "fx.tape.") && !strings.HasPrefix(d.ID, "instrument.p") && d.ID != "fx.delay.highpass" {
 			panic("paramdefs: only append-only extensions may follow keyboard rows")
 		}
 	}

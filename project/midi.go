@@ -106,7 +106,7 @@ func validateMidiProject(p *Project) error {
 	if p.MIDI == nil {
 		return nil
 	}
-	if p.Edition != 2 || p.Format != FormatID2 {
+	if p.Edition != 2 || !p.formatAtLeast2() {
 		return fmt.Errorf("CICADA-VERSION: MIDI mappings require edition 2 and cicada.project/2")
 	}
 	if p.MIDI.Ports == nil || p.MIDI.Maps == nil || len(p.MIDI.Ports) > 32 || len(p.MIDI.Maps) > 256 {

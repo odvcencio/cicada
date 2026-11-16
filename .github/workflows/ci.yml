@@ -40,8 +40,9 @@ env:
 #     desktop and platform-contract jobs and the four M2 jobs (WASM parity,
 #     one-hour memory, AudioWorklet browser tests and gates);
 #   - the schedule and manual runs only: the WAV parity and render-cache
-#     sweeps, macOS desktop exhaustive, and the M2 soak, which a manual run
-#     gets only with its soak input.
+#     sweeps, macOS desktop exhaustive, the measured sound directions of every
+#     control, and the M2 soak, which a manual run gets only with its soak
+#     input.
 concurrency:
   group: cicada-ci-${{ github.ref }}-${{ github.event_name }}
   # A newer push to a pull request cancels its older run. Runs on main finish,
@@ -271,7 +272,30 @@ jobs:
           make test-agent-surface | tee "$RUNNER_TEMP/agent-surface.log"
           # go test exits 0 when -run matches nothing, for example after a rename.
           grep -q -- '^--- PASS: TestAgentTaskSuite ' "$RUNNER_TEMP/agent-surface.log"
+          grep -q -- '^--- PASS: TestAgentBrighterBassTask ' "$RUNNER_TEMP/agent-surface.log"
           grep -q -- '^--- PASS: TestAgentDocumentationExamples ' "$RUNNER_TEMP/agent-surface.log"
+
+  # Every probeable sound control rendered at three values and compared with
+  # internal/controls/directions.json, which cicada params and cicada explain
+  # read for their measured directions. Pull requests probe a sample in the
+  # host/soundprobe unit test; the nightly run probes all of them.
+  sound-probe-nightly:
+    name: Measured sound directions (every control)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Probe every control
+        run: |
+          set -euo pipefail
+          CICADA_PROBE_ALL=1 go test ./host/soundprobe -run '^TestMeasuredDirectionsMatchTheTable$' -count=1 -v -timeout 25m
 
   parity-amd64:
     name: PCM24 parity (amd64, WASM)
@@ -298,7 +322,7 @@ jobs:
       - name: Require the master-chain digests, and no fused multiply-adds on the render path, with GOAMD64=v3
         run: |
           set -euo pipefail
-          GOAMD64=v3 go test ./kernel/dsp/detmath ./kernel/fx/... ./kernel/mix ./kernel/loudness -run '^Test([A-Za-z0-9]*Digest[A-Za-z0-9]*|TruePeakWindowIsBlackman|SpecialValues|TrigOutOfRange|RenderPathAvoidsMathLibrary)$' -count=1
+          GOAMD64=v3 go test ./kernel/dsp/detmath ./kernel/fx/... ./kernel/mix ./kernel/loudness ./kernel/voice/acid -run '^Test([A-Za-z0-9]*Digest[A-Za-z0-9]*|TruePeakWindowIsBlackman|SpecialValues|TrigOutOfRange|RenderPathAvoidsMathLibrary)$' -count=1
           GOAMD64=v3 scripts/check-fma.sh
       # The arm64 job compares its exported WAV files with these hashes.
       - name: Hash the WAV files cicada render writes for the parity subset
@@ -405,7 +429,7 @@ jobs:
           test "$(go env GOARCH)" = arm64
           go test ./kernel/modulate -count=1 -v | tee build/parity/modulate.txt
           go test ./cmd/cicada-kernel-wasm -run '^TestDetailVectors$' -count=1 -v | tee -a build/parity/modulate.txt
-          go test ./kernel/dsp/detmath ./kernel/fx/... ./kernel/mix ./kernel/loudness -run '^Test([A-Za-z0-9]*Digest[A-Za-z0-9]*|TruePeakWindowIsBlackman|[A-Za-z0-9]*Accuracy|SpecialValues|TrigOutOfRange)$' -count=1 -v | tee "$RUNNER_TEMP/arm64-digests.log"
+          go test ./kernel/dsp/detmath ./kernel/fx/... ./kernel/mix ./kernel/loudness ./kernel/voice/acid -run '^Test([A-Za-z0-9]*Digest[A-Za-z0-9]*|TruePeakWindowIsBlackman|[A-Za-z0-9]*Accuracy|SpecialValues|TrigOutOfRange)$' -count=1 -v | tee "$RUNNER_TEMP/arm64-digests.log"
           go test ./cmd/cicada -run '^TestExportLoudness' -count=1 -v | tee -a "$RUNNER_TEMP/arm64-digests.log"
           # The decay pins: long renders of voices and effects whose state or
           # smoothed controls decay toward zero, with the output hash that amd64
@@ -420,11 +444,11 @@ jobs:
           missing=0
           for name in TestEQDigestIsIdenticalOnEveryTarget TestMeterDigestIsIdenticalOnEveryTarget TestTruePeakWindowIsBlackman TestExportLoudnessWithoutLimiterKeepsCrestPreservingGain \
             TestIdentityDigest TestAccuracy TestPowAccuracy TestSpecialValues TestCompressorDigest TestDeesserDigest TestDelayDigest TestDriveDigest TestReverbDigest \
-            TestLimiterDigest TestTransientDigest TestWidthDigest TestRoomDigest TestChainDigest TestNormalizeDigest TestChorusDigest TestConvolutionDigest TestTapeDigest TestMixDigest TestAmpcabOutputDigest TestTrigOutOfRange \
+            TestLimiterDigest TestTransientDigest TestWidthDigest TestRoomDigest TestChainDigest TestNormalizeDigest TestChorusDigest TestConvolutionDigest TestTapeDigest TestEchoHighpassDigest TestTapeHighpassDigest TestMixDigest TestAmpcabOutputDigest TestTrigOutOfRange \
             TestTanh32Digest TestAtanDigest TestAtanAccuracy TestSinPiDigest TestSinPiAccuracy TestLog1pDigest TestLog1pAccuracy \
             TestNearDigest TestTanhNearAccuracy TestSinPiNearAccuracy TestFilterCoefficientDigest \
             TestDecayingStateIsNeverSubnormal TestHeldChordStateIsNeverSubnormal TestReleaseStateIsNeverSubnormal TestReverbTailIsNeverSubnormal TestControlsAreNeverSubnormal \
-            TestChorusIsNeverSubnormal TestTapeControlsAreNeverSubnormal TestAmpCabinetIsNeverSubnormal TestGainIsNeverSubnormal; do
+            TestChorusIsNeverSubnormal TestTapeControlsAreNeverSubnormal TestAmpCabinetIsNeverSubnormal TestGainIsNeverSubnormal TestAcidDigest; do
             if ! grep -q -- "^--- PASS: $name " "$RUNNER_TEMP/arm64-digests.log"; then
               echo "No PASS line for $name; was it renamed or skipped?" >&2
               missing=1
@@ -640,6 +664,41 @@ jobs:
             build/bench-agent-loop.json
             build/bench-agent-loop.txt
 
+  # What one edit costs (make bench-apply; spec studio-local-first revision 1,
+  # PC1): five hot edits on the reference scores REF-S, REF-P and REF-L through
+  # edit.Apply with the edit service's options, timed, with the work of each
+  # Apply counted (syntax parses, items lowered, validation passes, engine
+  # builds) and its state checked against a full compile of its result. It
+  # reports and gates nothing yet, and it is not part of the required check.
+  # REF-S and REF-P run 200 times after 10 warm-ups; REF-L, at about half a
+  # second an edit, 5 times after one.
+  edit-cost:
+    name: Edit cost per Apply (report)
+    needs: changes
+    if: ${{ needs.changes.outputs.bench == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Measure
+        run: make bench-apply APPLY_BENCH_ENV="CICADA_APPLY_BENCH_LARGE_RUNS=5 CICADA_APPLY_BENCH_LARGE_WARMUPS=1"
+      - name: Print the table
+        if: always()
+        run: cat build/bench-apply.md >> "$GITHUB_STEP_SUMMARY" || true
+      - name: Save the table
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: edit-cost
+          if-no-files-found: warn
+          path: build/bench-apply.md
+
   # Every example score, rendered in full with and without the stored mix that
   # loudness passes and peak normalization replay (render.MasterCache), must
   # write the same bytes: plain, normalized, and at two loudness targets. The
@@ -831,6 +890,7 @@ jobs:
           make test-agent-surface | tee build/agent-surface-report.txt
           # go test exits 0 when -run matches nothing, for example after a rename.
           grep -q -- '^--- PASS: TestAgentTaskSuite ' build/agent-surface-report.txt
+          grep -q -- '^--- PASS: TestAgentBrighterBassTask ' build/agent-surface-report.txt
           grep -q -- '^--- PASS: TestAgentDocumentationExamples ' build/agent-surface-report.txt
       - name: Save gate reports
         if: always()
@@ -973,13 +1033,14 @@ jobs:
 
   # Holds every job of this run to its time budget in scripts/ci-job-budgets.tsv:
   # a warning above the budget, a failure above 20 minutes, the project's rule
-  # for pull-request jobs. It waits for every hosted job, so it is not part of
+  # for pull-request jobs. It waits for its hosted and self-hosted dependencies,
+  # so it is not part of
   # the required check, which would then finish only when CI does: a slow job
   # shows here, in red when it broke the rule, without holding up a merge. The
   # self-hosted M2 AudioWorklet gates are judged when they have finished.
   ci-budgets:
     name: CI job time budgets
-    needs: [changes, native-go127, native-go127-cli, commit-hygiene, repo-checks, parity-amd64, parity-arm64, wav-parity-sweep-amd64, wav-parity-sweep-arm64, detmath-proofs, studio-cli, bench, lane-stress-pr, m0-core, m0-render-paths, m0-kernel, m0-wasm, m0, workstation, studio-build, studio-browser, macos-desktop, macos-native-contracts, m2-wasm-parity, m2-wasm-memory, m2-browser]
+    needs: [changes, native-go127, native-go127-cli, commit-hygiene, repo-checks, parity-amd64, parity-arm64, wav-parity-sweep-amd64, wav-parity-sweep-arm64, detmath-proofs, studio-cli, bench, edit-cost, lane-stress-pr, m0-core, m0-render-paths, m0-kernel, m0-wasm, m0, workstation, studio-build, studio-browser, macos-desktop, macos-native-contracts, m2-wasm-parity, m2-wasm-memory, m2-browser]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -1127,7 +1188,14 @@ jobs:
     name: Studio browser suites (shard ${{ matrix.shard }}/4)
     needs: [changes, studio-build]
     if: ${{ needs.changes.outputs.studio_browser == 'true' }}
-    runs-on: ubuntu-24.04
+    # With CI_TAILNET_POOL on, pushes and same-repository pull requests use
+    # the pool. A fork's unchanged workflow routes to hosted runners, but a
+    # fork can edit it: repository settings require approval for every outside
+    # contributor run, and reviewers must read .github/ changes before approval.
+    # Each shard has its own state and scratch folders. Before enabling the
+    # variable, the pool must pass all four shards repeatedly and the job budget
+    # must be re-measured on the pool. Unset it to return to hosted runners.
+    runs-on: ${{ (vars.CI_TAILNET_POOL == 'on' && (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository))) && fromJSON('["tailnet-pool"]') || 'ubuntu-24.04' }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -1138,6 +1206,9 @@ jobs:
       CHROME_VERSION: 152.0.7977.64
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        id: checkout
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: '1.27.3'
@@ -1159,7 +1230,7 @@ jobs:
         shell: bash
         run: bash scripts/ci-studio-browser.sh run ${{ matrix.shard }}
       - name: Save Studio continuity reports
-        if: always()
+        if: ${{ always() && steps.checkout.outcome == 'success' }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: studio-continuity-reports-${{ matrix.shard }}
@@ -1168,6 +1239,8 @@ jobs:
             build/studio-continuity-report.txt
             build/studio-modulation-report.txt
             build/modulation-source-proof/
+            build/studio-add-insert-report.txt
+            build/studio-add-insert-server.log
             build/studio-chorus-report.txt
             build/studio-pattern-machine-report.txt
             build/studio-pattern-machine-server.log
@@ -1928,10 +2001,10 @@ jobs:
     # scripts/ci-changes.sh); pushes to main always run it.
     if: ${{ (github.event_name == 'pull_request' || github.event_name == 'push') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && needs.changes.outputs.m2_gates == 'true' }}
     # This job runs on the self-hosted reference machine, so a pull request from
-    # a fork must not run it. The machine has one runner: every queued run waits
-    # for the one before it, so this job holds only the CPU budget, which a
-    # hosted runner cannot measure (it measured 1.296 ms against 0.67 ms).
-    runs-on: [self-hosted, linux, x64]
+    # a fork must not run it. Its label pins it to the reference runner; pool
+    # runners cannot take it. It holds only the CPU budget, which a hosted
+    # runner cannot measure (it measured 1.296 ms against 0.67 ms).
+    runs-on: [self-hosted, linux, x64, audio-soak]
     timeout-minutes: 20
     env:
       GOWORK: off
@@ -1975,7 +2048,9 @@ jobs:
     if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.soak)
     # Its CPU gate (0.67 ms per callback) is measured on the reference machine.
     # A hosted runner measured 1.296 ms, so this job stays on the self-hosted one.
-    runs-on: [self-hosted, linux, x64]
+    # The reference machine only: these jobs measure CPU and timing, so they
+    # must not land on a pool runner.
+    runs-on: [self-hosted, linux, x64, audio-soak]
     timeout-minutes: 55
     env:
       GOWORK: off

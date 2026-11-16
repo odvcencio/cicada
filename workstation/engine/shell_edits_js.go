@@ -22,6 +22,16 @@ import (
 
 const shellIdleRefresh = 250 * time.Millisecond
 
+// shellUI is the bound shell's edit queue; shellSay shows a message in its
+// status line, so a keyboard command that does nothing can say why.
+var shellUI *workspaceUI
+
+func shellSay(message string) {
+	if shellUI != nil {
+		shellUI.status.Set(message)
+	}
+}
+
 func bindShellEdits(ctx context.Context, root js.Value, props workspaceProps) func() {
 	patch := js.Undefined()
 	if gosx := js.Global().Get("__gosx"); workspacePresent(gosx) && workspacePresent(gosx.Get("host")) && workspacePresent(gosx.Get("host").Get("patch")) {
@@ -32,7 +42,7 @@ func bindShellEdits(ctx context.Context, root js.Value, props workspaceProps) fu
 		return func() {}
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	u := &workspaceUI{root: root, patch: patch, props: props, ctx: ctx, cancel: cancel, jobs: make(chan workspaceJob, 128), revision: signal.New(props.Revision), sourceRevision: props.SourceRevision, status: signal.New(""), drafts: map[string]workspaceDraft{}, editors: map[string]workspaceEditorBaseline{}, shell: true, own: workspaceVersion{Revision: props.Revision, SourceRevision: props.SourceRevision}}
+	u := &workspaceUI{root: root, patch: patch, props: props, ctx: ctx, cancel: cancel, jobs: make(chan workspaceJob, 128), revision: signal.New(props.Revision), sourceRevision: props.SourceRevision, status: signal.New(""), transportError: signal.New(""), drafts: map[string]workspaceDraft{}, editors: map[string]workspaceEditorBaseline{}, shell: true, own: workspaceVersion{Revision: props.Revision, SourceRevision: props.SourceRevision}}
 	u.seedEditorBaseline()
 	// A page that replaced the old one in place can keep the old lock.
 	u.syncHistoryLock()
@@ -53,7 +63,7 @@ func bindShellEdits(ctx context.Context, root js.Value, props workspaceProps) fu
 	}
 	watch := signal.Watch(func() {
 		if node := domCall(root, "querySelector", "[data-workspace-status]"); workspacePresent(node) {
-			node.Set("textContent", u.status.Get())
+			node.Set("textContent", u.statusText())
 		}
 		if node := domCall(root, "querySelector", "[data-workspace-retry]"); workspacePresent(node) {
 			node.Set("hidden", !u.blocked.Load())
@@ -118,6 +128,7 @@ func bindShellEdits(ctx context.Context, root js.Value, props workspaceProps) fu
 		}
 	}
 	domSet(root, "data-shell-edits", "ready")
+	shellUI = u
 	go u.run()
 	return func() {
 		if u.closed.Swap(true) {
@@ -137,6 +148,9 @@ func bindShellEdits(ctx context.Context, root js.Value, props workspaceProps) fu
 		u.clearQueue()
 		u.restoreAll()
 		domDrop(root, "data-shell-edits")
+		if shellUI == u {
+			shellUI = nil
+		}
 	}
 }
 
@@ -299,9 +313,9 @@ func (u *workspaceUI) shellRegions(job workspaceJob, mode int) string {
 // refreshStale queues a cancellable read of the stale regions: only the
 // visible ones when a region opens, all of them when the queue is idle.
 func (u *workspaceUI) refreshStale(mode int) {
-	if u.reading || u.closed.Load() {
-		// One read at a time: it covers what is stale when it runs, and an
-		// edit cancels it. A region that opens meanwhile is read after it.
+	if u.reading || u.busy.Load() || u.closed.Load() {
+		// Retry a reveal after the current read or job finishes, when its
+		// region patches have settled.
 		u.revealWanted = u.revealWanted || mode == regionsVisibleStale
 		return
 	}
@@ -351,8 +365,8 @@ func shellEnginesKept(wrapper js.Value, markup string) bool {
 
 // applyRegions applies an edit or read response under rule R1. The region the
 // server lists first is patched first; the regions that need no HTML advance
-// before the rest are patched, one per task, so input keeps flowing. Every
-// region left on an older revision is marked stale.
+// before the rest are patched one per task, so input keeps flowing. Regions
+// on another revision are marked stale before patching begins.
 func (u *workspaceUI) applyRegions(projection workspaceProjection, job workspaceJob) (err error) {
 	defer func() {
 		if recover() != nil {
@@ -380,6 +394,22 @@ func (u *workspaceUI) applyRegions(projection workspaceProjection, job workspace
 		if wrapper := domRegion(update.ID); workspacePresent(wrapper) && !shellHeld(wrapper) && !shellEnginesKept(wrapper, update.HTML) && shellVisible(wrapper) && len(u.jobs) == 0 && !hasUnsavedWork() {
 			u.reload()
 			return nil
+		}
+	}
+	// Mark old regions before yielding between patches.
+	// A read that returns a revision this tab did not write reveals another
+	// change. A region it did not render still shows the song from before
+	// that change, whatever this tab saves next, until it is rendered again.
+	foreign := job.method == methodGet && (projection.Revision != u.own.Revision || projection.SourceRevision != u.own.SourceRevision)
+	wrappers := domCall(u.root, "querySelectorAll", "[data-update-region]")
+	for i := 0; i < wrappers.Length(); i++ {
+		// The pair names the saved state: a save to another project file
+		// moves only the source revision, and forms carry both.
+		if wrapper := wrappers.Index(i); workspaceAttr(wrapper, "data-region-revision") != projection.Revision || workspaceAttr(wrapper, "data-region-source-revision") != projection.SourceRevision {
+			domSet(wrapper, "data-region-stale", "")
+			if foreign {
+				domSet(wrapper, "data-region-foreign", "")
+			}
 		}
 	}
 	scrolls := u.captureScrolls()
@@ -440,21 +470,6 @@ func (u *workspaceUI) applyRegions(projection workspaceProjection, job workspace
 	}
 	if len(projection.Regions) < 2 {
 		u.advanceRegions(projection, job, confirm)
-	}
-	// A read that returns a revision this tab did not write reveals another
-	// change. A region it did not render still shows the song from before
-	// that change, whatever this tab saves next, until it is rendered again.
-	foreign := job.method == methodGet && (projection.Revision != u.own.Revision || projection.SourceRevision != u.own.SourceRevision)
-	wrappers := domCall(u.root, "querySelectorAll", "[data-update-region]")
-	for i := 0; i < wrappers.Length(); i++ {
-		// The pair names the saved state: a save to another project file
-		// moves only the source revision, and forms carry both.
-		if wrapper := wrappers.Index(i); workspaceAttr(wrapper, "data-region-revision") != projection.Revision || workspaceAttr(wrapper, "data-region-source-revision") != projection.SourceRevision {
-			domSet(wrapper, "data-region-stale", "")
-			if foreign {
-				domSet(wrapper, "data-region-foreign", "")
-			}
-		}
 	}
 	u.syncHistoryLock()
 	workspaceRestoreScrolls(scrolls, x, y)
@@ -607,20 +622,27 @@ func (u *workspaceUI) settleHold(h *shellHold, outcome int) {
 	case u.reloading && outcome == holdOwn:
 		js.Global().Get("sessionStorage").Call("setItem", shellNotice, shellChanged)
 	case outcome == holdFailed || u.blocked.Load() || !h.form.Get("isConnected").Bool() || domHas(region, "data-region-stale"):
-		u.status.Set("This panel could not be refreshed, so nothing was saved. Submit it again.")
+		u.holdStatus("This panel could not be refreshed, so nothing was saved. Submit it again.")
 	case !shellVisible(region):
-		u.status.Set(shellClosed)
+		u.holdStatus(shellClosed)
 	case outcome == holdForeign:
 		domSet(h.form, "data-workspace-updated", "")
-		u.status.Set(shellForeign)
+		u.holdStatus(shellForeign)
 	case shellFormValues(h.form, h.submitter) != h.values:
 		domSet(h.form, "data-workspace-updated", "")
-		u.status.Set(shellChanged)
+		u.holdStatus(shellChanged)
 	case workspacePresent(h.submitter):
 		h.form.Call("requestSubmit", h.submitter)
 	default:
 		h.form.Call("requestSubmit")
 	}
+}
+
+func (u *workspaceUI) holdStatus(message string) {
+	if current := u.status.Get(); strings.Contains(current, "this was not sent:") || strings.Contains(current, "Not sent:") {
+		message = current + " " + message
+	}
+	u.status.Set(message)
 }
 
 const (
@@ -696,7 +718,7 @@ func (u *workspaceUI) dropHistory() {
 			return id == "undo-form" || id == "redo-form"
 		}
 		return job.target == "/__actions/undo" || job.target == "/__actions/redo"
-	}) > 0 {
+	}) != "" {
 		u.status.Set(u.status.Get() + " The Undo or Redo waiting behind it was not sent.")
 	}
 }

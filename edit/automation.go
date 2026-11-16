@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 
+	"m31labs.dev/cicada/internal/paramdefs"
 	"m31labs.dev/cicada/kernel/seq"
 
 	gts "github.com/odvcencio/gotreesitter"
@@ -16,7 +18,12 @@ import (
 // (an `automate <path> { ... }` block). OldAt names the point being moved; it
 // is empty for a new point. Shape is linear, step, smooth, exponential or
 // curve and defaults to linear; Curve is the tension and only applies to curve.
-// A lane that does not exist yet is created.
+// A lane that does not exist yet is created. A send lane is
+// param:<track>.send.delay or param:<track>.send.reverb, or
+// param:<track>.send.<name> with the declared name of the delay, tape or
+// reverb effect. Its points are all in dB (-60dB to 0dB, or off for silence),
+// and then the lane ramps in dB, or all linear gains from 0 to 1, and then it
+// ramps in gain.
 //
 // Example: {"kind":"setautomationpoint","entity":"param:bass.cutoff","at":"@4.1.1","value":"2kHz","shape":"smooth"}
 // Example: {"kind":"setautomationpoint","entity":"param:bass.cutoff","at":"@4.1.1","value":"2kHz","shape":"linear"}
@@ -109,8 +116,13 @@ func automationPointSource(ctx *Context, path string, point automationPoint, rem
 		return nil, fmt.Errorf("score must validate before editing automation")
 	}
 
+	plan, err := ctx.CurrentPlan()
+	if err != nil || plan == nil || plan.ResolveParam == nil {
+		return nil, fmt.Errorf("score parameters must validate before editing automation")
+	}
+	samePath := func(a, b string) bool { return a == b || plan.SameParameterPath != nil && plan.SameParameterPath(a, b) }
 	for _, lane := range score.Automation {
-		if lane.Path == path {
+		if samePath(lane.Path, path) {
 			file = lane.Position.File
 			if file == "" {
 				file = ctx.Options.Path
@@ -131,10 +143,6 @@ func automationPointSource(ctx *Context, path string, point automationPoint, rem
 		return stageProjectSource(ctx, file, source, after), nil
 	}
 
-	plan, err := ctx.CurrentPlan()
-	if err != nil || plan == nil || plan.ResolveParam == nil {
-		return nil, fmt.Errorf("score parameters must validate before editing automation")
-	}
 	resolved, err := plan.ResolveParam(path)
 	if err != nil {
 		return nil, err
@@ -168,7 +176,19 @@ func automationPointSource(ctx *Context, path string, point automationPoint, rem
 	if !remove {
 		d.DisplayStep = 0
 		raw, _ := json.Marshal(point.value)
-		literal, err = CanonicalMixerLiteral(d, raw)
+		if paramdefs.IsTrackSend(d) && point.value == "off" {
+			// Silence in a send lane written in dB.
+			literal = "off"
+		} else if paramdefs.IsTrackSend(d) && strings.HasSuffix(strings.ToLower(point.value), "db") {
+			// A send point takes dB as a track's send line does.
+			literal, err = canonicalSendLiteral(raw)
+			if err == nil {
+				number, _ := strconv.ParseFloat(point.value[:len(point.value)-2], 64)
+				literal = strconv.FormatFloat(number, 'f', -1, 64) + "dB"
+			}
+		} else {
+			literal, err = CanonicalMixerLiteral(d, raw)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -184,7 +204,7 @@ func automationPointSource(ctx *Context, path string, point automationPoint, rem
 	var lane *gts.Node
 	for i := 0; i < root.NamedChildCount(); i++ {
 		n := root.NamedChild(i)
-		if w.Type(n) == "automate_decl" && w.Text(w.Field(n, "path")) == path {
+		if w.Type(n) == "automate_decl" && samePath(w.Text(w.Field(n, "path")), path) {
 			lane = n
 			break
 		}

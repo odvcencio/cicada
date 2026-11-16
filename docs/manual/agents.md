@@ -30,10 +30,12 @@ The `--json` formats share these rules:
   | --- | --- | --- | --- |
   | `check`, `apply`, `intents`, `diagnostics`, `audition` | 0 | 1 | 1 |
   | `render`, `stems` | 0 | 1 | 2 |
+  | `params`, `explain` | 0 | 1 | 2 for a usage error, 1 for an unknown name |
   | `help`, `agents` | 0 | — | 2 |
 
 Usage errors and unknown names have the codes `usage`, `unknown_kind`
-(`intents`), `unknown_code` (`diagnostics`) and `unknown_command` (`help`).
+(`intents`), `unknown_code` (`diagnostics`), `unknown_command` (`help`),
+`no_match` (`params`), and `unknown_thing` and `unknown_track` (`explain`).
 
 `cicada audition --json` is described in [Audition](audition.md), and
 `cicada verify-wav --report` in [Exporting](exporting.md). The loudness fields
@@ -424,7 +426,9 @@ the position the checker reports: `line` and `column` count from 1, columns
 count Unicode characters, and `offset` is the byte offset from the start of the
 file. The checker reports a point, so `end` marks the end of the character at
 `start`, as the language server does. `related` points at the first declaration
-of a duplicate. `hint` is the advice `cicada check` prints. With
+of a duplicate. `expected` and `found`, when the checker knows them, are the
+value it wanted and the value it found, as short text such as `MIDI 24 to 82`
+and `MIDI 119`. `hint` is the advice `cicada check` prints. With
 `--profile browser`, `browser_profile` lists the voices each track reserves
 against the portable limits. A score with sampler packs lists each pack that
 loaded in `packs`: its `sampler`, its `manifest` path and the `velocity_law` it
@@ -597,7 +601,9 @@ source file of the project that holds what the edit would have to change
 `parameter`, the `value` given, `min`, `max` and `unit` of a value outside
 its range (reason `value_out_of_range`). A refused `editnotes` batch also carries
 `diagnostic` `CICADA-NOTES`, its `reason` and the `note` (see
-[Editors](editors.md)). The text error names
+[Editors](editors.md)). When a batch leaves the score with an error that
+`cicada check` reports with a code, `diagnostic` is that code, and `expected`
+and `found` are its values when it has them. The text error names
 the intent the same way: `intents[1].entity (togglestep): unknown pattern
 "rif"`.
 
@@ -683,10 +689,12 @@ The same batch with the pattern's settings instead applies and writes:
 
 ## render --json
 
+`cicada stems ... --json` includes `clipped_count` on each integer PCM output, counting clipped samples.
+
 `cicada render ... --json` describes what it rendered: each file in `outputs`
 as its WAV header gives it (`sample_rate`, `bit_depth`, `encoding` `pcm` or
-`float`, `channels`, `frames` and `duration_seconds`), and the bar range
-(`from_bar`, `bars`). A render without a loudness target adds `levels`: the
+`float`, `channels`, `frames`, `duration_seconds` and `tail_end_peak_dbfs`), and the bar range
+(`from_bar`, `bars`). `tail_end_peak_dbfs` is the sample peak of the last 100 ms in dBFS, or null for digital silence; it helps identify a tail cut off while still sounding. A render without a loudness target adds `levels`: the
 pre-limiter peak and overs, the output peak, and the counts of samples at the
 ceiling and clipped (`ceiling_count`, `clipped_count`, as `verify-wav
 --report` names them), with peaks as linear full-scale values. `cicada stems ...
@@ -704,15 +712,21 @@ With a loudness target (`--loudness`, or `--export` with a profile that sets
 one), `loudness` gives the target and tolerance, the measured
 `integrated_lufs`, `true_peak_dbtp` and `sample_peak_dbfs`, the
 `applied_gain_db`, whether `target_met`, the passes, where the gain went
-(`gain_stage`), the master limiter's gain reduction and the DC correction. A
-measurement is `null` when there is none.
+(`gain_stage`), the limiters' gain reduction and the DC correction. A
+measurement is `null` when there is none. `gain_stage` is `master_input`
+when there is no master chain or the last limiter is its first insert;
+`before_last_limiter` when inserts precede the last limiter; and `post_chain`
+when a chain has no limiter. New values may be added. `master_limiter_reduction_db`
+is the largest reduction of any master limiter. `last_limiter_reduction_db` is
+the reduction of the last master limiter, which the 6 dB guard bounds.
+`largest_limiter_reduction_db` also includes the safety limiter.
 
 The search runs up to six passes and synthesizes the song only once.
 `syntheses`, `replays` and `repeats` count how the `passes` got their audio,
 and add up to `passes`: a synthesis renders the song in full; a replay runs
-only the master stage again on the first pass's stored mix; a repeat is not
-rendered, because its gain differs from an earlier pass's by less than the
-renderer can show, so its audio and measurement are that pass's. `pass_log`
+again only what follows the export gain, on the first pass's stored mix; a
+repeat is not rendered, because its gain differs from an earlier pass's by less
+than the renderer can show, so its audio and measurement are that pass's. `pass_log`
 has one entry per pass, in order: the `gain_db` it applied, its measured
 `integrated_lufs` and `true_peak_dbtp`, and `render`, which is `synthesized`,
 `replayed` or `repeated` (with `same_as`, the number of the pass it repeats).
@@ -720,6 +734,8 @@ The audio and every other number are the same as when each pass synthesizes
 the song. With the environment variable `CICADA_RENDER_NO_REUSE=1` every pass
 does: `syntheses` equals `passes` and nothing is replayed or repeated. Use it
 to check whether reuse caused a difference you see.
+
+For a silent file ending, an output includes `"tail_end_peak_dbfs": null`; otherwise it contains the measured dBFS peak.
 
 <!-- agent-example: render song.cicada -o song.wav --bars 2 --loudness -14 --json -->
 
@@ -769,7 +785,7 @@ to check whether reuse caused a difference you see.
         "render": "replayed"
       }
     ],
-    "gain_stage": "post_chain"
+    "gain_stage": "master_input"
   }
 }
 ```
@@ -866,23 +882,37 @@ command prints and, when the documentation gives a fix for that cause, a
 
 <!-- render-error-codes -->
 - `usage`: the arguments are wrong.
+- `flag_out_of_range`: a flag value is outside the range the command takes;
+  `flag`, `value`, `bound` (`maximum` or `minimum`) and `limit` name it, as
+  in `--tail 61s` against the `60s` maximum. Exit status 2, as for `usage`.
 - `unreadable_score`: the score cannot be read.
 - `invalid_score`: the score has errors; `diagnostics` lists them.
 - `export_settings`: the `--export` profile is unknown or cannot be applied.
 - `output_exists`: the stems folder already exists.
+- `output_not_writable`: the folder of the `-o` WAV is missing and cannot be
+  created; `path` names that folder, in the form the document's other paths
+  use. A missing folder that can be created is created, as by every command
+  that writes to `-o`.
 - `sampler_memory`: the sampler packs exceed the resident PCM cap.
+- `unknown_track`: `stems --tracks` names a track the score does not have; `valid_tracks` lists the score's tracks.
 - `render_failed`: another render or write error; the message says which.
 - `true_peak_and_dc_unmet`: no pass met the true-peak ceiling and the DC limit.
 - `loudness_unmeasurable`: the render has no measurable loudness.
 - `true_peak_over_ceiling`: the best pass is still above the true-peak ceiling.
-- `limiter_reduction_over_maximum`: the master limiter would reduce more than 6 dB.
-- `loudness_shortfall_at_limiter_maximum`: the target needs more than the master limiter's 6 dB maximum.
-- `loudness_shortfall_at_input_gain_cap`: the target needs more than +12 dB ahead of the master limiter.
-- `loudness_shortfall_at_true_peak_ceiling`: without a master limiter, the gain stops at the true-peak ceiling.
-- `loudness_target_missed`: the best pass is outside the tolerance for another reason.
+- `limiter_reduction_over_maximum`: the master chain's last limiter would reduce more than 6 dB.
+- `loudness_shortfall_at_limiter_maximum`: the target needs more than the 6 dB maximum of the master chain's last limiter.
+- `loudness_shortfall_at_input_gain_cap`: the target needs more than +12 dB of gain into the master chain's last limiter; the message names track and master levels (the master is limited to +6 dB), and a lower target.
+- `loudness_shortfall_at_true_peak_ceiling`: the gain stops at the true-peak ceiling: without a master limiter at the best pass, or, with one, a louder pass went over the ceiling while still too quiet.
+- `loudness_shortfall_at_gain_maximum`: without a master limiter, the gain reached its maximum and the mix is still too quiet. The maximum is +24 dB minus any positive master level.
+- `loudness_target_missed_at_pass_limit`: the search used all six passes before it came within the tolerance; the message names the nearest louder pass that broke a limit, if one did.
+- `loudness_target_missed`: the best pass is outside the tolerance and none of the limits above stopped the search; the search's rules do not produce it today.
 <!-- /render-error-codes -->
 
 After a shortfall the best pass is still written and listed in `outputs`.
+A shortfall that names a limit gives it in `limit` as well, as a value with its
+unit: `6dB` for the last limiter's maximum reduction, `+12dB` for the gain cap
+into it, `+24dB` for the maximum export gain without a limiter, the export's
+ceiling in `dBTP` for the true-peak ceiling, and `6` for the passes.
 
 `remedy` has a `summary`, the `file` to change, the file's `revision` when the
 render read it (the form `cicada apply` uses), and the `score_text` to put in
@@ -950,6 +980,7 @@ export loud { loudness = -9LUFS true_peak = -1dBTP normalize = off }
   "error": {
     "code": "loudness_shortfall_at_true_peak_ceiling",
     "message": "loudness target shortfall 1.86 LU: achieved -10.86 LUFS at true-peak ceiling -1.05 dBTP (target -9.00 LUFS)",
+    "limit": "-1dBTP",
     "remedy": {
       "summary": "add a limiter with ceiling = -1dBTP, the export's true-peak ceiling, as the last master insert, so the gain goes in ahead of it and it holds that ceiling (docs/audio/mix-chain.md, Export loudness targets): cicada apply with an addeffect intent (effectkind limiter, inserton master, settings ceiling), or the same in the score text",
       "file": "loud.cicada",
@@ -1013,13 +1044,218 @@ export loud { loudness = -9LUFS true_peak = -1dBTP normalize = off }
   ],
   "loudness": {
     "target_lufs": -9,
-    "integrated_lufs": -9.28794649255763,
-    "true_peak_dbtp": -1.7761707377820928,
-    "applied_gain_db": 7.771192867260213,
+    "integrated_lufs": -9.287946344905963,
+    "true_peak_dbtp": -1.7761707634793302,
+    "applied_gain_db": 7.7711934508864156,
     "target_met": true,
-    "gain_stage": "master_input",
-    "master_limiter_reduction_db": 3.3003585823440833
+    "gain_stage": "before_last_limiter",
+    "master_limiter_reduction_db": 3.3003594528612807,
+    "last_limiter_reduction_db": 3.3003594528612807
   }
+}
+```
+
+## params --json and explain --json
+
+`cicada params --json` lists every sound control Cicada has: those of each
+built-in voice, keyboard patch, library patch, sampler and kit lane, of each
+effect kind, and of the track, bus and master strips (`cicada.params.v1`).
+Each control has:
+
+- `id`, `<owner>.<name>`, such as `fm_bass.op2_level`; `owner` and `name`.
+- `type`: `number`, `integer`, `enum`, `toggle` or `name`; `unit`; `min` and
+  `max`, which are null when the language sets no range; `default`; `example`,
+  a value in source form; `values`, the words it takes.
+- `set_in`: where a score sets it (`track`, `instrument`, `effect`, `sampler`,
+  `bus`, `master`, `score`, `pattern`, `scene`, `automation`, `modulation`), and
+  `live`, true when it can change while the song plays.
+- `meaning`: what it does, in one line.
+- `directions`: which way it moves what `cicada audition --json` measures for
+  the track when the control rises. `property` is `level`, `brightness`,
+  `attack` or `decay` (the track's `rms_dbfs`, `centroid_hz`, `attack_ms` and
+  `decay20_ms`); `change` is `up`, `down`, `mixed`, `none` or `unknown`; `basis`
+  is `stated` (certain from the signal path, such as an output gain),
+  `measured`, or `unknown`. A direction is `unknown` when the probe did not
+  exercise the control or fewer than two of its renders were audible, and
+  `reason` then says which. A measured direction also gives `at`, the audible
+  values among the low, default and high values the probe rendered, and
+  `measured`, the property at each, in `unit`. A control with no direction
+  has none known.
+
+The measurements come from a probe that renders two bars of a fixed phrase at
+each of the three values. They are checked in, so `params` answers at once;
+`cicada explain <control> --probe --json` measures again (`cicada.probe.v1`).
+The browser demo WebAssembly build includes the catalog; the kernel
+WebAssembly build and the UI engine, which have size budgets, do not.
+
+Filters keep part of the list, and combine: `--voice <voice>` one voice or
+patch, such as `acid` or `fm_bass`, or one family, such as `fm`;
+`--scope <kind>` one owner kind, such as `effect`; and a last argument the
+controls whose `id` starts with it. `--index` lists only the owners, with the
+`scopes` and `families` the filters take (`cicada.params_index.v1`). A filter
+that selects nothing fails with `no_match`; a scope that is not an owner kind
+with `usage`. `cicada params` without arguments prints the live-parameter
+registry, a JSON array of the paths scenes, automation and modulation reach,
+as it always has.
+
+`cicada explain <owner>.<name> --json` gives one control and its owner, and
+`cicada explain <owner> --json` an owner and its controls (`cicada.explain.v1`,
+with `kind` `control` or `owner`). When a name is also a language construct
+or field, the construct's response has a `catalog` field that holds the
+control's or owner's response without its `schema`.
+`cicada explain track:<track> <score> --json`
+gives what one track takes (`kind` `track`): the controls of its voice and of
+its mixer strip, each with its current `value`, `value_source` (`track`,
+`preset`, `instrument` or `default`) and `overridden`, true when the track block sets it.
+
+`setparam` takes every control that `explain track:` lists for the track, as
+`param:<track>.<name>`. A value outside the range is refused with reason
+`value_out_of_range`, and `range` names the control, the value given, `min`,
+`max` and `unit`.
+
+The acid bass's cutoff, with what the probe measured: raising it from 300Hz
+to 1200Hz moves the bass's brightness from 1741Hz to 3456Hz and leaves its
+level where it was.
+
+<!-- agent-example: params --json --voice acid acid.cutoff -->
+
+```json
+{
+  "schema": "cicada.params.v1",
+  "filter": {"voice": "acid", "control": "acid.cutoff"},
+  "counts": {"owners": 1, "controls": 1, "directions": {"stated": 0, "measured": 1, "unknown": 0}},
+  "owners": [{"name": "acid", "kind": "voice", "controls": 21}],
+  "controls": [
+    {
+      "id": "acid.cutoff",
+      "type": "number",
+      "unit": "Hz",
+      "min": 20,
+      "max": 8000,
+      "default": 600,
+      "example": "600Hz",
+      "set_in": ["track", "scene", "automation", "modulation"],
+      "live": true,
+      "meaning": "resting cutoff frequency of the filter, before the envelope opens it",
+      "directions": [
+        {"property": "level", "change": "none", "basis": "measured", "at": [300, 600, 1200], "measured": [-47.5, -47.6, -47.6], "unit": "dB"},
+        {"property": "brightness", "change": "up", "basis": "measured", "at": [300, 600, 1200], "measured": [1741, 2547, 3456], "unit": "Hz"}
+      ]
+    }
+  ]
+}
+```
+
+What the bass track of the example score takes, after the edit above set its
+cutoff (the list goes on with the rest of the acid's controls and the mixer
+strip's):
+
+<!-- agent-example: explain track:bass song.cicada --json -->
+
+```json
+{
+  "schema": "cicada.explain.v1",
+  "kind": "track",
+  "score": "song.cicada",
+  "track": {
+    "track": "bass",
+    "kind": "acid",
+    "owner": "acid",
+    "owner_kind": "voice",
+    "controls": [
+      {"id": "acid.tune"},
+      {"id": "acid.fine"},
+      {"id": "acid.wave"},
+      {"id": "acid.pw"},
+      {"id": "acid.detune"},
+      {"id": "acid.sub"},
+      {"id": "acid.cutoff", "value": 900, "written": "900Hz", "value_source": "track", "overridden": true}
+    ]
+  }
+}
+```
+
+A cutoff above the range is refused with the range as data:
+
+<!-- agent-example-file: too-bright.json -->
+
+```json
+{"version": 1, "intents": [
+  {"kind": "setparam", "entity": "param:bass.cutoff", "value": "12kHz"}
+]}
+```
+
+<!-- agent-example: apply song.cicada too-bright.json --json exit=1 -->
+
+```json
+{
+  "schema": "cicada.apply.v1",
+  "score": "song.cicada",
+  "ok": false,
+  "written": false,
+  "dry_run": false,
+  "changed": false,
+  "intents": [{"index": 0, "kind": "setparam"}],
+  "diff": "",
+  "error": {
+    "code": "intent_refused",
+    "message": "cutoff 12kHz is above the maximum 8000Hz (range 20Hz to 8000Hz)",
+    "field": "value",
+    "reason": "value_out_of_range",
+    "range": {"parameter": "cutoff", "value": "12kHz", "min": 20, "max": 8000, "unit": "Hz"}
+  }
+}
+```
+
+## audition --json
+
+`cicada audition --json` renders a score and reports what it sounds like:
+key, chords, levels, loudness per bar and section, band owners and
+collisions, where each track sounds, repeats, silences and the highest peaks
+split into the stems that make them. [Audition](audition.md) describes every
+field. The default document is a summary small enough to read whole;
+`--detail` adds the per-bar and per-beat detail. An unknown `--tracks` name
+fails with `unknown_track` and `valid_tracks`; an empty or repeated one with
+`usage`.
+
+This example reads the page's score after the edit above. The rules the
+report applies are in `bands` and `activity`, so a client need not hard-code
+them:
+
+<!-- agent-example: audition song.cicada --bars 2 --json -->
+
+```json
+{
+  "schema": "cicada.audition.v1",
+  "format": "cicada.audition/1",
+  "title": "Agent example",
+  "sample_rate": 48000,
+  "score": {"bars": 2},
+  "heard_key": [],
+  "full_mix_key": [],
+  "audibility_db": -20.7,
+  "masked_bars": 2,
+  "bars": [{"bar": 1}],
+  "loudness": {"loudest_section": "main", "loudest_section_index": 0},
+  "bands": {
+    "names": ["sub", "low", "bass", "low_mid", "mid", "presence", "air"],
+    "edges_hz": [20, 40, 80, 160, 400, 1600, 5000, 20000],
+    "collision_share_pct": 25,
+    "quiet_below_band_db": 30,
+    "quiet_below_span_db": 30,
+    "quiet_below_range_db": 40
+  },
+  "activity": {
+    "sounding_below_peak_db": 30,
+    "tail_grace_s": 0.5,
+    "silence_below_dbfs": -60,
+    "silence_min_s": 0.25,
+    "silences": []
+  },
+  "tracks": [{"id": "bass", "sounding_spans": [{"from_bar": 1, "to_bar": 2}]}],
+  "sections": [{"name": "main", "band_owners": [null, "drums"]}],
+  "harmony_mismatches": 2,
+  "peaks": [{"rank": 1, "pre_master_parts": [{"id": "drums", "kind": "track"}]}]
 }
 ```
 
@@ -1096,7 +1332,7 @@ URI is error -32602 (-32002 after `initialize`).
 | `intents` | `kinds`, up to 8 | `cicada.intents_index.v1` without kinds (`intents --json --index`), `cicada.intents.v1` with them |
 | `explain` | `diagnostic` or `construct` | `cicada.diagnostics.v1` (`diagnostics --json`) or `cicada.explain.v1` (`explain --json`) |
 | `library` | `path` | `cicada.library.v1` (`lib list --json`, `lib show --json`) |
-| `params` | none | `cicada.param_registry.v1`: the whole registry, the array `cicada params` prints, unchanged, as `params` |
+| `params` | `voice`, `scope`, `control` | `cicada.params_index.v1` without arguments (`params --json --index`, about 19 KB), `cicada.params.v1` with them (`params --json --voice <voice> --scope <kind> <control>`) |
 
 Every argument is optional except where the table says "or". A tool returns
 its document in `structuredContent` and the same JSON as the one text block.
@@ -1137,4 +1373,10 @@ built from the catalog's examples, `render --json` to −14 LUFS and
 `audition --json`. It then drives `cicada mcp` through the protocol in both
 eras and requires every tool to return, by value, the document its command
 prints, and each guide resource to be the text `cicada agents` prints. It
-also runs the examples on this page and on the quick start. CI runs it on every pull request; it must finish in under two minutes.
+also runs the examples on this page and on the quick start, and the task "make
+this bass brighter without clipping" on `examples/keys/fm_bass.cicada`: it
+reads the bass track's controls from `explain track:keys --json`, picks the one
+whose measured brightness rises most without raising the level, checks its
+range with `params --json --voice fm_bass`, sets it with `setparam`, and
+requires the track's `centroid_hz` in `audition --json` to rise by a quarter
+and the render to clip no sample, with its peak under −1 dBFS. CI runs it on every pull request; it must finish in under two minutes.

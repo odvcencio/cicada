@@ -125,7 +125,7 @@ func TestSerialReasonsFromRenders(t *testing.T) {
 			cache := newProductionMasterCache(t)
 			opts := Options{SampleRate: 48000, Bars: 1, TailSec: .1, Jobs: 4, MasterCache: cache}
 			first := renderReason(t, c.score, opts)
-			opts.MasterInputGainDB = 3
+			opts.MasterGainDB = 3
 			second := renderReason(t, c.score, opts)
 			if cache.Replays() != 1 || first.SerialReason == SerialReplay || second.SerialReason != SerialReplay {
 				t.Fatalf("%s: %d replays; capture %+v; replay %+v", c.name, cache.Replays(), first.LaneReport, second.LaneReport)

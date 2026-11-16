@@ -55,19 +55,33 @@ The export target uses the existing iterative BS.1770 loudness renderer and
 measures the delivered WAV. Live playback does not apply programme normalization.
 An unreachable target returns an error instead of claiming success. This
 one-track bass cannot reach a −14 LUFS streaming target, because the renderer
-adds at most 12 dB of input gain, so the example asks for the −23 LUFS
+adds at most 12 dB of export gain, so the example asks for the −23 LUFS
 broadcast level.
 
 ### Export loudness targets
 
 A loudness target (`--loudness`, or an `export` block with `loudness`) renders
 the score in up to six passes. Each pass measures the delivered WAV and adjusts
-one static gain. Where that gain goes depends on the master chain.
+one static gain. That gain is makeup gain into the master chain's last limiter,
+not gain into the mix: every master insert ahead of that limiter (an EQ, a
+compressor, a transient shaper, a width stage, a convolution) runs exactly as
+it does in playback, sample for sample, so the export keeps the dynamics you
+mixed and heard. Both renderers place the gain the same way.
 
 | Master chain | Where the gain goes | What holds the true-peak ceiling |
 | --- | --- | --- |
-| No limiter | Direct renderer: after the master chain. Scheduled renderer (arrangements, audio clips, serial track effects, sample packs): at the master input, as in earlier releases, because the engine applies its master gain before the chain. Output is unchanged from earlier releases. | The gain stops at the ceiling. It keeps crest factor, so an ambitious target can miss and returns a shortfall error. |
-| Contains a `limiter` | At the master input: after the music and SFX buses sum and the master `level`, before the chain. | Your limiter. The extra level reaches it, so it reduces peaks and a punchy mix can get louder than its natural crest allows. |
+| None | At the master input, with the master `level`. | The gain stops at the ceiling. It keeps crest factor, so an ambitious target can miss and returns a shortfall error. |
+| No limiter | After the whole chain, ahead of the safety limiter. | The same as with no chain. |
+| Contains a `limiter` | Ahead of the chain's last limiter, after every insert before it. Inserts after the last limiter follow it, as written. When the last limiter is the first insert, the gain goes in at the master input, which is the same place. | Your last limiter. The extra level reaches it, so it reduces peaks and a punchy mix can get louder than its natural crest allows. |
+
+Until November 2026 the gain went in at the master input whenever the chain had
+a limiter, and on the scheduled renderer (arrangements, audio clips, serial
+track effects, sample packs) also when it had none. A compressor ahead of the limiter then met a signal up to 12 dB hotter in
+the export than in playback, compressed harder, and the export came out flatter
+than the mix. A song whose master compressor's threshold was raised to make up
+for that is now compressed less in the export than before; lower the threshold
+back to what sounds right in playback. Exports of chains with nothing ahead of
+the limiter, and renders without a loudness target, are unchanged.
 
 Without a limiter, a target that the render misses at the true-peak ceiling
 ends its error with the fix: add a limiter at the export's true-peak ceiling
@@ -80,30 +94,50 @@ makes the same change with `cicada apply`
 
 With a limiter in the chain, the renderer keeps two guard rails:
 
-- Input gain is capped at +12 dB.
-- The chain limiter's gain reduction is held to 6 dB or less. Ordinary
-  streaming masters use a few dB of limiting; 6 dB is the upper end.
+- The export gain is capped at +12 dB. All of it reaches the last limiter: no
+  compressor ahead of it takes part of it back, so the same cap now buys more
+  loudness than it did when the gain drove the whole chain.
+- The last limiter's gain reduction is held to 6 dB or less. Ordinary
+  streaming masters use a few dB of limiting; 6 dB is the upper end. Only the
+  last limiter counts, because only it sees the export gain: a limiter ahead
+  of it runs as in playback, whatever the target.
 
 A target that needs more than either limit stops short and returns a shortfall
 error that names the limit that bound. The WAV from the best pass is still
 written (Studio keeps it as a separate shortfall file). When even a render
 that breaks a limit is too quiet for the target, and the best render is within
 0.5 dB of the reduction maximum, the search stops instead of using all six
-passes. The render summary reports the applied gain, the gain stage (`master_input` when the gain runs ahead of the master chain, `post_chain` when it runs after it or there is no chain), the
-chain limiter's largest gain reduction, and the largest gain reduction of any
-limiter. Review these numbers and run `cicada verify-wav` on the result.
+passes: more gain into the last limiter would only limit harder.
+
+Every missed target names the limit that stopped it. Besides the two guard
+rails and the true-peak ceiling, there are two more: without a limiter the
+gain never exceeds +24 dB, so a very quiet mix stops there
+(`loudness_shortfall_at_gain_maximum`: raise the mix level), and the search
+stops after six passes (`loudness_target_missed_at_pass_limit`: the message
+gives the tolerance that would accept the best pass). When a louder pass broke
+a limit, the message says which, at what gain and loudness. The render
+summary reports the applied gain, the gain stage (`before_last_limiter` when
+the chain has a limiter, `post_chain` when it has none or there is no chain),
+the last limiter's largest gain reduction, and the largest gain reduction of
+any limiter, the safety limiter included. Review these numbers and run
+`cicada verify-wav` on the result.
 
 Only the first pass synthesizes the mix, on both renderers and with or without
-a master chain. It stores the signal that enters the master stage (the summed
-buses, before the master `level` and the export gain) in a temporary file next
-to the output, and later passes play that signal back through the master
-gain, the chain and the safety limiter with the new gain. A pass whose gain
-differs from an earlier pass's by less than the renderer's gain can show is not
-rendered at all: it reuses that pass's audio and measurement. The result
-matches rendering every pass in full, byte for byte. The render summary counts
-the full syntheses, the cached replays and the repeated passes, and lists each
-pass's gain, loudness and true peak. `CICADA_RENDER_NO_REUSE=1` turns the reuse
-off, so every pass synthesizes the song (see the [CLI reference](../cli.md)).
+a master chain. It stores the signal at the gain point in a temporary file next
+to the output, and later passes play that signal back through the export gain
+and everything after it. When the gain goes in inside the chain, that signal is
+the output of the inserts ahead of the gain point, so a later pass runs only
+the gain, the last limiter, any inserts after it and the safety limiter. Without
+a chain, when the last limiter is the first insert, or when a limiter runs
+ahead of the last one (its reading counts in the report), the stored signal is
+the summed buses before the master `level`, and a later pass runs the whole
+master stage again. A pass whose gain differs from an earlier pass's by less
+than the renderer's gain can show is not rendered at all: it reuses that pass's
+audio and measurement. The result matches rendering every pass in full, byte
+for byte. The render summary counts the full syntheses, the cached replays and
+the repeated passes, and lists each pass's gain, loudness and true peak.
+`CICADA_RENDER_NO_REUSE=1` turns the reuse off, so every pass synthesizes the
+song (see the [CLI reference](../cli.md)).
 
 The file takes about 23 MB per minute at 48 kHz, counted from the start of the
 song to the end of the exported range plus its tail, so an export of the last
@@ -287,11 +321,13 @@ machine.
 | `flutter` | unitless | 0–1 | 0.2 |
 | `saturation` | unitless | 0–1 | 0.3 |
 | `damp` | Hz | 1000–16000 | 5000 |
+| `highpass` | Hz, or `off` | 20–2000 | off |
 
-All six controls take scene settings (`echo.feedback = 0.3`) and `automate`
+All seven controls take scene settings (`echo.feedback = 0.3`) and `automate`
 lanes (`echo.time`, `echo.wow`, `echo.flutter`, `echo.feedback`,
-`echo.saturation`, `echo.damp`). Each moves through a 5 ms smoother, except
-`time`, which glides as described below.
+`echo.saturation`, `echo.damp`, `echo.highpass`). Each moves through a 5 ms
+smoother, except `time`, which glides as described below. `highpass` is
+described in [Echo highpass](#echo-highpass).
 
 **What it models.**
 
@@ -317,6 +353,70 @@ wet-only and stereo-preserving. It cannot be a track insert or a master stage.
 Modulation routes to its controls are not supported yet. Portable browser kernel
 images refuse a score that declares `tape`, with a clear error; native playback
 and offline `render` and `stems` support it.
+
+## Echo highpass
+
+`highpass` puts a one-pole high-pass filter where the signal enters the echo
+line of the `delay` and `tape` returns: the send and the feedback together.
+The first repeat has passed it once, and every later repeat once more, so the
+echo is thin from its first repeat and thins further to its snap: the dub echo
+throw. The `damp` low-pass sits in the feedback alone, so repeat n has passed
+the high-pass n times and `damp` n − 1 times. It is off unless you set it.
+
+```cicada
+cicada 2
+tempo 74
+fx echo tape { time = 3/16 feedback = 0.75 damp = 4kHz highpass = 250Hz }
+track rim drums { send echo = 0.8 pre }
+pattern hit drums { rs: ..x. ..x. ..x. ..x. }
+scene main { rim = hit }
+song { main*8 }
+automate echo.highpass { @1.1.1 250Hz @5.1.1 1200Hz exponential @8.1.1 120Hz exponential }
+```
+
+`examples/fx/dub-echo-highpass.cicada` plays the same move with an off-beat
+stab.
+
+| Control | Unit | Range | Default |
+| --- | --- | --- | --- |
+| `highpass` | Hz, or `off` | 20–2000 | off |
+
+It takes the same paths as `damp`: the effect block (`highpass = 300Hz`, or
+`highpass = off`), scene settings (`echo.highpass = 600Hz`, or `= off`) and
+`automate echo.highpass` lanes, which interpolate on a logarithmic curve. A
+cutoff glides through the echo's 5 ms smoother; turning the filter on or off
+fades its effect in or out over the same time. Like `damp`, it takes no `mod`
+route: routes reach track mixer and voice parameters, and a route to an echo
+control reports `CICADA-ROUTE`.
+
+What it does to each repeat, measured by
+`TestEchoHighpassRepeatsLoseTheirLows` in `kernel/measure` at 48 kHz (250 ms,
+feedback 0.8, `damp` at 16 kHz; the first repeat's level below the burst, then
+the dB each later repeat loses against the one before; 44.1 and 96 kHz agree
+within 0.3 dB):
+
+| `highpass` | 80 Hz: first repeat | 80 Hz: per repeat | 2 kHz: first repeat | 2 kHz: per repeat |
+| --- | --- | --- | --- | --- |
+| off | 0 | 1.9 | 0 | 2.0 |
+| 100 Hz | 4.2 | 6.1 | 0.1 | 2.1 |
+| 300 Hz | 11.9 | 13.8 | 0.3 | 2.3 |
+| 1000 Hz | 22.5 | 24.4 | 1.5 | 3.5 |
+
+Off, the first repeat is the send at full level and each later one falls by
+the feedback alone. With a cutoff, the low burst loses the one-pole response
+at 80 Hz on the way into the line and again on every pass, while the high
+burst keeps nearly all of its level.
+
+An echo without `highpass` never runs the filter: its output is the same bits
+as before the control existed. The filter rounds every product before it adds
+it and takes its coefficient from `kernel/dsp/detmath`, so it gives the same
+bits on amd64 and arm64. Portable kernels refuse the parameter. With wow, flutter and saturation at 0, a
+`tape` with `highpass` still matches a `delay` with the same settings byte for
+byte at a whole-frame time.
+
+Portable browser and WAM images refuse a score that sets or moves `highpass`
+(`portable images have no echo highpass`), and `cicada check --profile browser`
+lists each use. Native playback, `render` and `stems` play it.
 
 ## Same bits on every machine
 

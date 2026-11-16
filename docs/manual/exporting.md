@@ -26,6 +26,33 @@ end of a decayed tail) is not normalized: the file is written at unity gain,
 the same bytes as without `--normalize`, and the command prints a warning
 that names the bars.
 
+`--loudness -14`, or an `export` block with `loudness`, renders to a loudness
+target. The gain it finds is makeup gain into the master chain's last limiter,
+not gain into the mix: every master insert ahead of that limiter, such as a glue
+compressor, an EQ or a transient shaper, runs exactly as in playback, so the
+export has the dynamics you hear in Studio. Inserts after the last limiter also receive the export gain, so a compressor there works harder than in playback. Until November 2026 the gain went in
+ahead of the whole chain, so a master compressor worked up to 12 dB harder in
+the export than in playback. What that changes for a song exported at a target:
+
+- It is compressed less, so its loudness range is larger: `anywhere-you-are` at
+  -14 LUFS went from 6.07 to 6.93 LU. If you raised the compressor's threshold
+  to make up for the old export, lower it back to what sounds right in
+  playback.
+- At an ambitious target it can stop further short than before. The compressor
+  no longer flattens the peaks, so the last limiter reaches its 6 dB maximum at
+  a lower gain: one song went from -15.00 to -15.31 LUFS at a -14 LUFS target.
+  The error names the limit that stopped it.
+- A song on the scheduled renderer (arrangements, audio clips, serial track
+  effects, sample packs) whose master chain has no limiter changed too: the
+  gain now goes in after the chain, not ahead of it. It is compressed less, and
+  since the gain stops at the true-peak ceiling, it can miss a target it used
+  to meet; a limiter as the last master insert is the fix.
+
+Renders without a target, songs without master inserts, and songs whose limiter
+is the first master insert are unchanged. See
+[export loudness targets](../audio/mix-chain.md#export-loudness-targets) for
+where the gain goes in each kind of chain and the limits the search keeps.
+
 Use `--from N` and `--bars M` to select a range. Bar numbers start at 1, so
 `--from 1` selects the first bar. The legacy value `--from 0` still selects the
 first bar and prints a deprecation warning. `--bars 0` renders from that bar
@@ -33,6 +60,10 @@ through the end of the song. Cicada processes
 the earlier bars before writing the selected range, so instruments and effects
 have the state they would have reached in a full render. Pass the same range
 options to `verify-wav`.
+
+`cicada check` warns when a whole-song render exceeds 256 bars on the direct
+mixer or 256 tempo changes. The score remains valid; render shorter ranges
+with `--from` and `--bars`.
 
 The render summary reports duration, pre-limiter peak, limiter activity, and
 output clipping. `verify-wav` checks sample rate, bit depth, duration, peak,
@@ -76,6 +107,16 @@ The music stem is tapped before the music-bus compressor; the master includes
 compression and limiting. The verifier checks timing, finite samples, and the
 sum of component stems against the bus taps.
 
+Stems are 32-bit float by default. `--bits 24` or `--bits 16` writes PCM
+instead, with the same deterministic TPDF dither as `cicada render` unless
+`--dither=false`; a sample beyond full scale clips, which a float stem would
+keep. `--tracks bass,kick` writes only those tracks' stems and `master.wav`:
+every track still plays, so each file equals the one in a full set, and an
+analysis of a few tracks costs a fraction of the disk. A name the score does
+not have fails with the score's track names (`unknown_track` with
+`valid_tracks` under `--json`). `verify-stems` needs a full float32 set and
+refuses a chosen or PCM one.
+
 For a new mix, import the numbered tracks and both effect returns at the same
 start position. `music.wav` and `sfx.wav` are grouped alternatives, and
 `master.wav` is the processed reference mix: do not add those files on top of
@@ -107,8 +148,11 @@ General MIDI drum notes. A scene that sets `tempo` adds a tempo event at its
 first bar. Swing and ratchets affect tick positions; a slide
 creates a one-tick note overlap. `--pattern NAME` exports one pattern loop
 instead of the full song. Imported patterns accept the alias used in the score,
-such as `--pattern tone.melody`. Chance uses the first seeded pass on every
-repetition.
+such as `--pattern tone.melody`. The file holds the notes and velocities the
+renderer plays: chance steps (`?N`) and `humanize` draw from the pattern seed,
+track, slot, pass and step, as playback does, so each pass keeps its own chance
+decisions and velocity offsets. A test compares the exported notes with the
+events the renderer plays for scores that use both.
 
 Named `arrange` pattern placements also export through their shared start/release
 schedule. Each pattern restarts locally; note-offs are bounded by the

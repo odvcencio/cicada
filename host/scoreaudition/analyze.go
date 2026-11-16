@@ -9,7 +9,9 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
+	"strconv"
 
 	"m31labs.dev/cicada/host/schedule"
 	"m31labs.dev/cicada/kernel/seq"
@@ -36,6 +38,17 @@ type Options struct {
 	// bytes. Zero selects the default cap. The compile that reads the track
 	// kinds and the render that makes the stems share one copy of each pack.
 	MaxResidentPCM int64
+	// Tracks, when not empty, limits the analysis to these tracks and the
+	// mix: only their stems are written and read. An unknown name is a
+	// *render.UnknownTrackError.
+	Tracks []string
+	// Peaks is how many true-peak moments to list: zero selects DefaultPeaks,
+	// a negative value lists none.
+	Peaks int
+	// NoBands skips band ownership (bands, bars[].bands, sections[].bands and
+	// the tracks' band levels), which takes about an eighth of an audition's
+	// CPU time.
+	NoBands bool
 	// Jobs is the most render lanes the stem render may use, as
 	// render.Options.Jobs: zero, the default, renders serially, and
 	// render.AutoJobs picks the automatic count. Every value gives the same
@@ -58,15 +71,33 @@ type Report struct {
 	Sections     []SectionReport `json:"sections"`
 	Mismatches   int             `json:"harmony_mismatches"`
 	Images       []string        `json:"images,omitempty"`
+
+	// Fields below were added within cicada.audition/1.
+
+	// SelectedTracks lists the tracks chosen with Options.Tracks, in score
+	// order; absent when every track is analyzed.
+	SelectedTracks []string        `json:"selected_tracks,omitempty"`
+	Loudness       *LoudnessReport `json:"loudness,omitempty"`
+	Bands          *BandsReport    `json:"bands,omitempty"`
+	Activity       *ActivityReport `json:"activity,omitempty"`
+	Peaks          []PeakReport    `json:"peaks"`
+	// Pictures lists every image file written to -o, with its bar range.
+	Pictures []Picture `json:"pictures,omitempty"`
+
+	rhythmGroups []int
 }
 
 type Facts struct {
-	TempoBPM   float64      `json:"tempo_bpm"`
-	WrittenKey string       `json:"written_key"`
-	SongBars   int          `json:"song_bars"`
-	FromBar    int          `json:"from_bar"`
-	Bars       int          `json:"bars"`
-	Swing      []SwingGroup `json:"swing,omitempty"`
+	TempoBPM float64 `json:"tempo_bpm"`
+	// Meter and TicksPerBar describe an effective meter declaration; both are
+	// omitted when the song uses the default 4/4.
+	Meter       string       `json:"meter,omitempty"`
+	TicksPerBar int64        `json:"ticks_per_bar,omitempty"`
+	WrittenKey  string       `json:"written_key"`
+	SongBars    int          `json:"song_bars"`
+	FromBar     int          `json:"from_bar"`
+	Bars        int          `json:"bars"`
+	Swing       []SwingGroup `json:"swing,omitempty"`
 	// TempoChanges lists the scene tempo steps that govern the analyzed bars.
 	// When the range starts after a change, the first entry is the tempo at
 	// the first analyzed bar. tempo_bpm stays the score tempo.
@@ -97,6 +128,14 @@ type BarReport struct {
 	AudibilityDB float64       `json:"audibility_db"`    // pitched stems vs whole mix, 125 Hz to 2 kHz
 	Masked       bool          `json:"masked"`           // audibility_db below -15
 	Match        string        `json:"match"`            // agree, disagree, no-written-pitch, silent
+
+	// Detail (DropDetail removes them): the mix's highest sample in the bar,
+	// the tracks that sound in it and the owner of each band (Bands is also
+	// absent with Options.NoBands). The bar's short-term loudness is in
+	// Loudness.ShortTermPerBarLUFS.
+	SamplePeakDBFS *float64    `json:"sample_peak_dbfs,omitempty"`
+	Sounding       *[]string   `json:"sounding,omitempty"`
+	Bands          []BandOwner `json:"bands,omitempty"`
 }
 
 type TrackReport struct {
@@ -116,6 +155,35 @@ type TrackReport struct {
 	OnsetsPerBar      float64   `json:"onsets_per_bar"`
 	SwingPercent      float64   `json:"swing_percent"`
 	Rhythm            []float64 `json:"rhythm"`
+
+	// SoundingSpans lists the runs of consecutive bars where the track sounds,
+	// first bar first: its entrances, exits and drop-outs.
+	SoundingSpans []BarSpan `json:"sounding_spans"`
+	// NoteBars counts the bars where the track starts a note; the two counts
+	// after it are the bars whose notes (offset, pitches, velocity and, when
+	// released, length) equal the bar before and the bar four before.
+	// LongestSameRun is the longest stretch of identical consecutive bars, in
+	// bars (0 when no bar equals the one before).
+	NoteBars             int `json:"note_bars"`
+	SameAsPreviousBar    int `json:"same_as_previous_bar"`
+	SameAsFourBarsBefore int `json:"same_as_four_bars_before"`
+	LongestSameRun       int `json:"longest_same_run"`
+
+	// Detail (DropDetail removes them): the track's level in each band over
+	// the range (dB re a full-scale RMS, in band order), the stem's RMS in
+	// each bar re its loudest bar (-120 when silent), whether it sounds in
+	// each bar, and its band levels per bar and per section.
+	BandsDBFS        []float64   `json:"bands_dbfs,omitempty"`
+	BarLevelDB       []float64   `json:"bar_level_db,omitempty"`
+	Sounding         []bool      `json:"sounding,omitempty"`
+	BarBandsDBFS     [][]float64 `json:"bar_bands_dbfs,omitempty"`
+	SectionBandsDBFS [][]float64 `json:"section_bands_dbfs,omitempty"`
+}
+
+// BarSpan is a run of bars, one-based and inclusive.
+type BarSpan struct {
+	FromBar int `json:"from_bar"`
+	ToBar   int `json:"to_bar"`
 }
 
 type SectionReport struct {
@@ -129,20 +197,53 @@ type SectionReport struct {
 	CentroidHz   float64  `json:"centroid_hz"`
 	OnsetsPerBar float64  `json:"onsets_per_bar"`
 	Tracks       []string `json:"tracks"`
+
+	// Loudness of the mix over exactly the section's ticks, from a meter
+	// started at the section start. Null when the method cannot give a value
+	// (integrated: no block above the gate; loudness range: under 3 s).
+	IntegratedLUFS  *float64 `json:"integrated_lufs"`
+	LoudnessRangeLU *float64 `json:"loudness_range_lu"`
+	VsLoudestLU     *float64 `json:"vs_loudest_lu"` // integrated re the loudest section
+	// BandOwners names the owner of each band over the section, in band order
+	// (null when the band is quiet). Absent with Options.NoBands.
+	BandOwners []*string `json:"band_owners,omitempty"`
+	// Detail (DropDetail removes them): the section's true peak; and, absent
+	// with Options.NoBands, per band the bars whose first tick is in the
+	// section and whose band collides, and the full ownership of each band.
+	TruePeakDBTP          *float64      `json:"true_peak_dbtp,omitempty"`
+	BandCollisionBarCount []int         `json:"band_collision_bar_count,omitempty"`
+	Bands                 []SectionBand `json:"bands,omitempty"`
 }
 
 // Analysis holds the report and the data behind the images.
 type Analysis struct {
 	Report Report
 
-	rate        int
-	specRows    [][]float32 // frame x row, dB
-	specHop     int
-	barCols     []int // spectrogram column of each bar line
-	barNumbers  []int
-	chroma      [][12]float64
-	rhythmRows  [][]float64
-	firstBarIdx int
+	rate         int
+	specRows     [][]float32 // frame x row, dB
+	specHop      int
+	barCols      []int // spectrogram column of each bar line
+	barNumbers   []int
+	chroma       [][12]float64
+	rhythmRows   [][]float64
+	framesPerBar int
+	firstBarIdx  int
+
+	// For energy.png: short-term loudness every curveHop samples (NaN before
+	// 3 s), bar and section starts in samples, and section loudness.
+	curve        []float64
+	curveHop     int
+	mixLen       int
+	barSamples   []int
+	sectionMarks []sectionMark
+}
+
+// sectionMark is a section's place in the analyzed range.
+type sectionMark struct {
+	name       string
+	from, to   int // samples
+	integrated float64
+	fromBar    int
 }
 
 const (
@@ -152,7 +253,9 @@ const (
 	maskedBelowDB = -15.0
 	bandLowHz     = 125
 	bandHighHz    = 2000
-	specRows      = 160
+	specRows      = 200
+	specLowHz     = 20.0
+	specHighHz    = 20000.0
 	chromaFFT     = 8192
 	onsetFFT      = 1024
 	onsetHop      = 256
@@ -194,6 +297,21 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 		}
 		return nil, fmt.Errorf("score cannot compile to a Cicada project")
 	}
+	// Check a track selection before any pack loads.
+	selected := make([]bool, len(p.Tracks))
+	ids := make([]string, len(p.Tracks))
+	for ti, track := range p.Tracks {
+		ids[ti] = track.ID
+		selected[ti] = len(opts.Tracks) == 0
+	}
+	if len(opts.Tracks) > 0 {
+		if err := render.CheckTrackNames(opts.Tracks, ids); err != nil {
+			return nil, err
+		}
+		for ti, id := range ids {
+			selected[ti] = slices.Contains(opts.Tracks, id)
+		}
+	}
 	root := opts.AssetDir
 	if root == "" {
 		root = "."
@@ -232,7 +350,7 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	}
 	defer os.RemoveAll(tmp)
 	stemDir := filepath.Join(tmp, "stems")
-	ropts := render.Options{SampleRate: rate, Bits: 32, From: opts.From, Bars: bars, AssetRoot: opts.AssetDir, AssetDir: opts.AssetDir, MaxResidentPCM: opts.MaxResidentPCM, NoteTap: notes.tap, Jobs: opts.Jobs, TrackStemsOnly: true}
+	ropts := render.Options{SampleRate: rate, Bits: 32, From: opts.From, Bars: bars, AssetRoot: opts.AssetDir, AssetDir: opts.AssetDir, MaxResidentPCM: opts.MaxResidentPCM, NoteTap: notes.tap, Jobs: opts.Jobs, StemTracks: opts.Tracks, StemBuses: len(opts.Tracks) > 0, TrackStemsOnly: true}
 	if _, err := render.Stems(score, ropts, stemDir); err != nil {
 		return nil, err
 	}
@@ -259,10 +377,25 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 		tempoChanges = append(tempoChanges, TempoChange{Bar: c.Bar + 1, BPM: float64(c.BPMMilli) / 1000})
 	}
 
-	a := &Analysis{rate: rate, specHop: specHopSize, firstBarIdx: opts.From}
+	framesPerBar := int(meterMap.BarTicks(0) / seq.TicksPerStep)
+	a := &Analysis{rate: rate, specHop: specHopSize, firstBarIdx: opts.From, framesPerBar: framesPerBar}
 	r := &a.Report
 	r.Schema, r.Format, r.Title, r.SampleRate = Schema, FormatVersion, p.Title, rate
+	cellsPerBeat := int(meterMap.BeatTicks(0) / seq.TicksPerStep)
+	if p.Meter != nil && len(p.Meter.Groups) > 0 {
+		for _, group := range p.Meter.Groups {
+			r.rhythmGroups = append(r.rhythmGroups, group*cellsPerBeat)
+		}
+	} else {
+		for i := int64(0); i < meterMap.BeatsInBar(0); i++ {
+			r.rhythmGroups = append(r.rhythmGroups, cellsPerBeat)
+		}
+	}
 	r.Score = Facts{TempoBPM: round(bpm, 3), WrittenKey: fmt.Sprintf("%s %s", noteNames[p.Key.Root%12], p.Key.Scale), SongBars: songBars, FromBar: opts.From + 1, Bars: bars, TempoChanges: tempoChanges}
+
+	if p.Meter != nil {
+		r.Score.Meter, r.Score.TicksPerBar = meterText(p), meterMap.BarTicks(0)
+	}
 
 	// Read the stems and sum the pitched ones: the heard harmony comes from
 	// them, so drums and their pitched noise do not decide the chord.
@@ -270,6 +403,9 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	pitched := make([]bool, len(p.Tracks))
 	pitchedMix := stereo{L: make([]float32, mix.Len()), R: make([]float32, mix.Len())}
 	for ti, track := range p.Tracks {
+		if !selected[ti] {
+			continue // no stem: the track counts as silent and is left out
+		}
 		s, _, err := readFloatWAV(filepath.Join(stemDir, fmt.Sprintf("%02d-%s.wav", ti+1, track.ID)))
 		if err != nil {
 			return nil, err
@@ -285,7 +421,7 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	}
 
 	// Chroma and band power, one frame per sixteenth note.
-	frames := bars * 16
+	frames := bars * framesPerBar
 	chromaPlan := newPlan(chromaFFT)
 	binPC := make([]int, chromaFFT/2+1)
 	inBand := make([]bool, chromaFFT/2+1)
@@ -332,6 +468,15 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 		})
 		return total
 	}
+	// Band ownership has its own frames, evenly spaced in time within each
+	// bar (bandPower).
+	binBand := binBands(chromaFFT, rate)
+	barStarts := make([]int, bars+1)
+	for b := range barStarts {
+		barStarts[b] = min(barSample(b), mix.Len())
+	}
+	layout := newBandLayout(barStarts)
+	bandFrames := make([][][numBands]float64, len(p.Tracks))
 	var mixBand, pitchedBand []float64
 	a.chroma, pitchedBand = chromaOf(pitchedMix)
 	var mixChroma [][12]float64
@@ -364,12 +509,12 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	for b := 0; b < bars; b++ {
 		var v [12]float64
 		var bp, bm float64
-		for f := 0; f < 16; f++ {
+		for f := 0; f < framesPerBar; f++ {
 			for i := range v {
-				v[i] += a.chroma[b*16+f][i]
+				v[i] += a.chroma[b*framesPerBar+f][i]
 			}
-			bp += pitchedBand[b*16+f]
-			bm += mixBand[b*16+f]
+			bp += pitchedBand[b*framesPerBar+f]
+			bm += mixBand[b*framesPerBar+f]
 		}
 		lo, hi := min(barSample(b), mix.Len()), min(barSample(b+1), mix.Len())
 		pitchedRMS := rmsDB(pitchedMix.Slice(lo, hi))
@@ -412,9 +557,9 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	rowHi := make([]int, specRows)
 	rowFrac := make([]float64, specRows)
 	binHz := float64(rate) / specFFT
-	ratio := math.Pow(12000.0/40.0, 1.0/specRows)
+	ratio := math.Pow(specHighHz/specLowHz, 1.0/specRows)
 	for row := 0; row < specRows; row++ {
-		lo, hi := 40*math.Pow(ratio, float64(row)), 40*math.Pow(ratio, float64(row+1))
+		lo, hi := specLowHz*math.Pow(ratio, float64(row)), specLowHz*math.Pow(ratio, float64(row+1))
 		kl, kh := int(math.Ceil(lo/binHz)), int(math.Ceil(hi/binHz))
 		if kh > kl {
 			rowLo[row], rowHi[row] = kl, kh
@@ -472,7 +617,7 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 		for b := 0; b < bars; b++ {
 			lo, hi := min(barSample(b), stems[ti].Len()), min(barSample(b+1), stems[ti].Len())
 			if played[ti] {
-				lo = min(lo+graceSamples, hi)
+				lo = graceEnd(lo, hi, graceSamples)
 			}
 			barSounding[ti][b] = hi > lo && rmsDB(stems[ti].Slice(lo, hi)) >= silentDB
 		}
@@ -480,7 +625,7 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	acts := notes.activity(cfg, len(p.Tracks), fromTick, bars, sustain, barSounding)
 	var maxEnergy float64
 	for ti, track := range p.Tracks {
-		tr := TrackReport{ID: track.ID, Rhythm: make([]float64, 16)}
+		tr := TrackReport{ID: track.ID, Rhythm: make([]float64, framesPerBar)}
 		s := stems[ti]
 		var energy float64
 		for i := range s.L {
@@ -516,6 +661,9 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 		tr.OnsetsPerBar = round(float64(tr.Onsets)/float64(activeBars), 2)
 		tr.CentroidHz = round(trackCentroid(s, rate), 0)
 		tr.BandVsMixDB = round(bandDB(trackBand(s), allM), 1)
+		if !opts.NoBands {
+			bandFrames[ti] = bandPower(s, chromaPlan, binBand, layout)
+		}
 		tr.Masked = tr.BandVsMixDB < maskedBelowDB
 		tr.AttackMs, tr.Decay20Ms, tr.Decay20LowerBound = noteShape(s, peaks, rate)
 		tr.Rhythm, tr.SwingPercent = rhythmProfile(env, rate, clock, meterMap, baseSample, opts.From, bars, acts[ti])
@@ -551,7 +699,7 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	trackSet, patternSet := map[float64]map[string]bool{}, map[float64]map[string]bool{}
 	swingEnd := fromTick + meterMap.BarsTicks(fromTick, int64(bars))
 	for _, pl := range notes.slotsUsed(fromTick, swingEnd, sustain, swingEnd) {
-		if pl.track >= len(p.Tracks) || pl.slot >= len(p.Tracks[pl.track].Slots) {
+		if pl.track >= len(p.Tracks) || pl.slot >= len(p.Tracks[pl.track].Slots) || !selected[pl.track] {
 			continue
 		}
 		id := p.Tracks[pl.track].Slots[pl.slot]
@@ -610,12 +758,14 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	sampleAt := func(tick int64) int {
 		return min(max(int(clock.SampleAtTick(tick)-baseSample), 0), mix.Len())
 	}
+	var kept []sectionSpan
 	for _, sp := range spans {
 		lo, hi := max(sp.from, fromTick), min(sp.to, rangeEnd)
 		if hi <= lo {
 			continue
 		}
 		s0, s1 := sampleAt(lo), sampleAt(hi)
+		kept = append(kept, sectionSpan{lo, hi, s0, s1})
 		fromBar, _ := meterMap.BarAt(lo)
 		toBar, _ := meterMap.BarAt(hi - 1)
 		sec := SectionReport{Name: sp.name, FromBar: int(fromBar) + 1, ToBar: int(toBar) + 1,
@@ -632,6 +782,9 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 		}
 		count := 0
 		for ti := range p.Tracks {
+			if !selected[ti] {
+				continue
+			}
 			for _, o := range work[ti].onsets {
 				if o >= s0 && o < s1 {
 					count++
@@ -656,6 +809,24 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 		sec.OnsetsPerBar = round(float64(count)/(float64(hi-lo)/float64(meterMap.BarTicks(0))), 2)
 		r.Sections = append(r.Sections, sec)
 	}
+	err = a.measureMix(mixInput{
+		mix: mix, stems: stems, ids: ids, selected: selected, rate: rate, clock: clock, meter: meterMap, base: baseSample,
+		fromTick: fromTick, bars: bars, barSample: barSample, notes: &notes, acts: acts, played: played,
+		bandFrames: bandFrames, layout: layout, sections: kept, peaks: opts.Peaks, noBands: opts.NoBands, stemDir: stemDir,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(opts.Tracks) > 0 {
+		var chosen []TrackReport
+		for ti, tr := range r.Tracks {
+			if selected[ti] {
+				chosen = append(chosen, tr)
+				r.SelectedTracks = append(r.SelectedTracks, tr.ID)
+			}
+		}
+		r.Tracks = chosen
+	}
 	return a, nil
 }
 
@@ -667,7 +838,7 @@ func rmsDB(s stereo) float64 {
 	}
 	var sum float64
 	for i := range s.L {
-		sum += float64(s.L[i])*float64(s.L[i]) + float64(s.R[i])*float64(s.R[i])
+		sum += float64(float64(s.L[i])*float64(s.L[i])) + float64(float64(s.R[i])*float64(s.R[i]))
 	}
 	return db(math.Sqrt(sum / float64(2*s.Len())))
 }
@@ -793,7 +964,8 @@ func noteShape(s stereo, peaks []int, rate int) (attackMs, decayMs float64, lowe
 // scaled so the largest is 1, over the bars where the track plays a pattern.
 // Swung slots are looked up where the pattern's swing places them.
 func rhythmProfile(env []float64, rate int, clock *project.TempoMap, meterMap seq.MeterMap, base int64, from, bars int, act barActivity) ([]float64, float64) {
-	prof, cnt := make([]float64, 16), make([]float64, 16)
+	slots := int(meterMap.BarTicks(0) / seq.TicksPerStep)
+	prof, cnt := make([]float64, slots), make([]float64, slots)
 	swing := 50.0
 	swingSet := false
 	for b := 0; b < bars; b++ {
@@ -801,7 +973,7 @@ func rhythmProfile(env []float64, rate int, clock *project.TempoMap, meterMap se
 			continue
 		}
 		pat := act.pattern[b]
-		for s := 0; s < 16; s++ {
+		for s := 0; s < slots; s++ {
 			tick := int64(s) * seq.TicksPerStep
 			if pat != nil && pat.Len > 0 {
 				g := pat.GridTicks()
@@ -840,4 +1012,23 @@ func rhythmProfile(env []float64, rate int, clock *project.TempoMap, meterMap se
 		}
 	}
 	return prof, round(swing, 1)
+}
+
+// meterText writes the song's meter as source does: "3/4", "7/8 2+2+3", or
+// "4/4" for a song that declares none.
+func meterText(p *project.Project) string {
+	m := p.Meter
+	if m == nil {
+		return "4/4"
+	}
+	text := strconv.Itoa(m.Numerator) + "/" + strconv.Itoa(m.Denominator)
+	for i, g := range m.Groups {
+		if i == 0 {
+			text += " "
+		} else {
+			text += "+"
+		}
+		text += strconv.Itoa(g)
+	}
+	return text
 }

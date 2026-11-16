@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"m31labs.dev/cicada/internal/controls"
 	"m31labs.dev/cicada/internal/paramdefs"
 	"m31labs.dev/cicada/kernel/limits"
 
@@ -34,13 +35,21 @@ func instrumentParameterSource(source []byte, targetFile string, score *notation
 	literal := ""
 	if definition != nil {
 		program, ds := instrument.Compile(*definition)
-		if program == nil || hasErrors(ds) || !program.HasParameter(parameterID) {
-			return nil, fmt.Errorf("instrument %s does not declare parameter %q", definition.Name, parameterID)
+		declared := program != nil && !hasErrors(ds) && program.HasParameter(parameterID)
+		// The settings every instrument graph takes (octave, glide, vibrato)
+		// are catalog controls of the track, not graph parameters.
+		control, found := trackControl(score, trackID, parameterID)
+		if !declared && (!found || program == nil || hasErrors(ds)) {
+			return nil, refuse("unknown_setting", "entity", "instrument %s does not declare parameter %q", definition.Name, parameterID)
 		}
 		if !reset {
 			var err error
-			literal, err = instrument.ParameterLiteral(program, parameterID, value)
-			if err != nil {
+			if declared {
+				literal, err = instrument.ParameterLiteral(program, parameterID, value)
+				if err != nil {
+					return nil, invalidValue("%s", err.Error())
+				}
+			} else if literal, err = controlLiteral(control, value); err != nil {
 				return nil, err
 			}
 		}
@@ -48,20 +57,22 @@ func instrumentParameterSource(source []byte, targetFile string, score *notation
 		if target == nil {
 			return nil, fmt.Errorf("track %q has no authored instrument", trackID)
 		}
-		// Custom kits and sample bindings have their own source controls. A
-		// registry drum address does not imply that those sources accept it.
-		for _, kit := range score.Kits {
-			if kit.Name == target.Kind {
-				return nil, fmt.Errorf("track %q uses a custom kit; edit its source settings in Score", trackID)
+		// Every control the catalog lists for the track's voice: built-in
+		// voices, keyboard patches and the lanes of a declared kit.
+		control, found := trackControl(score, trackID, parameterID)
+		if !found {
+			// Custom kits and sample bindings have their own source controls. A
+			// registry drum address does not imply that those sources accept it.
+			for _, kit := range score.Kits {
+				if kit.Name == target.Kind {
+					return nil, refuse("unknown_setting", "entity", "track %q uses a custom kit; edit its source settings in Score", trackID)
+				}
 			}
-		}
-		descriptor, ok := paramdefs.TrackParam(notation.ParameterVoiceKind(score, target.Kind), parameterID)
-		if !ok {
-			return nil, fmt.Errorf("track %s does not expose sound parameter %q", trackID, parameterID)
+			return nil, refuse("unknown_setting", "entity", "track %s does not expose sound parameter %q", trackID, parameterID)
 		}
 		if !reset {
 			var err error
-			literal, err = builtinParameterLiteral(descriptor, value)
+			literal, err = controlLiteral(control, value)
 			if err != nil {
 				return nil, err
 			}
@@ -98,24 +109,36 @@ func instrumentParameterSource(source []byte, targetFile string, score *notation
 	return ReplaceSpan(source, targetFile, Span{at, at, " " + parameterID + " = " + literal + " ", targetFile})
 }
 
-// Built-in controls use the source catalog's units and range. Plain numbers
-// take the control's displayed unit, while explicit compatible literals keep
-// their original precision and spelling.
-func builtinParameterLiteral(descriptor paramdefs.Descriptor, value string) (string, error) {
+// trackControl finds a control of the track's voice in the control catalog.
+func trackControl(score *notation.Score, track, name string) (controls.TrackControl, bool) {
+	control, _, found, err := controls.TrackControlNamed(score, track, name)
+	return control, found && err == nil
+}
+
+// controlLiteral checks a value for a catalog control and returns the source
+// literal to write. Plain numbers take the control's catalog unit. A value
+// outside the range is refused with value_out_of_range and the range; a
+// value of the wrong form with invalid_value.
+func controlLiteral(control controls.TrackControl, value string) (string, error) {
 	value = strings.TrimSpace(value)
-	if number, err := strconv.ParseFloat(value, 64); err == nil && descriptor.Curve != "enum" && descriptor.Curve != "toggle" {
-		value = paramdefs.FormatValue(descriptor, number)
+	if number, err := strconv.ParseFloat(value, 64); err == nil && (control.Type == "number" || control.Type == "integer") {
+		value = controls.Literal(control.Control, number)
 	}
-	validation := descriptor
-	// Cents, like semitones and ratios, are plain source numbers.
-	if validation.Unit == "cent" {
-		validation.Unit = ""
+	if number, ok := controls.CatalogNumber(control.Control, value); ok && control.Min != nil && control.Max != nil {
+		excluded := false
+		for _, v := range control.Excluded {
+			excluded = excluded || number == v
+		}
+		if (number < *control.Min || number > *control.Max || excluded) && !controls.AcceptsWord(control.Control, value) {
+			message := paramdefs.RangeText(control.Descriptor(), control.Name, value, number < *control.Min)
+			if excluded {
+				message = fmt.Sprintf("%s %s is not accepted: %s", control.Name, value, control.Note)
+			}
+			return "", outOfRange(control.Name, value, *control.Min, *control.Max, control.Unit, message)
+		}
 	}
-	if descriptor.Type == "integer" && descriptor.Curve != "enum" && descriptor.Curve != "toggle" {
-		validation.Curve = "integer"
-	}
-	if _, err := paramdefs.ValidateLiteral(validation, value); err != nil {
-		return "", err
+	if err := controls.Validate(control.Control, value); err != nil {
+		return "", invalidValue("%s", err.Error())
 	}
 	return value, nil
 }

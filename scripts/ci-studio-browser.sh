@@ -36,7 +36,7 @@ shard_segments() {
 	1) echo "print_sources placements performance_pitch performance_sources placement_commands track_rename split_placement code_recovery pattern_machine portable_midi macro_controls preset_save" ;;
 	2) echo "pattern_song precision first_song silent_scene_create gestures portable_song sound_context continuity modulation_source collaboration columns midi_pickup shared_capture vocals vocal_levels dock_fit" ;;
 	3) echo "owner_session chrome_gpu_raster page_stall scene_launch_keys pattern_grid tempo_editor recording_sources autoscroll arrangement_sources solo_clock mixer_strips navigation sampler_waveform export_sources library_recording midi_binding studio_edits recording_setup recording_levels meter_performance performance amp_automation" ;;
-	4) echo "shutdown_proof live_write grid_sources shell direct_variation placement_variation editor performance_time startup scene_blocks tempo_clock export_stems chorus observation_clock note_editor engine_requests" ;;
+	4) echo "shutdown_proof live_write grid_sources shell direct_variation placement_variation editor performance_time startup scene_blocks tempo_clock export_stems chorus add_insert observation_clock note_editor engine_requests" ;;
 	*) echo "unknown shard: $1" >&2; return 1 ;;
 	esac
 }
@@ -52,6 +52,7 @@ segment_runs() {
 	continuity) echo continuity ;;
 	modulation_source) echo modulation-source ;;
 	chorus) echo chorus ;;
+	add_insert) echo add-insert ;;
 	pattern_machine) echo pattern-machine ;;
 	shell) echo shell ;;
 	mixer_strips) echo mixer-strips ;;
@@ -224,20 +225,35 @@ studio_pid=
 browser_root=
 studio_port=
 song_root=
+segment_tmp=
+
+# Allocate one recorded /tmp directory for a segment's fixture generators.
+fixture_tmp() {
+	if [[ -z "$segment_tmp" && "${CICADA_STUDIO_DRY_RUN:-}" != 1 ]]; then
+		segment_tmp="$(mktemp -d /tmp/cicada-browser-segment.XXXXXX)"
+	fi
+}
+cleanup_segment_tmp() {
+	if [[ -n "$segment_tmp" ]]; then rm -rf -- "$segment_tmp"; segment_tmp=; fi
+}
 
 # start_studio SCORE LOG [HEALTH_PATH] starts Studio on SCORE and waits for it.
 start_studio() {
 	local health="${3:-/api/state}"
 	studio_log="$2"
-	./build/cicada studio "$1" --audio null --listen "127.0.0.1:$studio_port" > "$2" 2>&1 &
+	mkdir -p "$browser_root/state"
+	CICADA_STATE_DIR="$browser_root/state" ./build/cicada studio "$1" --audio null --listen "127.0.0.1:$studio_port" > "$2" 2>&1 &
 	studio_pid=$!
 	export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
 	local _
 	for _ in $(seq 1 100); do
-		if curl --silent --fail "$CICADA_STUDIO_URL$health" > /dev/null; then break; fi
-		kill -0 "$studio_pid"
+		if curl --silent --fail "$CICADA_STUDIO_URL$health" > /dev/null; then return 0; fi
+		if ! kill -0 "$studio_pid" 2>/dev/null; then break; fi
 		sleep 0.1
 	done
+	echo "FAIL: Studio did not become ready; last 60 lines of $studio_log:" >&2
+	tail -n 60 "$studio_log" >&2 || true
+	return 1
 }
 
 stop_studio() {
@@ -274,10 +290,13 @@ start_synthetic_studio() {
 	exec {synthetic_stdin}<&-
 	export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
 	for _ in $(seq 1 100); do
-		if curl --silent --fail "$CICADA_STUDIO_URL/" > /dev/null; then break; fi
-		kill -0 "$studio_pid"
+		if curl --silent --fail "$CICADA_STUDIO_URL/" > /dev/null; then return 0; fi
+		if ! kill -0 "$studio_pid" 2>/dev/null; then break; fi
 		sleep 0.1
 	done
+	echo "FAIL: synthetic Studio did not become ready; last 60 lines of $studio_log:" >&2
+	tail -n 60 "$studio_log" >&2 || true
+	return 1
 }
 
 stop_synthetic_studio() {
@@ -370,6 +389,15 @@ seg_modulation_source() { # 5 s
 	stop_studio
 }
 
+seg_add_insert() {
+	mkdir -p "$browser_root/add-insert"
+	export CICADA_ADD_INSERT_SCORE="$browser_root/add-insert/main.cicada"
+	node workstation/browser/add-insert.test.cjs --write-fixture "$CICADA_ADD_INSERT_SCORE"
+	start_studio "$CICADA_ADD_INSERT_SCORE" build/studio-add-insert-server.log /
+	run_suite add-insert make test-studio-add-insert | tee build/studio-add-insert-report.txt
+	stop_studio
+}
+
 seg_chorus() { # 4 s
 	mkdir -p "$browser_root/chorus"
 	export CICADA_CHORUS_SCORE="$browser_root/chorus/main.cicada"
@@ -457,7 +485,8 @@ seg_portable_song() { # 18 s
 	local portable_score phase
 	export CICADA_PORTABLE_FIXTURE="$PWD/build/studio-portable-fixture.json"
 	export CICADA_PORTABLE_PROOF_DIR="$PWD/build/studio-portable-proof"
-	go -C workstation run ./browser/testdata/portable-song > "$CICADA_PORTABLE_FIXTURE"
+	fixture_tmp
+	TMPDIR="$segment_tmp" go -C workstation run ./browser/testdata/portable-song > "$CICADA_PORTABLE_FIXTURE"
 	portable_score="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["score"])' "$CICADA_PORTABLE_FIXTURE")"
 	./build/cicada midi "$portable_score" -o build/studio-portable-notes.mid --report 2> build/studio-portable-midi-report.json
 	python3 -c 'import json; r=json.load(open("build/studio-portable-midi-report.json")); assert r["notes"] > 0 and r["audio_tracks_omitted"] == ["guitar"], r'
@@ -677,8 +706,9 @@ seg_preset_save() { # 3 s
 }
 
 seg_observation_clock() { # 4 s
+	fixture_tmp
 	local observation_score
-	go -C workstation run ./browser/testdata/print-sources --primary-arrangement > build/studio-observation-clock-fixture.json
+	CICADA_PRINT_TMPDIR="$segment_tmp" go -C workstation run ./browser/testdata/print-sources --primary-arrangement > build/studio-observation-clock-fixture.json
 	export CICADA_OBSERVATION_FIXTURE="$PWD/build/studio-observation-clock-fixture.json"
 	observation_score="$(node -e 'process.stdout.write(require(process.argv[1]).score)' "$CICADA_OBSERVATION_FIXTURE")"
 	start_studio "$observation_score" build/studio-observation-clock-server.log
@@ -731,8 +761,9 @@ seg_recording_levels() { # new; 10 s locally
 }
 
 seg_vocals() { # new; 15 s locally
+	fixture_tmp
 	local vocals_score
-	go -C workstation run ./browser/testdata/print-sources --primary-arrangement > build/studio-vocals-fixture.json
+	CICADA_PRINT_TMPDIR="$segment_tmp" go -C workstation run ./browser/testdata/print-sources --primary-arrangement > build/studio-vocals-fixture.json
 	vocals_score="$(node -e 'process.stdout.write(require(process.argv[1]).score)' "$PWD/build/studio-vocals-fixture.json")"
 	start_studio "$vocals_score" build/studio-vocals-server.log /
 	run_suite vocals env CICADA_VOCAL_PROOF_DIR="$PWD/build/studio-vocals-proof" make test-studio-vocals | tee build/studio-vocals-report.txt
@@ -740,8 +771,9 @@ seg_vocals() { # new; 15 s locally
 }
 
 seg_vocal_levels() { # new; 15 s locally
+	fixture_tmp
 	local levels_score
-	go -C workstation run ./browser/testdata/print-sources > build/studio-vocal-levels-fixture.json
+	CICADA_PRINT_TMPDIR="$segment_tmp" go -C workstation run ./browser/testdata/print-sources > build/studio-vocal-levels-fixture.json
 	levels_score="$(node -e 'process.stdout.write(require(process.argv[1]).score)' "$PWD/build/studio-vocal-levels-fixture.json")"
 	start_studio "$levels_score" build/studio-vocal-levels-server.log /
 	run_suite vocal-levels env CICADA_LEVELING_URL="$CICADA_STUDIO_URL" CICADA_LEVELING_SCORE="$levels_score" CICADA_LEVELING_PROOF_DIR="$PWD/build/studio-vocal-levels-proof" make test-studio-vocal-levels | tee build/studio-vocal-levels-report.txt
@@ -955,6 +987,7 @@ seg_grid_sources() { # 63 s
 }
 
 seg_print_sources() { # 162 s
+	fixture_tmp
 	local print_layout print_args print_phases print_phase print_test
 	for print_layout in primary secondary song controls tempo; do
 		print_args=()
@@ -972,7 +1005,7 @@ seg_print_sources() { # 162 s
 			print_args+=(--scene-tempo --sampler-bank)
 			print_phases=(producer automation-recall tempo-arrangement roundtrip reopen)
 		fi
-		go -C workstation run ./browser/testdata/print-sources "${print_args[@]}" > "build/studio-print-$print_layout-fixture.json"
+		CICADA_PRINT_TMPDIR="$segment_tmp" go -C workstation run ./browser/testdata/print-sources "${print_args[@]}" > "build/studio-print-$print_layout-fixture.json"
 		export CICADA_PRINT_FIXTURE="$PWD/build/studio-print-$print_layout-fixture.json"
 		CICADA_PRODUCER_SCORE="$(node -e 'process.stdout.write(require(process.argv[1]).score)' "$CICADA_PRINT_FIXTURE")"
 		CICADA_PRODUCER_STORAGE="$(dirname "$CICADA_PRODUCER_SCORE")/session.json"
@@ -1059,7 +1092,7 @@ run_shard() {
 		export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require=$PWD/workstation/browser/owner-session.cjs"
 		studio_port="$(node -e 'const server=require("node:net").createServer(); server.listen(0,"127.0.0.1",()=>{process.stdout.write(String(server.address().port));server.close()})')"
 		export CICADA_STUDIO_URL="http://127.0.0.1:$studio_port"
-		trap 'kill "${studio_pid:-}" "${synthetic_pids[@]}" 2>/dev/null || true; wait "${studio_pid:-}" "${synthetic_pids[@]}" 2>/dev/null || true' EXIT
+		trap 'kill "${studio_pid:-}" "${synthetic_pids[@]}" 2>/dev/null || true; wait "${studio_pid:-}" "${synthetic_pids[@]}" 2>/dev/null || true; cleanup_segment_tmp' EXIT
 	fi
 	mkdir -p "$browser_root" build
 	song_root="$browser_root/song"
@@ -1069,6 +1102,7 @@ run_shard() {
 	for seg in $segments; do
 		echo "::group::segment $seg"
 		"seg_$seg"
+		cleanup_segment_tmp
 		echo "::endgroup::"
 	done
 

@@ -246,6 +246,9 @@ func mixerParamValue(mixer Mixer, descriptor paramdefs.Descriptor) any {
 }
 
 func defaultParamValue(descriptor paramdefs.Descriptor) any {
+	if descriptor.Off && (descriptor.Default < descriptor.Min || descriptor.Default > descriptor.Max) {
+		return nil // off by default, as an echo highpass that is not set
+	}
 	if (descriptor.Curve == "enum" || descriptor.Curve == "toggle") && int(descriptor.Default) >= 0 && int(descriptor.Default) < len(descriptor.Values) {
 		if descriptor.Curve == "enum" {
 			return descriptor.Values[int(descriptor.Default)]
@@ -284,12 +287,26 @@ func LookupParamDescriptor(id string) (paramdefs.Descriptor, bool) {
 	return paramdefs.Lookup(id)
 }
 
+// ParamAddressByName finds the address of a parameter path. A path that names
+// a control by another spelling, such as a.send.hall for a.send.reverb when
+// hall is the score's reverb, finds that control's address under the name it
+// was asked for.
 func ParamAddressByName(p *Project, address string) (ParamAddress, error) {
-	if _, err := ResolveParameterPath(p, address); err != nil {
+	resolved, err := ResolveParameterPath(p, address)
+	if err != nil {
 		return ParamAddress{}, err
 	}
 	for _, candidate := range ParamAddresses(p) {
 		if candidate.Address == address {
+			return candidate, nil
+		}
+	}
+	for _, candidate := range ParamAddresses(p) {
+		if candidate.Param != resolved.Descriptor.ID || resolved.OwnerKind == "track" && candidate.Track != resolved.Owner {
+			continue
+		}
+		if other, err := ResolveParameterPath(p, candidate.Address); err == nil && other.Track == resolved.Track && other.ID == resolved.ID {
+			candidate.Address = address
 			return candidate, nil
 		}
 	}

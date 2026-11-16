@@ -101,7 +101,7 @@
     return bounds.top >= pane.top - 1 && bounds.bottom <= Math.min(pane.bottom, innerHeight) + 1;
   }
   async function recordingRevealed(selected = 'verse') {
-    await wait(() => !document.querySelector('#view-panel-arrange').hidden && headingInCenter('#vocals'), 'recording controls visible in Arrange');
+    await wait(() => !document.querySelector('#detail-panel-takes').hidden && document.querySelector('#vocals').getBoundingClientRect().height > 0, 'recording controls visible in Takes');
     if (!document.querySelector('#vocals [data-capture-control=record]')?.disabled)
       throw new Error('Fixture without an audio track must keep Record take disabled');
     const chosen = document.querySelectorAll('#view-panel-arrange [data-placement-block][data-placement-selected=true]');
@@ -224,12 +224,12 @@ arrange {
     const centerBounds = document.querySelector('#studio-center .shell-scroll').getBoundingClientRect();
     if (timelineBounds.top < centerBounds.top || timelineBounds.top >= Math.min(centerBounds.bottom, innerHeight) || timelineBounds.bottom <= centerBounds.top)
       throw new Error('Placement timeline is outside the initial Arrange viewport');
-    checks.push('Arrange initially shows the song timeline above vocal recording');
+    checks.push('Arrange initially shows the song timeline while recording remains mounted in Takes');
     await select('verse');
     checks.push('Command-S creates named arrangement and mounted controls refresh');
 
     const workspaceNav = document.querySelector('#view-panel-arrange .arrange-workspace-nav');
-    const vocalLink = workspaceNav?.querySelector('a[href="#vocals"]');
+    const vocalLink = workspaceNav?.querySelector('a[data-reveal-vocals]');
     const timelineLink = workspaceNav?.querySelector('a[href="#arrangement"]');
     if (!vocalLink || !timelineLink) throw new Error('Arrange workspace links missing');
     const linkEditor = document.querySelector('#score textarea');
@@ -249,21 +249,22 @@ arrange {
     await wait(() => checkpoints.some(copy => copy.content === linkDraft && copy.status === 200 &&
       copy.id === new URL(location.href).searchParams.get('codeDraft')), 'Arrange draft recovery receipt');
     const linkBefore = await state();
-    const linkQuery = location.search;
+    const linkQuery = new URLSearchParams(location.search);
+    linkQuery.set('region', 'detail'); linkQuery.set('dock', 'takes');
     const linkPosts = posts.length, linkNavigations = navigations.length, linkMutations = mutations.length;
     const linkManaged = managedNavigations, linkSubmissions = submissions.length;
     const linkInteractions = [];
     vocalLink.click();
     await recordingRevealed();
-    if (location.hash !== '#vocals') throw new Error('Vocal workspace link did not update its hash');
-    linkInteractions.push({action: 'Record & comp vocals', expectedHash: '#vocals', actualHash: location.hash, headingVisible: true});
+    await wait(() => new URL(location.href).searchParams.get('dock') === 'takes' && new URL(location.href).searchParams.get('region') === 'detail', 'vocal workspace URL');
+    linkInteractions.push({action: 'Record & comp vocals', dock: 'takes', headingVisible: true});
     timelineLink.click();
     await wait(() => headingInCenter('#arrangement'), 'Song timeline link returns to visible timeline');
     await unchanged(fixture, linkPosts);
     const linkAfter = await state(), linkCapture = await state('capture');
     if (document !== documentIdentity || document.querySelector('#studio-shell') !== linkShell ||
         document.querySelector('#cicada-live') !== linkLive || document.querySelector('#score textarea') !== linkEditor ||
-        linkEditor.value !== linkDraft || location.search !== linkQuery || location.hash !== '#arrangement' ||
+        linkEditor.value !== linkDraft || new URLSearchParams(location.search).toString() !== linkQuery.toString() || location.hash !== '#arrangement' ||
         linkAfter.source !== linkBefore.source || linkAfter.revision !== linkBefore.revision ||
         navigations.length !== linkNavigations || managedNavigations !== linkManaged ||
         mutations.length !== linkMutations || submissions.length !== linkSubmissions ||
@@ -271,7 +272,7 @@ arrange {
       throw new Error('Arrange workspace links lost the draft/mount, navigated, submitted, or changed saved/capture state');
     linkInteractions.push({action: 'Song timeline', expectedHash: '#arrangement', actualHash: location.hash, headingVisible: true,
       sameDocument: true, sameShell: true, sameLive: true, sameEditor: true, exactUnsavedDraft: true,
-      queryUnchanged: true, savedSourceAndRevisionUnchanged: true, documentRequests: navigations.length - linkNavigations,
+      querySelectsTakes: true, savedSourceAndRevisionUnchanged: true, documentRequests: navigations.length - linkNavigations,
       managedNavigationEvents: managedNavigations - linkManaged, mutationRequests: mutations.length - linkMutations,
       formSubmissions: submissions.length - linkSubmissions, transportPlaying: false, captureActive: false, microphoneEnabled: false});
     checks.push('Song timeline and Record & comp vocals links preserve the unsaved draft and mounted document after local view/dock changes | interaction=' + JSON.stringify(linkInteractions));
@@ -298,6 +299,8 @@ arrange {
         throw new Error('Record ' + entry + ' lost the Code draft or navigated away');
     }
     fill(draftEditor, fixture.replace(/\r\n?/g, '\n'));
+    document.querySelector('#view-tab-arrange').click();
+    await wait(() => !document.querySelector('#view-panel-arrange').hidden, 'Arrange before returning to timeline');
     document.querySelector('#view-panel-arrange .arrange-workspace-nav a[href="#arrangement"]').click();
     await wait(() => headingInCenter('#arrangement'), 'return to timeline after recording reveal');
     await select('verse');

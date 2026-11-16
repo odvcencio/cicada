@@ -96,6 +96,7 @@ var pathsEngineOnly = map[string]string{
 	"detail/instrument-modulation.cicada": "modulators",
 	"detail/modulators.cicada":            "modulators",
 	"drum-machines/main.cicada":           "an arrangement",
+	"fx/dub-echo-highpass.cicada":         "a tape echo",
 	"keys/sampled/bell_keys.cicada":       "sample packs",
 	"keys/sampled/brass_stab.cicada":      "sample packs",
 	"keys/sampled/clav.cicada":            "sample packs",
@@ -142,6 +143,36 @@ pattern idle { c3 . . . }
 // pathsCases are targeted scores. Each uses only what the direct mixer can
 // render, so both paths run.
 var pathsCases = []pathsCase{
+	// Songs in another meter (#358 review): scene switches and a scene tempo on
+	// the meter's bar lines, a 16-step pattern that crosses them, and swing.
+	{name: "meter 3/4: scene switch, scene tempo, swing", source: `meter 3/4
+pattern long { c3 d3 e3 f3 g3 a3 b3 c4 c3 d3 e3 f3 g3 a3 b3 1~ }
+pattern short { step = 1/8 5 . 3 . 1 . }
+pattern sw { swing = 60% c3 c3 c3 c3 c3 c3 c3 c3 c3 c3 c3 c3 }
+scene x { bass = long lead = short mono = sw }
+scene y { bass = short lead = long tempo = 96 }
+song { x*3 y*2 x*1 y*1 }`},
+	{name: "meter 7/8 2+2+3: scene switch, scene tempo, swing", source: `meter 7/8 2+2+3
+pattern long { c3 d3 e3 f3 g3 a3 b3 c4 c3 d3 e3 f3 g3 a3 b3 1~ }
+pattern short { step = 1/8 5 . 3 . 1 . }
+pattern sw { swing = 60% c3 c3 c3 c3 c3 c3 c3 c3 c3 c3 c3 c3 }
+scene x { bass = long lead = short mono = sw }
+scene y { bass = short lead = long tempo = 96 }
+song { x*3 y*2 x*1 y*1 }`},
+	{name: "dB send automation", source: `fx hall reverb { decay = 2s }
+pattern e { c2 - - - g2 - - . }
+scene x { bass = e }
+song { x*4 }
+automate bass.send.reverb { @1.1.1 -30dB @2.1.1 -6dB @3.1.1 off }`},
+	{name: "delay highpass scene and automation", source: `fx echo delay { highpass = 300Hz feedback = 0.6 }
+track echoed acid { send echo = 0.7 }
+scene x { echoed = idle echo.highpass = 500Hz }
+scene y { echoed = idle echo.highpass = 800Hz }
+song { x*2 y*2 }
+automate echo.highpass {
+ @1.1.1 300Hz
+ @3.1.1 1200Hz linear
+}`},
 	{name: "slide across a scene switch", source: `pattern ax { . . . . . . . . . . . . . . . 1~ }
 pattern ay { 5 . . . . . . . . . . . . . . . }
 scene x { bass = ax }

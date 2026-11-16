@@ -109,6 +109,25 @@ BENCH_ARGS ?=
 bench-agent-loop: build-core
 	go run ./cmd/cicada-bench --cicada build/cicada --large-bars 8 --json build/bench-agent-loop.json $(BENCH_ARGS)
 
+# Times and counts what one edit costs (internal/benchscore/applybench): the
+# hot edits on the reference scores REF-S, REF-P and REF-L through edit.Apply
+# with the edit service's options, the work of each Apply counted (build tag
+# cicada_counters) and its state checked against a full compile. It reports;
+# it gates nothing yet. APPLY_BENCH_ENV sets the runs, for example
+# CICADA_APPLY_BENCH_LARGE_RUNS=5 (see TestApplyBenchmark). bench-apply-wasm
+# runs the same in js/wasm under Node, with GOMAXPROCS unset (Go's js/wasm
+# port cannot start threads).
+.PHONY: bench-apply bench-apply-wasm
+APPLY_BENCH_ENV ?=
+bench-apply:
+	mkdir -p build
+	go test -tags cicada_counters -count=1 -run '^TestApplyBenchOptionsMatchTheService$$' ./cmd/cicada
+	env CICADA_APPLY_BENCH=1 CICADA_APPLY_BENCH_OUT=$(CURDIR)/build/bench-apply.md $(APPLY_BENCH_ENV) go test -tags cicada_counters -count=1 -timeout=60m -run '^TestApplyBenchmark$$' -v ./internal/benchscore/applybench
+
+bench-apply-wasm:
+	mkdir -p build
+	env -u GOMAXPROCS GOOS=js GOARCH=wasm CICADA_APPLY_BENCH=1 CICADA_APPLY_BENCH_OUT=$(CURDIR)/build/bench-apply-wasm.md $(APPLY_BENCH_ENV) go test -exec "$$(go env GOROOT)/lib/wasm/go_js_wasm_exec" -tags cicada_counters -count=1 -timeout=120m -run '^TestApplyBenchmark$$' -v ./internal/benchscore/applybench
+
 # Renders every example score with and without the stored mix (render.MasterCache)
 # and compares the bytes: plain, normalized, and at -14 and -9 LUFS.
 test-render-identity:
@@ -159,7 +178,7 @@ test-render-paths-audio:
 # examples of docs/manual/agents.md and docs/manual/agent-quickstart.md too.
 .PHONY: test-agent-surface
 test-agent-surface: build-core
-	CICADA_BIN=$(CURDIR)/build/cicada CICADA_AGENT_SUITE=1 go test ./internal/agentsuite -run '^(TestAgentTaskSuite|TestAgentDocumentationExamples)$$' -count=1 -v
+	CICADA_BIN=$(CURDIR)/build/cicada CICADA_AGENT_SUITE=1 go test ./internal/agentsuite -run '^(TestAgentTaskSuite|TestAgentBrighterBassTask|TestAgentDocumentationExamples)$$' -count=1 -v
 
 # The GoSX app has its own Go 1.26 module; the realtime TinyGo core stays 1.25.
 build-workstation:
@@ -216,6 +235,11 @@ test-studio-latency:
 # Requires a fresh Studio process, disposable score, and proof directory.
 test-studio-modulation-source:
 	node --test workstation/browser/modulation-source.test.cjs
+
+.PHONY: test-studio-add-insert
+# Requires a fresh Studio process and disposable score.
+test-studio-add-insert:
+	node --test workstation/browser/add-insert.test.cjs
 
 .PHONY: test-studio-chorus
 # Requires a fresh Studio process, disposable score, and proof directory.
@@ -482,11 +506,11 @@ test-kernel-wasm: build-kernel-wasm build-vocals-wasm build-loudness-wasm
 # WebAssembly (under Node), so a TinyGo code-generation difference fails here as
 # it would on arm64 or with GOAMD64=v3. go test exits 0 when -run matches
 # nothing, so every digest must print a PASS line.
-TINYGO_DIGEST_PACKAGES = ./kernel/dsp/detmath ./kernel/fx ./kernel/fx/ampcab ./kernel/fx/chorus ./kernel/fx/convolution ./kernel/fx/tape ./kernel/fx/pro ./kernel/mix ./kernel/loudness
+TINYGO_DIGEST_PACKAGES = ./kernel/dsp/detmath ./kernel/fx ./kernel/fx/ampcab ./kernel/fx/chorus ./kernel/fx/convolution ./kernel/fx/tape ./kernel/fx/pro ./kernel/mix ./kernel/loudness ./kernel/voice/acid
 TINYGO_DIGEST_TESTS = TestIdentityDigest TestSinPiDigest TestAtanDigest TestTanh32Digest TestLog1pDigest TestNearDigest TestFilterCoefficientDigest TestExp2F32Digest \
 	TestCompressorDigest TestDeesserDigest TestDelayDigest TestDriveDigest TestReverbDigest TestAmpcabDigest TestAmpcabOutputDigest TestChorusDigest \
 	TestConvolutionDigest TestTapeDigest TestLimiterDigest TestTransientDigest TestWidthDigest TestRoomDigest TestChainDigest TestNormalizeDigest \
-	TestEQDigestIsIdenticalOnEveryTarget TestMixDigest TestMeterDigestIsIdenticalOnEveryTarget
+	TestEQDigestIsIdenticalOnEveryTarget TestMixDigest TestMeterDigestIsIdenticalOnEveryTarget TestAcidDigest
 test-tinygo-digests:
 	mkdir -p build
 	bash -o pipefail -c 'GOWORK=off GOFLAGS=-buildvcs=false tinygo test -target=wasm -v -run Digest $(TINYGO_DIGEST_PACKAGES) | tee build/tinygo-digests.txt'
@@ -503,6 +527,8 @@ test-parity: build-kernel-wasm build-modular-wasm build-keys-modular-wasm
 	CICADA_MODULAR_WASM_PATH="$$PWD/build/cicada-modular.wasm" go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestInstrumentVibratoNativeWASMParity$$' -count=1 -v
 	CICADA_MODULAR_WASM_PATH="$$PWD/build/cicada-modular.wasm" go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestChorus(NativeWASMParity|InstrumentModulatorNativeWASMParity|GraphLFONativeWASMParity)$$' -count=1 -v
 	CICADA_WASM_PATH="$$PWD/build/cicada-kernel.wasm" go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestChorusRejectedByCoreKernel$$' -count=1 -v
+	CICADA_MODULAR_WASM_PATH="$$PWD/build/cicada-modular.wasm" go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestEchoHighpassRejectedByPortableKernel$$' -count=1 -v
+	CICADA_WASM_PATH="$$PWD/build/cicada-kernel.wasm" go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestOscillatorBankReuseWASM$$' -count=1 -v
 	CICADA_KEYS_MODULAR_WASM_PATH="$$PWD/build/cicada-keys-modular.wasm" go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestKeysChorusNativeWASMParity$$' -count=1 -v
 	CICADA_WASM_PATH="$$PWD/build/cicada-kernel.wasm" CICADA_MODULAR_WASM_PATH="$$PWD/build/cicada-modular.wasm" go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestInstrumentModulatorNativeWASMParity$$' -count=1 -v
 	CICADA_WASM_PATH="$$PWD/build/cicada-kernel.wasm" CICADA_MODULAR_WASM_PATH="$$PWD/build/cicada-modular.wasm" go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestGraphLFONativeWASMParity$$' -count=1 -v

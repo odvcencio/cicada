@@ -90,8 +90,8 @@ storage, so the engine owns its patterns without whole-bank scalarization.
 Offline probability hashing uses the semantic assigned slot for every track,
 including later scenes and pending gates.
 
-Inherited mono probability behavior remains untouched. In particular, MIDI
-export deliberately uses iteration0 on repeated pattern steps. Thus realized
-MIDI chance events can differ from playback: the regression with seed7 and a
-one-step `[d4 f4]?50` yields 10 audio cohorts and 16 MIDI cohorts in one bar. MIDI chance realization can therefore differ from audio playback.
-Mono offline rendering also retains its slot0 hashing limitation.
+Inherited mono probability behavior remains untouched. MIDI export draws chance
+and humanize as playback does, from the pattern seed, track, slot, pass and step:
+the regression with seed 7 and a one-step `[d4 f4]?50` yields 10 chord onsets in
+one bar, in both the audio and the MIDI file (`smf/chord_test.go`). Mono offline
+rendering also retains its slot0 hashing limitation.

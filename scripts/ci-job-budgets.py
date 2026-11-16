@@ -151,7 +151,7 @@ def check_run(budgets_path, jobs_path, now=None):
         else:
             verdict = "ok"
         # Time in the queue is reported, not judged: it comes from the
-        # account's limit on concurrent hosted jobs, not from the job.
+        # availability of hosted or self-hosted runners, not from the job.
         queued = ""
         if job.get("created_at"):
             wait = (parse_time(job["started_at"]) - parse_time(job["created_at"])).total_seconds()

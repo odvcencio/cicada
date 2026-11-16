@@ -7,6 +7,7 @@ import (
 	"io"
 	"m31labs.dev/cicada/host/sampleasset"
 	"math"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -39,28 +40,30 @@ type Options struct {
 	Bars            int // zero renders from From through the song end
 	From            int // zero-based start bar; zero starts at the song beginning
 	TailSec         float64
-	Dither          *bool   // nil enables deterministic TPDF on integer formats
-	Normalize       bool    // peak normalize the post-limiter output to -1 dBFS
-	Block           int     // zero selects 4096 frames
-	MasterGainDB    float64 // export gain after authored DSP, before the safety limiter
-	// MasterInputGainDB is export gain at the master input: after the music
-	// and SFX buses sum and the authored master level, before the score's
-	// master insert chain. Loudness targeting uses it when the chain holds a
-	// limiter. Without a prepared master chain it equals MasterGainDB.
-	MasterInputGainDB float64
-	MasterBiasL       float32 // export DC correction after the master chain and all gain, before the limiter
-	MasterBiasR       float32 // export DC correction after the master chain and all gain, before the limiter
+	Dither          *bool // nil enables deterministic TPDF on integer formats
+	Normalize       bool  // peak normalize the post-limiter output to -1 dBFS
+	Block           int   // zero selects 4096 frames
+	// MasterGainDB is the export gain, such as a loudness target's. It is
+	// makeup gain into the last limiter, not into the mix: it enters the
+	// master stage at the chain's project.ExportGainPoint, after every master
+	// insert ahead of the chain's last limiter, which therefore run exactly as
+	// in playback. Without a limiter it enters after the chain; without a
+	// chain, or when the last limiter is the first insert, it joins the master
+	// level at the master input. Both renderers place it the same way.
+	MasterGainDB float64
+	MasterBiasL  float32 // export DC correction after the master chain and all gain, before the limiter
+	MasterBiasR  float32 // export DC correction after the master chain and all gain, before the limiter
 	// MaxResidentPCM caps, in bytes, the decoded PCM of all sampler packs the
 	// render loads. Zero selects instrumentpack.DefaultMaxResidentPCM (1 GiB).
 	MaxResidentPCM int64
 	// MasterCache, when set, lets repeated renders of one score skip
-	// synthesis: a render replays the signal that entered the master stage when
-	// it differs from the stored capture only in MasterInputGainDB,
-	// MasterGainDB, MasterBiasL, MasterBiasR, Bits, Dither or Normalize. A
-	// difference in anything else (the score, From, Bars, TailSec, SampleRate,
-	// Block, AssetRoot, AssetDir or SamplerBaseline) makes the render capture a
-	// new signal in place of the stored one. The cache matches scores by
-	// pointer, so do not modify a score between renders that share a cache. See
+	// synthesis: a render replays the stored signal at the export gain point
+	// when it differs from the stored capture only in MasterGainDB,
+	// MasterBiasL, MasterBiasR, Bits, Dither or Normalize. A difference in
+	// anything else (the score, From, Bars, TailSec, SampleRate, Block,
+	// AssetRoot, AssetDir or SamplerBaseline) makes the render capture a new
+	// signal in place of the stored one. The cache matches scores by pointer,
+	// so do not modify a score between renders that share a cache. See
 	// MasterCache.
 	MasterCache *MasterCache
 	// NoteTap, when set, receives each note start (seq.NoteOn, drum hits
@@ -69,6 +72,14 @@ type Options struct {
 	// chains, scene phase, placements, ties, chance and transposition are
 	// already applied. It is called on the render goroutine.
 	NoteTap func(track int, event seq.Event)
+	// StemTracks, when not empty, limits Stems to these tracks' stem files
+	// and master.wav. It chooses files only: every track still plays, so the
+	// audio of each written file is the same as in a full stem set.
+	StemTracks []string
+	// StemBuses, with StemTracks, still writes return-a, return-b, music and
+	// sfx, so a reader can attribute the pre-master mix to the chosen tracks
+	// and everything else. It chooses files only.
+	StemBuses bool
 	// Jobs is the most render lanes, goroutines that synthesize tracks at the
 	// same time, that the render may use. Zero, the default, and 1 render
 	// serially: a caller that does not ask for lanes gets none. AutoJobs
@@ -82,8 +93,9 @@ type Options struct {
 	// TrackStemsOnly lets Stems render a score whose extra reverb returns
 	// (slots C to H) have no stem file yet. The track, bus and master stems are
 	// complete, but the return stems then hold slots A and B only, so the
-	// folder would not verify. Audition sets it: it reads only track and master
-	// stems. Without it, Stems refuses such a score.
+	// folder would not verify. Audition sets it and accounts for extra returns
+	// in its peak remainder using the bus stems. Without it, Stems refuses
+	// such a score.
 	TrackStemsOnly bool
 }
 
@@ -105,20 +117,26 @@ type Report struct {
 	PreLimiterOvers           int64
 	CeilingSamples            int64
 	ClippedSamples            int64
+	StemClippedCounts         map[string]int64
 	TailFrames                int64
 	MasterGainDB              float64
 	MaxLimiterGainReductionDB float64
 	// MaxMasterChainLimiterReductionDB is the largest gain reduction of a
 	// limiter declared in the score's master insert chain.
 	MaxMasterChainLimiterReductionDB float64
-	writtenFrames                    int64
-	skipFrames                       int
-	rangeSkip                        int64
-	metricStart                      int64
-	metricEnd                        int64
-	chainStart                       int64
-	chainEnd                         int64
-	tempoChanges                     []project.TempoChange
+	// MaxExportLimiterReductionDB is the largest gain reduction of the master
+	// chain's last limiter, the one the export gain (MasterGainDB) drives. A
+	// limiter ahead of it runs as in playback.
+	MaxExportLimiterReductionDB float64
+	writtenFrames               int64
+	skipFrames                  int
+	rangeSkip                   int64
+	metricStart                 int64
+	metricEnd                   int64
+	chainStart                  int64
+	chainEnd                    int64
+	tempoChanges                []project.TempoChange
+	meter                       *notation.Meter // recorded in the cica chunk; nil is 4/4
 	// LaneReport says how the render used its lanes (Options.Jobs).
 	LaneReport
 }
@@ -143,6 +161,14 @@ func masterChainWindow(from int, fromFrame, endFrame int64, insertLatency, maste
 func (r *Report) noteMasterChainReduction(at int64, db float64) {
 	if at >= r.chainStart && at < r.chainEnd {
 		r.MaxMasterChainLimiterReductionDB = max(r.MaxMasterChainLimiterReductionDB, db)
+	}
+}
+
+// noteExportLimiterReduction records the last chain limiter's reduction read
+// at render sample position at, over the same window.
+func (r *Report) noteExportLimiterReduction(at int64, db float64) {
+	if at >= r.chainStart && at < r.chainEnd {
+		r.MaxExportLimiterReductionDB = max(r.MaxExportLimiterReductionDB, db)
 	}
 }
 
@@ -198,7 +224,8 @@ type trackRuntime struct {
 type busMixerState struct {
 	masterProcessor      engine.StereoProcessor
 	masterLimiter        interface{ LimiterGainReductionDB() float64 }
-	masterCache          *MasterCache // captures or replays the signal entering the master stage
+	exportLimiter        interface{ ExportLimiterGainReductionDB() float64 }
+	masterCache          *MasterCache // captures or replays the signal at the export gain point
 	cacheReplay          bool
 	outputGain           float32
 	musicMute, musicSolo bool
@@ -573,7 +600,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	if opts.Block < 1 || opts.Block > 4096 {
 		return report, fmt.Errorf("WAV block must be 1 to 4096 frames")
 	}
-	if math.IsNaN(opts.MasterGainDB) || math.IsInf(opts.MasterGainDB, 0) || opts.MasterGainDB < -120 || opts.MasterGainDB > 24 || math.IsNaN(opts.MasterInputGainDB) || math.IsInf(opts.MasterInputGainDB, 0) || opts.MasterInputGainDB < -120 || opts.MasterInputGainDB > 24 || math.IsNaN(float64(opts.MasterBiasL)) || math.IsInf(float64(opts.MasterBiasL), 0) || math.IsNaN(float64(opts.MasterBiasR)) || math.IsInf(float64(opts.MasterBiasR), 0) {
+	if math.IsNaN(opts.MasterGainDB) || math.IsInf(opts.MasterGainDB, 0) || opts.MasterGainDB < -120 || opts.MasterGainDB > 24 || math.IsNaN(float64(opts.MasterBiasL)) || math.IsInf(float64(opts.MasterBiasL), 0) || math.IsNaN(float64(opts.MasterBiasR)) || math.IsInf(float64(opts.MasterBiasR), 0) {
 		return report, fmt.Errorf("master gain or DC correction is out of range")
 	}
 	dither := opts.Dither == nil || *opts.Dither
@@ -581,8 +608,8 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	if err != nil {
 		return report, err
 	}
-	if math.IsNaN(opts.TailSec) || math.IsInf(opts.TailSec, 0) || opts.TailSec < 0 || opts.TailSec > 10 {
-		return report, fmt.Errorf("tail must be 0 to 10 seconds")
+	if err := checkTail(opts.TailSec); err != nil {
+		return report, err
 	}
 	clock, err := seq.NewClock(opts.SampleRate, score.TempoMilli)
 	if err != nil {
@@ -622,8 +649,8 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	} else {
 		report.Bars = opts.Bars
 	}
-	if report.Bars < 1 || report.Bars > 256 {
-		return report, fmt.Errorf("render supports 1 to 256 bars")
+	if report.Bars < 1 || report.Bars > maxDirectBars {
+		return report, fmt.Errorf("render supports 1 to %d bars", maxDirectBars)
 	}
 	renderBars := report.From + report.Bars
 	masterProcessor, err := project.PrepareMaster(semantic, opts.SampleRate)
@@ -632,8 +659,14 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	}
 	busState := busMixerState{masterProcessor: masterProcessor, outputGain: 1}
 	busState.masterLimiter, _ = masterProcessor.(interface{ LimiterGainReductionDB() float64 })
+	busState.exportLimiter, _ = masterProcessor.(interface{ ExportLimiterGainReductionDB() float64 })
 	authoredGainDB, hasLevel := authoredMasterLevelDB(semantic)
-	masterGainDB, masterGain, outputGain := directMasterGains(opts, authoredGainDB, hasLevel, masterProcessor != nil)
+	masterGainDB, masterGain, chainGain, outputGain := directMasterGains(opts, authoredGainDB, hasLevel, masterProcessor != nil, project.MasterExportGainPoint(semantic))
+	if chainGain != 1 {
+		if !project.SetMasterExportGain(masterProcessor, chainGain) {
+			return report, fmt.Errorf("cannot set master export gain")
+		}
+	}
 	for _, bus := range semantic.Buses {
 		switch bus.ID {
 		case "music":
@@ -657,6 +690,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 		return report, err
 	}
 	report.tempoChanges = project.ExcerptTempoChanges(semantic.TempoMilli, tempoChanges, report.From, report.Bars)
+	report.meter = score.SongMeter()
 	if len(report.tempoChanges) > maxWAVTempoChanges {
 		return report, fmt.Errorf("bars %d to %d hold %d tempo changes; the WAV timing chunk records at most %d, so render a shorter range", report.From+1, report.From+report.Bars, len(report.tempoChanges), maxWAVTempoChanges)
 	}
@@ -665,7 +699,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	report.Frames = renderFrames - fromFrame
 	report.rangeSkip = fromFrame
 	dataBytes := report.Frames * int64(encoder.frameBytes())
-	if dataBytes > int64(^uint32(0))-int64(36+metadataBytes(len(report.tempoChanges))) {
+	if dataBytes > int64(^uint32(0))-int64(36+metadataBytes(len(report.tempoChanges), report.meter)) {
 		return report, fmt.Errorf("WAV exceeds RIFF size limit")
 	}
 	var prepared []engine.StereoVoiceFactory
@@ -709,7 +743,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	}
 	var stems *stemOutput
 	if stemsDir != "" {
-		stems, err = newStemOutput(stemsDir, semantic, report)
+		stems, err = newStemOutput(stemsDir, semantic, report, opts, score.Seed)
 		if err != nil {
 			return report, err
 		}
@@ -836,7 +870,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	if err != nil {
 		return report, err
 	}
-	if err := writeWAVHeaderTempo(writer, opts.SampleRate, opts.Bits, uint32(dataBytes), len(report.tempoChanges)); err != nil {
+	if err := writeWAVHeaderTempo(writer, opts.SampleRate, opts.Bits, uint32(dataBytes), metadataBytes(len(report.tempoChanges), report.meter)); err != nil {
 		return report, err
 	}
 	busState.outputGain = outputGain
@@ -844,7 +878,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	block := make([]byte, max(opts.Block, limiter.LatencyFrames())*encoder.frameBytes())
 	if cache := opts.MasterCache; cache != nil && stemsDir == "" && opts.NoteTap == nil {
 		key := masterCacheKey{score: score, sampleRate: opts.SampleRate, block: opts.Block, from: opts.From, bars: opts.Bars, tailSec: opts.TailSec, assetRoot: opts.AssetRoot, assetDir: opts.AssetDir, baseline: opts.SamplerBaseline}
-		use, replay, err := cache.begin(key, renderFrames+int64(insertLatency+masterLatency))
+		use, replay, err := cache.begin(key, renderFrames+int64(insertLatency+masterLatency), masterProcessor)
 		if err != nil {
 			return report, err
 		}
@@ -1066,6 +1100,12 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 		return report, err
 	}
 	if stems != nil {
+		report.StemClippedCounts = make(map[string]int64)
+		for _, f := range stems.files {
+			if !f.skip && f.encoder != nil {
+				report.StemClippedCounts[filepath.Base(f.file.Name())] = f.counts.ClippedSamples
+			}
+		}
 		if err := stems.finish(uint32(score.TempoMilli)); err != nil {
 			return report, err
 		}
@@ -1087,26 +1127,32 @@ func authoredMasterLevelDB(p *project.Project) (float64, bool) {
 }
 
 // directMasterGains returns the combined master gain in dB that a direct
-// render reports, and the gain factors its master stage applies ahead of the
-// master chain (with the authored level) and after it. Without a master chain
+// render reports, and the gain factors its master stage applies: before, ahead
+// of the master chain with the authored level; chain, inside the chain ahead of
+// its last limiter; after, behind the chain. The export gain goes to the
+// factor of its gain point (see Options.MasterGainDB). Without a master chain
 // every gain goes in ahead of the safety limiter as one factor.
-func directMasterGains(opts Options, authoredGainDB float64, hasLevel, hasChain bool) (gainDB float64, before, after float32) {
+func directMasterGains(opts Options, authoredGainDB float64, hasLevel, hasChain bool, point project.ExportGainPoint) (gainDB float64, before, chain, after float32) {
 	gainDB = opts.MasterGainDB
-	if !hasChain {
-		gainDB += opts.MasterInputGainDB
-	}
 	if hasLevel {
 		gainDB += authoredGainDB
 	}
-	before, after = 1, 1
-	if gainDB != 0 {
-		before = float32(detmath.Pow(10, gainDB/20))
-	}
-	if hasChain {
-		before = float32(detmath.Pow(10, (authoredGainDB+opts.MasterInputGainDB)/20))
+	before, chain, after = 1, 1, 1
+	switch {
+	case !hasChain:
+		if gainDB != 0 {
+			before = float32(detmath.Pow(10, gainDB/20))
+		}
+	case point == project.GainAtMasterInput:
+		before = float32(detmath.Pow(10, (authoredGainDB+opts.MasterGainDB)/20))
+	case point == project.GainBeforeLastLimiter:
+		before = float32(detmath.Pow(10, authoredGainDB/20))
+		chain = exportGainFactor(opts.MasterGainDB)
+	default: // project.GainAfterChain
+		before = float32(detmath.Pow(10, authoredGainDB/20))
 		after = float32(detmath.Pow(10, opts.MasterGainDB/20))
 	}
-	return gainDB, before, after
+	return gainDB, before, chain, after
 }
 
 // finishWAV drains the safety limiter and appends the timing chunk.
@@ -1117,7 +1163,7 @@ func finishWAV(w io.Writer, score *notation.Score, limiter *mix.Limiter, stems *
 	if report.writtenFrames != report.Frames {
 		return fmt.Errorf("limiter wrote %d frames, expected %d", report.writtenFrames, report.Frames)
 	}
-	return writeMetadata(w, uint32(score.TempoMilli), uint32(report.Bars), uint32(report.TailFrames), report.tempoChanges)
+	return writeMetadata(w, report.meter, uint32(score.TempoMilli), uint32(report.Bars), uint32(report.TailFrames), report.tempoChanges)
 }
 
 func compileTracks(score *notation.Score, semantic *project.Project, sampleRate int) ([]trackRuntime, error) {
@@ -2013,7 +2059,9 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 		if busState.masterMute {
 			left, right = 0, 0
 		}
-		if cache != nil {
+		// The cache stores the master input unless the master chain stores the
+		// signal at its gain point itself (MasterCache.atPoint).
+		if cache != nil && !cache.atPoint {
 			if busState.cacheReplay {
 				left, right = cache.block[2*frame], cache.block[2*frame+1]
 			} else {
@@ -2031,6 +2079,9 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 			}
 			if busState.masterLimiter != nil {
 				report.noteMasterChainReduction(sample, busState.masterLimiter.LimiterGainReductionDB())
+			}
+			if busState.exportLimiter != nil {
+				report.noteExportLimiterReduction(sample, busState.exportLimiter.ExportLimiterGainReductionDB())
 			}
 			left *= busState.outputGain
 			right *= busState.outputGain
@@ -2181,10 +2232,11 @@ func flushLimiter(w io.Writer, limiter *mix.Limiter, stems *stemOutput, encoder 
 //
 // Version 1 is 24 bytes: the score tempo, the bars, and the tail. A song whose
 // scenes change tempo writes version 2, which adds one (bar, tempo) pair for
-// each step after those fields. A song with a single tempo still writes the
-// exact version 1 bytes.
-func writeMetadata(w io.Writer, tempoMilli, bars, tailFrames uint32, changes []project.TempoChange) error {
-	chunk := make([]byte, metadataBytes(len(changes)))
+// each step after those fields. A song with a meter writes version 3, which
+// puts the meter's beats and unit and two zero bytes before the pairs. A song
+// with a single tempo and no meter still writes the exact version 1 bytes.
+func writeMetadata(w io.Writer, meter *notation.Meter, tempoMilli, bars, tailFrames uint32, changes []project.TempoChange) error {
+	chunk := make([]byte, metadataBytes(len(changes), meter))
 	copy(chunk[:4], "cica")
 	binary.LittleEndian.PutUint32(chunk[4:8], uint32(len(chunk)-8))
 	binary.LittleEndian.PutUint32(chunk[8:12], 1)
@@ -2194,9 +2246,15 @@ func writeMetadata(w io.Writer, tempoMilli, bars, tailFrames uint32, changes []p
 	binary.LittleEndian.PutUint32(chunk[12:16], tempoMilli)
 	binary.LittleEndian.PutUint32(chunk[16:20], bars)
 	binary.LittleEndian.PutUint32(chunk[20:24], tailFrames)
+	steps := chunk[24:]
+	if meter != nil {
+		binary.LittleEndian.PutUint32(chunk[8:12], 3)
+		chunk[24], chunk[25] = byte(meter.Beats), byte(meter.Unit)
+		steps = chunk[28:]
+	}
 	for i, change := range changes {
-		binary.LittleEndian.PutUint32(chunk[24+8*i:], uint32(change.Bar))
-		binary.LittleEndian.PutUint32(chunk[28+8*i:], uint32(change.BPMMilli))
+		binary.LittleEndian.PutUint32(steps[8*i:], uint32(change.Bar))
+		binary.LittleEndian.PutUint32(steps[4+8*i:], uint32(change.BPMMilli))
 	}
 	n, err := w.Write(chunk)
 	if err != nil {
@@ -2209,7 +2267,12 @@ func writeMetadata(w io.Writer, tempoMilli, bars, tailFrames uint32, changes []p
 }
 
 // metadataBytes is the size of the whole cica chunk, header included.
-func metadataBytes(changes int) int { return 24 + 8*changes }
+func metadataBytes(changes int, meter *notation.Meter) int {
+	if meter != nil {
+		return 28 + 8*changes
+	}
+	return 24 + 8*changes
+}
 
 func expressionEventPriority(kind seq.EventKind) int {
 	if kind == seq.NoteOff {

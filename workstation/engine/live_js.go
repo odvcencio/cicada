@@ -617,7 +617,7 @@ func (u *liveUI) syncControls() {
 	if u.closed.Load() {
 		return
 	}
-	u.query("[data-live-control=record]").Set("disabled", !u.playing || u.recording || len(u.takes) > 0)
+	u.query("[data-live-control=record]").Set("disabled", u.query("[data-live-control=record]").Call("getAttribute", "data-record-unavailable").String() == "true" || !u.playing || u.recording || len(u.takes) > 0)
 	u.query("[data-live-control=record]").Call("setAttribute", "aria-pressed", strconv.FormatBool(u.recording))
 	u.query("[data-live-control=finish]").Set("disabled", len(u.takes) == 0 || u.finishing || u.checkingTake)
 	buttons := u.root.Call("querySelectorAll", "[data-live-note],[data-live-drum]")

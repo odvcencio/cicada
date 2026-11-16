@@ -79,6 +79,22 @@ type DelayParams struct {
 	PingPong bool // Mono wet input into the left line, then alternating feedback.
 	Width    float64
 	Mix      float64
+	// HighpassHz filters the send and feedback together at the line input:
+	// 20 Hz to 2 kHz, or 0 for off. The first repeat passes it once,
+	// and each later repeat once more. It is left
+	// out of JSON when off, so a delay without it encodes as before.
+	HighpassHz float64 `json:",omitempty"`
+}
+
+// Echo high-pass range. A cutoff of 0 turns the filter off.
+const (
+	MinEchoHighpassHz = 20
+	MaxEchoHighpassHz = 2_000
+)
+
+// ValidEchoHighpass reports whether hz is 0 (off) or a cutoff in range.
+func ValidEchoHighpass(hz float64) bool {
+	return hz == 0 || finite(hz) && hz >= MinEchoHighpassHz && hz <= MaxEchoHighpassHz
 }
 
 func DefaultDelayParams() DelayParams {
@@ -86,8 +102,11 @@ func DefaultDelayParams() DelayParams {
 }
 
 func (p DelayParams) Validate() error {
+	if !EchoHighpassEnabled && p.HighpassHz != 0 {
+		return validationError("portable kernel has no echo high-pass")
+	}
 	if p.Division >= lastDelayDivision || !finite(p.TimeMs) || !finite(p.Feedback) || !finite(p.DampHz) || !finite(p.Width) || !finite(p.Mix) ||
-		p.Feedback < 0 || p.Feedback > .95 || p.DampHz < 1_000 || p.DampHz > 16_000 || p.Width < 0 || p.Width > 1 || p.Mix < 0 || p.Mix > 1 {
+		p.Feedback < 0 || p.Feedback > .95 || p.DampHz < 1_000 || p.DampHz > 16_000 || p.Width < 0 || p.Width > 1 || p.Mix < 0 || p.Mix > 1 || !ValidEchoHighpass(p.HighpassHz) {
 		return validationError("delay parameter is invalid or out of range")
 	}
 	if p.Division == FreeDelay {
@@ -133,6 +152,7 @@ type Delay struct {
 	mix, targetMix           float64
 	smooth                   float64
 	feedbackState            stereo
+	highpass                 EchoHighpass
 	fault                    bool
 	excited                  bool
 	frames                   uint32 // Process calls since New or Reset, for flushControls
@@ -196,6 +216,9 @@ func (d *Delay) SetParams(p DelayParams) error {
 	d.targetFeedback = p.Feedback
 	d.targetDamp = 1 - detmath.Exp(-2*math.Pi*p.DampHz/d.sampleRate)
 	d.targetWidth, d.targetMix = p.Width, p.Mix
+	if EchoHighpassEnabled {
+		d.highpass.Set(p.HighpassHz, d.sampleRate)
+	}
 	d.targetPing = 0
 	if p.PingPong {
 		d.targetPing = 1
@@ -241,6 +264,9 @@ func (d *Delay) Reset() {
 	d.excited = false
 	d.oldFrames, d.fade = d.newFrames, 1
 	d.feedback, d.damp, d.ping, d.width, d.mix = d.targetFeedback, d.targetDamp, d.targetPing, d.targetWidth, d.targetMix
+	if EchoHighpassEnabled {
+		d.highpass.Reset()
+	}
 	d.frames = 0
 }
 
@@ -251,6 +277,9 @@ func (d *Delay) Reset() {
 // only through sums with normal values and the float32 conversion, which
 // absorb it. The damping coefficient's target is never zero.
 func (d *Delay) flushControls() {
+	if EchoHighpassEnabled {
+		d.highpass.Flush()
+	}
 	d.feedback, d.ping = subnormal.Flush64(d.feedback), subnormal.Flush64(d.ping)
 	d.width, d.mix = subnormal.Flush64(d.width), subnormal.Flush64(d.mix)
 }
@@ -289,6 +318,9 @@ func (d *Delay) Process(left, right float32) (float32, float32) {
 	d.ping += float64((d.targetPing - d.ping) * d.smooth)
 	d.width += float64((d.targetWidth - d.width) * d.smooth)
 	d.mix += float64((d.targetMix - d.mix) * d.smooth)
+	if EchoHighpassEnabled {
+		d.highpass.Advance(d.smooth)
+	}
 	d.frames++
 	if d.frames%subnormal.SweepFrames == 0 {
 		d.flushControls()
@@ -327,10 +359,15 @@ func (d *Delay) Process(left, right float32) (float32, float32) {
 	mono := float64((x.left + x.right) * .5)
 	inputL := x.left + float64((mono-x.left)*d.ping)
 	inputR := float64(x.right * (1 - d.ping))
-	d.buffer[d.position] = stereo{
-		inputL + fastmath.Tanh(d.feedbackState.left*d.feedback),
-		inputR + fastmath.Tanh(d.feedbackState.right*d.feedback),
+	lineL := inputL + fastmath.Tanh(d.feedbackState.left*d.feedback)
+	lineR := inputR + fastmath.Tanh(d.feedbackState.right*d.feedback)
+	if EchoHighpassEnabled && d.highpass.Active() {
+		// The high-pass filters what enters the line, the send and the
+		// feedback together, so the first repeat has passed it once and each
+		// later repeat once more; damp filters only the feedback.
+		lineL, lineR = d.highpass.Process(lineL, lineR)
 	}
+	d.buffer[d.position] = stereo{lineL, lineR}
 	d.position++
 	if d.position == len(d.buffer) {
 		d.position = 0

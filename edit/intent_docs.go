@@ -345,11 +345,12 @@ var intentDocs = map[string]typeDoc{
 	},
 	"InsertLibraryItem": {
 		Meaning: "imports a library and binds a track to one of its items",
-		Notes:   "The host resolves the library first. PresetInstance names an effect instance when Reference is an effect preset. cicada apply does not pin libraries: the project's cicada.sum must already pin the library, or the edit is refused with CICADA-LIB-HASH (Studio pins it before applying).",
+		Notes:   "On an existing track a new voice goes through settrackvoice's checks that look at the voice: drum lanes and the rows and marks it ignores, with acceptchanges, and refusals with the same reasons. Accepting changes requires the revision of the score whose changes were reviewed. The host resolves the library first. PresetInstance names an effect instance when Reference is an effect preset. cicada apply does not pin libraries: the project's cicada.sum must already pin the library, or the edit is refused with CICADA-LIB-HASH (Studio pins it before applying).",
 		Examples: []string{
 			"{\"kind\":\"insertlibraryitem\",\"track\":\"glass\",\"importpath\":\"std/synth\",\"reference\":\"synth.glassbass\",\"itemkind\":\"instrument\"}",
 		},
 		Fields: map[string]string{
+			"AcceptChanges":  "on an existing track, accept the listed changes to the sound, as settrackvoice does",
 			"EffectKind":     "the effect's kind, for an effect item",
 			"ImportPath":     "the library's import path, such as std/synth",
 			"ItemKind":       "what the item is, such as instrument, preset or effect",
@@ -669,7 +670,7 @@ var intentDocs = map[string]typeDoc{
 	},
 	"SetAutomationPoint": {
 		Meaning: "adds or edits one point of a parameter's automation lane (an `automate <path> { ... }` block)",
-		Notes:   "OldAt names the point being moved; it is empty for a new point. Shape is linear, step, smooth, exponential or curve and defaults to linear; Curve is the tension and only applies to curve. A lane that does not exist yet is created.",
+		Notes:   "OldAt names the point being moved; it is empty for a new point. Shape is linear, step, smooth, exponential or curve and defaults to linear; Curve is the tension and only applies to curve. A lane that does not exist yet is created. A send lane is param:<track>.send.delay or param:<track>.send.reverb, or param:<track>.send.<name> with the declared name of the delay, tape or reverb effect. Its points are all in dB (-60dB to 0dB, or off for silence), and then the lane ramps in dB, or all linear gains from 0 to 1, and then it ramps in gain.",
 		Examples: []string{
 			"{\"kind\":\"setautomationpoint\",\"entity\":\"param:bass.cutoff\",\"at\":\"@4.1.1\",\"value\":\"2kHz\",\"shape\":\"smooth\"}",
 			"{\"kind\":\"setautomationpoint\",\"entity\":\"param:bass.cutoff\",\"at\":\"@4.1.1\",\"value\":\"2kHz\",\"shape\":\"linear\"}",
@@ -837,11 +838,14 @@ var intentDocs = map[string]typeDoc{
 		},
 	},
 	"SetProjectSettings": {
-		Meaning: "sets the score's title, tempo, key root and scale together",
+		Meaning: "sets the score's title, tempo, key root and scale together, and its meter when Meter is given",
+		Notes:   "A meter change rewrites the declaration only; it is refused when a position no longer fits its bar.",
 		Examples: []string{
 			"{\"kind\":\"setprojectsettings\",\"title\":\"Intent catalog\",\"tempomilli\":124000,\"root\":\"a\",\"scale\":\"minor\"}",
+			"{\"kind\":\"setprojectsettings\",\"title\":\"Waltz\",\"tempomilli\":132000,\"root\":\"a\",\"scale\":\"minor\",\"meter\":\"3/4\"}",
 		},
 		Fields: map[string]string{
+			"Meter":      "N/D with optional beat groups, such as 3/4 or 7/8 2+2+3; empty keeps the meter",
 			"Root":       "key root",
 			"Scale":      "scale",
 			"TempoMilli": "tempo in thousandths of a BPM, 20000–300000",
@@ -936,6 +940,21 @@ var intentDocs = map[string]typeDoc{
 			"Shared":   "as for togglestep",
 			"Slide":    "slide from a note into the next one",
 			"Velocity": "drum hit spelling for mode hit: x, accented X, or a level 1–9",
+		},
+	},
+	"SetTrackVoice": {
+		Meaning: "changes what a track plays to another voice: a built-in voice, or an instrument, kit, sampler or preset the score declares or imports",
+		Notes:   "The track keeps its name, mixer settings, scene bindings and chain. Nothing changes silently. A track setting the new voice lacks is refused with voice_params_unsupported, unless dropparams removes it (the label names each). A pattern the new voice cannot play, a parameter path (automation, scene setting, modulation route, MIDI or live mapping) it does not take, or any other error the change adds to cicada check, sampler pack zones included, is refused with voice_change_invalid, and uses lists every one. A change that plays but sounds different is refused with voice_changes_sound unless acceptchanges accepts it; the result's warnings then name each. That covers drum lanes the new kit does not play, an input whose effect differs between the voices (a pressure row or gesture acid ignores, brackets that are a tuplet on acid and a chord on piano, hit velocity on a kit lane whose instrument does not read velocity: notation.VoiceInputs and VoiceLaneInputs), every note whose compiled pitch, velocity or articulation differs (a pitch written without an octave takes it from the voice, so notes can move by octaves; writing the octave keeps them), and what changes for other tracks: the polyphony an instrument shares between its tracks, and a compressor keyed to the track. An input or a voice the check does not model, the old voice or the new, is refused with voice_input_unmodeled. Giving acceptchanges or dropparams requires the revision of the score whose changes were reviewed.",
+		Examples: []string{
+			"{\"kind\":\"settrackvoice\",\"track\":\"keys\",\"voice\":\"tine_ep\"}",
+			"{\"kind\":\"settrackvoice\",\"track\":\"keys\",\"voice\":\"tine_ep\",\"dropparams\":true}",
+			"{\"kind\":\"settrackvoice\",\"track\":\"keys\",\"voice\":\"tine_ep\",\"acceptchanges\":true}",
+		},
+		Fields: map[string]string{
+			"AcceptChanges": "accept the listed changes to the sound, such as silent drum lanes",
+			"DropParams":    "remove the track settings the new voice does not have",
+			"Track":         "the track's name",
+			"Voice":         "the new voice",
 		},
 	},
 	"ShapePerformancePitch": {

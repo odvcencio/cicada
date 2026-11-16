@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	"m31labs.dev/cicada/instrument"
+	"m31labs.dev/cicada/internal/applycount"
 	"m31labs.dev/cicada/internal/paramdefs"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/graph"
@@ -15,6 +16,10 @@ import (
 	"m31labs.dev/cicada/kernel/voice/piano"
 	"m31labs.dev/cicada/notation"
 )
+
+// MaxRenderTailSeconds is the longest render tail, in seconds, an export
+// block or the render commands take (render.MaxTailSeconds).
+const MaxRenderTailSeconds = 60
 
 var acceptedScales = map[string]bool{
 	"minor": true, "major": true, "dorian": true, "phrygian": true,
@@ -38,8 +43,19 @@ func validateGlideValue(value Value) error {
 // ValidateProject checks the semantic interchange records after source lowering
 // or JSON decoding. It does not yet load audio into the runtime engine.
 func ValidateProject(p *Project) error {
-	if p == nil || !((p.Format == FormatID && p.Version == 1) || (p.Format == FormatID2 && p.Version == 2)) {
+	if applycount.Enabled {
+		applycount.ProjectValidation()
+	}
+	if p == nil || !((p.Format == FormatID && p.Version == 1) || (p.Format == FormatID2 && p.Version == 2) || (p.Format == FormatID3 && p.Version == 3)) {
 		return fmt.Errorf("unsupported project format or version")
+	}
+	if p.Meter != nil {
+		if p.Format != FormatID3 {
+			return fmt.Errorf("CICADA-VERSION: a meter requires cicada.project/3")
+		}
+		if err := validMeter(p.Meter); err != nil {
+			return err
+		}
 	}
 	if err := validateArrangementProject(p); err != nil {
 		return err
@@ -48,7 +64,7 @@ func ValidateProject(p *Project) error {
 		return err
 	}
 	if p.Live != nil {
-		if p.Edition != 2 || p.Format != FormatID2 {
+		if p.Edition != 2 || !p.formatAtLeast2() {
 			return fmt.Errorf("CICADA-VERSION: live controls require edition 2 and cicada.project/2")
 		}
 		if p.Live.Macros == nil || p.Live.Layers == nil {
@@ -438,7 +454,7 @@ func ValidateProject(p *Project) error {
 		if track.Mixer.SendB > 0 && !hasEffectKind(effects, "reverb") {
 			return fmt.Errorf("track %s requires a declared reverb for send_b", track.ID)
 		}
-		if p.Format == FormatID2 {
+		if p.formatAtLeast2() {
 			seenSends := map[string]bool{}
 			for _, send := range track.Mixer.Sends {
 				effect, exists := effects[send.To]
@@ -491,7 +507,7 @@ func ValidateProject(p *Project) error {
 		seenBuses[bus.ID] = true
 		namespace[bus.ID] = "bus"
 	}
-	if p.Format == FormatID2 {
+	if p.formatAtLeast2() {
 		for _, bus := range p.Buses {
 			if bus.ID != "music" && bus.ID != "sfx" {
 				return fmt.Errorf("CICADA-UNSUPPORTED: user-declared bus %s is not implemented", bus.ID)
@@ -926,8 +942,8 @@ func validateExports(exports []Export) error {
 		if export.Bits != nil && *export.Bits != 16 && *export.Bits != 24 && *export.Bits != 32 {
 			return fmt.Errorf("export %s bits must be 16, 24, or 32", export.ID)
 		}
-		if export.Tail != nil && (!validValue(*export.Tail) || export.Tail.Number == nil || export.Tail.Unit != "ms" || *export.Tail.Number < 0 || *export.Tail.Number > 10000) {
-			return fmt.Errorf("CICADA-UNSUPPORTED: export %s tail is outside the renderer's 0 to 10 second range", export.ID)
+		if export.Tail != nil && (!validValue(*export.Tail) || export.Tail.Number == nil || export.Tail.Unit != "ms" || *export.Tail.Number < 0 || *export.Tail.Number > MaxRenderTailSeconds*1000) {
+			return exportTailRangeError(export.ID, *export.Tail)
 		}
 		if export.Loudness != nil && (!validValue(*export.Loudness) || export.Loudness.Number == nil || export.Loudness.Unit != "lufs" && export.Loudness.Unit != "lu" || *export.Loudness.Number < -70 || *export.Loudness.Number > 0) {
 			return fmt.Errorf("export %s loudness must be -70 to 0 LUFS", export.ID)

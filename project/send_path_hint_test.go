@@ -4,27 +4,37 @@ import (
 	"strings"
 	"testing"
 
+	"m31labs.dev/cicada/internal/paramdefs"
 	"m31labs.dev/cicada/notation"
 )
 
-// An automation lane that names a send by its effect gets a hint with the
-// return-slot path.
+// An automation lane may name a send by its effect, as a track's send line
+// does: keys.send.echo is the tape echo's return, keys.send.delay. A send to
+// an effect that is not a return still gets a hint naming the send paths.
 func TestAutomationSendPathNamedByEffectGetsAHint(t *testing.T) {
-	source := "cicada 2\ntempo 120\nfx echo tape { time = 1/8 }\ntrack keys acid { send echo = 0.2 }\npattern p acid { 1 . 3 . }\nscene s { keys = p }\nsong { s }\nautomate keys.send.echo {\n  @1.1.1 0.1\n}\n"
+	source := "cicada 2\ntempo 120\nfx echo tape { time = 1/8 }\nfx grit drive {}\ntrack keys acid { send echo = 0.2 insert = grit }\npattern p acid { 1 . 3 . }\nscene s { keys = p }\nsong { s }\nautomate keys.send.echo {\n  @1.1.1 0.1\n}\n"
 	score, ds := notation.Parse([]byte(source))
 	if score == nil {
 		t.Fatalf("parse: %+v", ds)
 	}
 	p, ds := FromScore(score)
-	if p != nil {
-		t.Fatal("automating keys.send.echo was accepted")
+	if p == nil {
+		t.Fatalf("automating keys.send.echo was refused: %+v", ds)
+	}
+	resolved, err := ResolveParameterPath(p, "keys.send.echo")
+	if err != nil || resolved.Descriptor.Path != "send.delay" {
+		t.Fatalf("keys.send.echo resolves to %+v, %v; want the send.delay control", resolved, err)
+	}
+	score, _ = notation.Parse([]byte(strings.Replace(source, "keys.send.echo", "keys.send.grit", 1)))
+	if p, ds = FromScore(score); p != nil {
+		t.Fatal("automating keys.send.grit, a drive, was accepted")
 	}
 	for _, d := range ds {
-		if strings.Contains(d.Message, "the send to echo is send.delay") {
+		if strings.Contains(d.Message, "send.grit names effect grit, a drive, which is not a send return") {
 			return
 		}
 	}
-	t.Fatalf("no hint naming send.delay: %+v", ds)
+	t.Fatalf("no hint naming the send paths: %+v", ds)
 }
 
 // A route to an authored instrument's own parameter moves it live: the track
@@ -46,5 +56,13 @@ func TestRouteToAnInstrumentParamBindsItsSlot(t *testing.T) {
 	live := cfg.LiveParams
 	if len(live) != 1 || live[0].Track != 0 || live[0].Slot != 1 || cfg.Track[0].Graph.Nodes[live[0].Node].Value != 500 {
 		t.Fatalf("bindings %+v, want only lead's slot 1 (cutoff) on the node holding 500 Hz; pad, which nothing moves, gets none", live)
+	}
+}
+
+func TestDottedSendTarget(t *testing.T) {
+	kind := func(name string) (string, bool) { return "reverb", name == "fx.reverb" }
+	target, ok, refusal := paramdefs.SendTarget("send.fx.reverb", kind)
+	if !ok || target != "send.reverb" || refusal != "" {
+		t.Fatalf("dotted send: %q %v %q", target, ok, refusal)
 	}
 }
