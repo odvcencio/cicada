@@ -410,6 +410,10 @@ func (s *studioApp) mixerField(v workspace, csrf, label string, f mixerField) go
 		return mixerUnavailable(label, f.Reason)
 	}
 	value := fmt.Sprint(f.Value)
+	if f.Value == nil {
+		// A control whose off has no number, such as an unset echo highpass.
+		value = "off"
+	}
 	valueType := "text"
 	input := textInput("value", value)
 	descriptor := f.Descriptor

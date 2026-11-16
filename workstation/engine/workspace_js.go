@@ -106,8 +106,12 @@ type workspaceUI struct {
 	projectRevision atomic.Value
 	// shell is set on /studio, where the queue patches update regions
 	// (shell_edits_js.go) instead of the whole workspace.
-	shell      bool
-	reading    bool // a background read of stale regions is queued or running
+	shell   bool
+	reading bool // a background read of stale regions is queued or running
+	// edits counts the queued and running edits (POST jobs). Each one moves
+	// the saved revision, so a form that GoSX would send itself holds the
+	// revision from before it: submit holds such a form until they finish.
+	edits      int
 	cancelRead func()
 	idle       *time.Timer
 	idleDelay  time.Duration
@@ -462,6 +466,12 @@ func (u *workspaceUI) submit(event js.Value) {
 			u.status.Set("Studio is updating. Check the tempo step and submit again.")
 			return
 		}
+		if u.edits > 0 && workspaceActionPath(workspaceAttr(form, "action")) == "/__actions/arrange" {
+			workspaceStop(event)
+			u.statusGeneration++
+			u.status.Set("The arrangement is still saving. Try again.")
+			return
+		}
 		if u.shellHolding(form) {
 			// One hold per form: a second click while it waits does nothing.
 			workspaceStop(event)
@@ -475,15 +485,22 @@ func (u *workspaceUI) submit(event js.Value) {
 		}
 		domDrop(form, "data-workspace-updated")
 		// Transport commands carry no score revision check and never wait.
-		if region := domCall(form, "closest", "[data-update-region]"); strings.EqualFold(workspaceAttr(form, "method"), "post") && workspaceAttr(form, "id") != "transport-form" && workspacePresent(region) && domHas(region, "data-region-stale") && !domHas(region, "data-region-reload") && !shellHeld(region) {
+		if region := domCall(form, "closest", "[data-update-region]"); strings.EqualFold(workspaceAttr(form, "method"), "post") && workspaceAttr(form, "id") != "transport-form" && workspacePresent(region) && (domHas(region, "data-region-stale") || u.edits > 0 && !shellCaptures(form, submitter)) && !domHas(region, "data-region-reload") && !shellHeld(region) {
+			// The split form is captured during an edit; here its region is stale
+			// because the arrangement changed under the form.
 			if workspaceActionPath(workspaceAttr(form, "action")) == "/__actions/split-placement" {
 				workspaceStop(event)
 				u.status.Set("The arrangement changed. Check the refreshed placement before splitting it.")
 				u.refreshStale(regionsVisibleStale)
 				return
 			}
-			// A form in a stale region still carries an older revision. Read
-			// the region first; nothing is sent until it is current.
+			// A form in a stale region still carries an older revision, and
+			// so does every form while an edit such as Undo is on its way:
+			// the region is marked stale only once that edit's response is
+			// applied, and the service refuses the older revision ("score
+			// changed on disk"). Read the region first; nothing is sent until
+			// it is current. Captured edits queue behind it and take its
+			// revision instead (runJob).
 			workspaceStop(event)
 			u.refreshThenSubmit(region, form, submitter)
 			return
@@ -982,6 +999,9 @@ func (u *workspaceUI) queue(job workspaceJob) {
 	workspacePending(job, 1)
 	select {
 	case u.jobs <- job:
+		if job.method == methodPost {
+			u.edits++
+		}
 	default:
 		workspacePending(job, -1)
 		u.blocked.Store(true)
@@ -1006,6 +1026,9 @@ func (u *workspaceUI) drain(drop func(workspaceJob) bool) (dropped int) {
 		if !drop(job) {
 			keep = append(keep, job)
 			continue
+		}
+		if job.method == methodPost {
+			u.edits--
 		}
 		u.settle(job, true)
 		if job.ctx != nil {
@@ -1033,6 +1056,9 @@ func (u *workspaceUI) run() {
 			u.busy.Store(true)
 			open := u.runJob(job)
 			u.busy.Store(false)
+			if job.method == methodPost {
+				u.edits--
+			}
 			if !open {
 				return
 			}
@@ -1189,11 +1215,15 @@ func (u *workspaceUI) runJob(job workspaceJob) bool {
 		// second time. Re-read canonical state before another edit.
 		u.blocked.Store(true)
 		u.syncHistoryLock()
-		u.clearQueue()
+		dropped := u.clearQueue()
 		if u.shell && !saved {
 			u.restoreAll()
 		}
-		u.status.Set(err.Error() + " Refresh the workspace; your drafts are retained.")
+		message := err.Error() + " Refresh the workspace; your drafts are retained."
+		if u.shell && dropped > 0 {
+			message += fmt.Sprintf(" %d waiting edit(s) were not sent. Make them again.", dropped)
+		}
+		u.status.Set(message)
 		return true
 	}
 	if projection.WriteRevision == "" && (projection.Revision != u.revision.Get() || projection.SourceRevision != u.sourceRevision) {

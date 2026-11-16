@@ -193,7 +193,7 @@ func compile(p *project.Project, root string, rate, block int, mode compileMode,
 			}
 			// Immutable regions count once even when several zones share an asset.
 			if bytes := prepared.ResidentPCMBytes(); resident+bytes > rules.ResidentBudget {
-				return engine.Config{}, rules.ResidentBudgetError("sampler "+sampler.Name, bytes, resident)
+				return engine.Config{}, rules.NewResidentBudgetError("sampler "+sampler.Name, bytes, resident)
 			}
 			resident += prepared.ResidentPCMBytes()
 			use(sampler, prepared)

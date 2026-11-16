@@ -85,7 +85,8 @@ func TestSameAudioComparesEveryOption(t *testing.T) {
 		"Jobs":            func(o *Options) { o.Jobs = 3 },
 		"TrackStemsOnly":  func(o *Options) { o.TrackStemsOnly = true },
 	}
-	ignored := map[string]bool{"MasterGainDB": true, "MasterCache": true}
+	// StemTracks and StemBuses choose which stem files Stems writes and never the audio.
+	ignored := map[string]bool{"MasterGainDB": true, "MasterCache": true, "StemTracks": true, "StemBuses": true}
 	fields := reflect.TypeOf(Options{})
 	for i := range fields.NumField() {
 		name := fields.Field(i).Name

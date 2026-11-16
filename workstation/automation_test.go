@@ -181,3 +181,12 @@ func TestAutomationRecallPanelShowsMusicalPositions(t *testing.T) {
 		}
 	}
 }
+
+func TestAutomationUnsetEchoHighpassShowsOff(t *testing.T) {
+	if got := automationDefault(nil, "Hz"); got != "off" {
+		t.Fatalf("got %q", got)
+	}
+	if got := automationDefault(300.0, "Hz"); got != "300Hz" {
+		t.Fatalf("got %q", got)
+	}
+}

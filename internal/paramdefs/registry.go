@@ -118,7 +118,7 @@ func keysSplit() int {
 		}
 	}
 	for _, d := range Registry[split:] {
-		if !strings.HasPrefix(d.ID, "keys.") && !strings.HasPrefix(d.ID, "amp.") && !strings.HasPrefix(d.ID, "chorus.") && !strings.HasPrefix(d.ID, "fx.chorus.") && !strings.HasPrefix(d.ID, "fx.tape.") && !strings.HasPrefix(d.ID, "instrument.p") {
+		if !strings.HasPrefix(d.ID, "keys.") && !strings.HasPrefix(d.ID, "amp.") && !strings.HasPrefix(d.ID, "chorus.") && !strings.HasPrefix(d.ID, "fx.chorus.") && !strings.HasPrefix(d.ID, "fx.tape.") && !strings.HasPrefix(d.ID, "instrument.p") && d.ID != "fx.delay.highpass" {
 			panic("paramdefs: only append-only extensions may follow keyboard rows")
 		}
 	}

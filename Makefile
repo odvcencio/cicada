@@ -109,6 +109,25 @@ BENCH_ARGS ?=
 bench-agent-loop: build-core
 	go run ./cmd/cicada-bench --cicada build/cicada --large-bars 8 --json build/bench-agent-loop.json $(BENCH_ARGS)
 
+# Times and counts what one edit costs (internal/benchscore/applybench): the
+# hot edits on the reference scores REF-S, REF-P and REF-L through edit.Apply
+# with the edit service's options, the work of each Apply counted (build tag
+# cicada_counters) and its state checked against a full compile. It reports;
+# it gates nothing yet. APPLY_BENCH_ENV sets the runs, for example
+# CICADA_APPLY_BENCH_LARGE_RUNS=5 (see TestApplyBenchmark). bench-apply-wasm
+# runs the same in js/wasm under Node, with GOMAXPROCS unset (Go's js/wasm
+# port cannot start threads).
+.PHONY: bench-apply bench-apply-wasm
+APPLY_BENCH_ENV ?=
+bench-apply:
+	mkdir -p build
+	go test -tags cicada_counters -count=1 -run '^TestApplyBenchOptionsMatchTheService$$' ./cmd/cicada
+	env CICADA_APPLY_BENCH=1 CICADA_APPLY_BENCH_OUT=$(CURDIR)/build/bench-apply.md $(APPLY_BENCH_ENV) go test -tags cicada_counters -count=1 -timeout=60m -run '^TestApplyBenchmark$$' -v ./internal/benchscore/applybench
+
+bench-apply-wasm:
+	mkdir -p build
+	env -u GOMAXPROCS GOOS=js GOARCH=wasm CICADA_APPLY_BENCH=1 CICADA_APPLY_BENCH_OUT=$(CURDIR)/build/bench-apply-wasm.md $(APPLY_BENCH_ENV) go test -exec "$$(go env GOROOT)/lib/wasm/go_js_wasm_exec" -tags cicada_counters -count=1 -timeout=120m -run '^TestApplyBenchmark$$' -v ./internal/benchscore/applybench
+
 # Renders every example score with and without the stored mix (render.MasterCache)
 # and compares the bytes: plain, normalized, and at -14 and -9 LUFS.
 test-render-identity:
@@ -508,6 +527,7 @@ test-parity: build-kernel-wasm build-modular-wasm build-keys-modular-wasm
 	CICADA_MODULAR_WASM_PATH="$$PWD/build/cicada-modular.wasm" go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestInstrumentVibratoNativeWASMParity$$' -count=1 -v
 	CICADA_MODULAR_WASM_PATH="$$PWD/build/cicada-modular.wasm" go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestChorus(NativeWASMParity|InstrumentModulatorNativeWASMParity|GraphLFONativeWASMParity)$$' -count=1 -v
 	CICADA_WASM_PATH="$$PWD/build/cicada-kernel.wasm" go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestChorusRejectedByCoreKernel$$' -count=1 -v
+	CICADA_MODULAR_WASM_PATH="$$PWD/build/cicada-modular.wasm" go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestEchoHighpassRejectedByPortableKernel$$' -count=1 -v
 	CICADA_WASM_PATH="$$PWD/build/cicada-kernel.wasm" go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestOscillatorBankReuseWASM$$' -count=1 -v
 	CICADA_KEYS_MODULAR_WASM_PATH="$$PWD/build/cicada-keys-modular.wasm" go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestKeysChorusNativeWASMParity$$' -count=1 -v
 	CICADA_WASM_PATH="$$PWD/build/cicada-kernel.wasm" CICADA_MODULAR_WASM_PATH="$$PWD/build/cicada-modular.wasm" go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestInstrumentModulatorNativeWASMParity$$' -count=1 -v

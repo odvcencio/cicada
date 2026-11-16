@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"m31labs.dev/cicada/edit"
+	"m31labs.dev/cicada/internal/applycount"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -14,6 +15,9 @@ import (
 // project sources, including templates omitted by compilation. When omitted,
 // source supplies the authored names in the current buffer.
 func EditPlan(p *Project, source []byte, files ...notation.SourceFile) *edit.Plan {
+	if applycount.Enabled {
+		applycount.PlanBuilt()
+	}
 	plan := &edit.Plan{Revision: edit.Revision(source), Names: map[string]bool{}}
 	if p == nil {
 		return plan

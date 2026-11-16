@@ -213,4 +213,6 @@ var Params = [...]ParamSpec{
 	{198, "track", "linear", -1e+06, 1e+06, 0, 0.01, 20, true, true, false},
 	{199, "track", "linear", -1e+06, 1e+06, 0, 0.01, 20, true, true, false},
 	{200, "track", "linear", -1e+06, 1e+06, 0, 0.01, 20, true, true, false},
+	{201, "global", "log", 20, 2000, 0, 1, 5, true, true, true},
+	{202, "global", "log", 20, 2000, 0, 1, 5, true, true, true},
 }

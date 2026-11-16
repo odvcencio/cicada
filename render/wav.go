@@ -7,6 +7,7 @@ import (
 	"io"
 	"m31labs.dev/cicada/host/sampleasset"
 	"math"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -71,6 +72,14 @@ type Options struct {
 	// chains, scene phase, placements, ties, chance and transposition are
 	// already applied. It is called on the render goroutine.
 	NoteTap func(track int, event seq.Event)
+	// StemTracks, when not empty, limits Stems to these tracks' stem files
+	// and master.wav. It chooses files only: every track still plays, so the
+	// audio of each written file is the same as in a full stem set.
+	StemTracks []string
+	// StemBuses, with StemTracks, still writes return-a, return-b, music and
+	// sfx, so a reader can attribute the pre-master mix to the chosen tracks
+	// and everything else. It chooses files only.
+	StemBuses bool
 	// Jobs is the most render lanes, goroutines that synthesize tracks at the
 	// same time, that the render may use. Zero, the default, and 1 render
 	// serially: a caller that does not ask for lanes gets none. AutoJobs
@@ -84,8 +93,9 @@ type Options struct {
 	// TrackStemsOnly lets Stems render a score whose extra reverb returns
 	// (slots C to H) have no stem file yet. The track, bus and master stems are
 	// complete, but the return stems then hold slots A and B only, so the
-	// folder would not verify. Audition sets it: it reads only track and master
-	// stems. Without it, Stems refuses such a score.
+	// folder would not verify. Audition sets it and accounts for extra returns
+	// in its peak remainder using the bus stems. Without it, Stems refuses
+	// such a score.
 	TrackStemsOnly bool
 }
 
@@ -107,6 +117,7 @@ type Report struct {
 	PreLimiterOvers           int64
 	CeilingSamples            int64
 	ClippedSamples            int64
+	StemClippedCounts         map[string]int64
 	TailFrames                int64
 	MasterGainDB              float64
 	MaxLimiterGainReductionDB float64
@@ -637,8 +648,8 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	} else {
 		report.Bars = opts.Bars
 	}
-	if report.Bars < 1 || report.Bars > 256 {
-		return report, fmt.Errorf("render supports 1 to 256 bars")
+	if report.Bars < 1 || report.Bars > maxDirectBars {
+		return report, fmt.Errorf("render supports 1 to %d bars", maxDirectBars)
 	}
 	renderBars := report.From + report.Bars
 	masterProcessor, err := project.PrepareMaster(semantic, opts.SampleRate)
@@ -730,7 +741,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	}
 	var stems *stemOutput
 	if stemsDir != "" {
-		stems, err = newStemOutput(stemsDir, semantic, report)
+		stems, err = newStemOutput(stemsDir, semantic, report, opts, score.Seed)
 		if err != nil {
 			return report, err
 		}
@@ -1087,6 +1098,12 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 		return report, err
 	}
 	if stems != nil {
+		report.StemClippedCounts = make(map[string]int64)
+		for _, f := range stems.files {
+			if !f.skip && f.encoder != nil {
+				report.StemClippedCounts[filepath.Base(f.file.Name())] = f.counts.ClippedSamples
+			}
+		}
 		if err := stems.finish(uint32(score.TempoMilli)); err != nil {
 			return report, err
 		}

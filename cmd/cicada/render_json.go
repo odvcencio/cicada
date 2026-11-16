@@ -51,6 +51,7 @@ type renderOutputJSON struct {
 	Channels        int     `json:"channels"`
 	Frames          int64   `json:"frames"`
 	DurationSeconds float64 `json:"duration_seconds"`
+	ClippedCount    *int64  `json:"clipped_count,omitempty"`
 }
 
 // renderLevelsJSON are the peak facts of a render without a loudness target.
@@ -132,6 +133,8 @@ type renderErrorJSON struct {
 	// Limit is, for a loudness shortfall, the limit that stopped the search,
 	// as a value with its unit (see shortfallLimit).
 	Limit string `json:"limit,omitempty"`
+	// ValidTracks lists the score's tracks for unknown_track.
+	ValidTracks []string `json:"valid_tracks,omitempty"`
 }
 
 // renderRemedyJSON is a fix for a failed render. ScoreText is the exact text
@@ -156,7 +159,7 @@ type renderRemedyJSON struct {
 // keeps the lists equal.
 var renderErrorCodes = []string{
 	"usage", "unreadable_score", "invalid_score", "export_settings", "output_exists",
-	"sampler_memory", "render_failed", "true_peak_and_dc_unmet", "loudness_unmeasurable",
+	"sampler_memory", "unknown_track", "render_failed", "true_peak_and_dc_unmet", "loudness_unmeasurable",
 	"true_peak_over_ceiling", "limiter_reduction_over_maximum", "loudness_shortfall_at_limiter_maximum",
 	"loudness_shortfall_at_input_gain_cap", "loudness_shortfall_at_true_peak_ceiling", "loudness_shortfall_at_gain_maximum",
 	"loudness_target_missed_at_pass_limit", "loudness_target_missed",
@@ -277,6 +280,9 @@ func renderJSONCommand(command, path, output string, opts render.Options, target
 			if err != nil {
 				return finish(err)
 			}
+			if count, ok := report.StemClippedCounts[name]; ok {
+				described.ClippedCount = &count
+			}
 			document.Outputs = append(document.Outputs, described)
 		}
 		return finish(nil)
@@ -346,6 +352,14 @@ func renderErrorFor(err error, path string, inspection scoreInspection) *renderE
 	var memory *instrumentpack.ResidentPCMError
 	if errors.As(err, &memory) {
 		return &renderErrorJSON{Code: "sampler_memory", Message: err.Error()}
+	}
+	var unknown *render.UnknownTrackError
+	if errors.As(err, &unknown) {
+		return &renderErrorJSON{Code: "unknown_track", Message: err.Error(), ValidTracks: unknown.Valid}
+	}
+	var list *render.TrackListError
+	if errors.As(err, &list) {
+		return &renderErrorJSON{Code: "usage", Message: err.Error()}
 	}
 	if strings.Contains(err.Error(), "stem output directory already exists") {
 		return &renderErrorJSON{Code: "output_exists", Message: err.Error()}

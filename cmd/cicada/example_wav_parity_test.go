@@ -29,7 +29,10 @@ import (
 //
 // Each score renders four ways: plain, --normalize, -14 LUFS / -1 dBTP and
 // -9 LUFS / -1.5 dBTP. A render that fails is recorded with its exit status, so
-// a score that fails on one machine and not the other is a difference too.
+// a score that fails on one machine and not the other is a difference too. The
+// full sweep also fails when a score that cicada check accepts does not render
+// plainly: check must refuse what render refuses (TestCheckedExamplesRender
+// checks the first bar of each on every pull request).
 //
 // Every score under examples/ also records its compiled engine configuration
 // and its portable kernel image ("score config" and "score image"; see
@@ -71,6 +74,13 @@ func TestExampleWAVParity(t *testing.T) {
 	if t.Failed() {
 		return
 	}
+	if os.Getenv("CICADA_WAV_PARITY_ALL") == "1" {
+		// The sweep renders every song whole, which TestCheckedExamplesRender
+		// leaves to it: a score that check accepts must render.
+		for _, problem := range checkedRenderFailures(root, scores, got) {
+			t.Error(problem)
+		}
+	}
 	// Two renders that fail alike compare as identical; a flush case must
 	// write a file in every mode, so it cannot pass that way.
 	for _, c := range wavFlushCases {
@@ -100,6 +110,22 @@ func TestExampleWAVParity(t *testing.T) {
 	for _, problem := range problems {
 		t.Error(problem)
 	}
+}
+
+// checkedRenderFailures names each score that cicada check accepts and whose
+// plain render failed.
+func checkedRenderFailures(root string, scores []string, got map[string]wavHash) []string {
+	var problems []string
+	for _, score := range scores {
+		result, ok := got[score+" plain"]
+		if !ok || result.status == 0 {
+			continue
+		}
+		if report := checkScoreJSON(filepath.Join(root, filepath.FromSlash(score)), checkOptions{profile: profileDesktop}); report.Valid {
+			problems = append(problems, fmt.Sprintf("%s: cicada check accepts it, and cicada render exits %d", score, result.status))
+		}
+	}
+	return problems
 }
 
 // wavParitySubset is what every pull request renders. It holds every score

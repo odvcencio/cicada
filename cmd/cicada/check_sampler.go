@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"m31labs.dev/cicada/host/instrumentpack"
+	"m31labs.dev/cicada/host/sampleasset"
 	"m31labs.dev/cicada/kernel/voice/sample"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
@@ -201,14 +202,7 @@ func decodeZoneMap(pack *instrumentpack.Pack) (instrumentpack.ZoneMap, error) {
 // that a phrase use supplies is reported at the use, because the use may be what
 // moved it out of the pack's keys.
 func notesOutsideEveryZone(p *project.Project, score *notation.Score, packs map[string]admittedPack) []notation.Diagnostic {
-	sources := map[string]notation.Pattern{}
-	for _, pattern := range score.Patterns {
-		sources[pattern.Name] = pattern
-	}
-	phrases := map[string]notation.Phrase{}
-	for _, phrase := range score.Phrases {
-		phrases[phrase.Name] = phrase
-	}
+	steps := newStepSources(score)
 	patterns := map[string]project.Pattern{}
 	for _, pattern := range p.Patterns {
 		patterns[pattern.ID] = pattern
@@ -223,8 +217,7 @@ func notesOutsideEveryZone(p *project.Project, score *notation.Score, packs map[
 			if id == nil {
 				continue
 			}
-			pattern, source := patterns[*id], sources[*id]
-			uses := stepPhraseUses(phrases, source)
+			pattern := patterns[*id]
 			for i, step := range pattern.Data {
 				// A rest, a tie and a zero velocity start no sound.
 				if step == nil || step.Tie || step.Velocity == 0 {
@@ -243,24 +236,7 @@ func notesOutsideEveryZone(p *project.Project, score *notation.Score, packs map[
 					if gap == 0 {
 						continue
 					}
-					position, written := source.Position, ""
-					var use *notation.PhraseUse
-					if i < len(source.Steps) {
-						position, written = source.Steps[i].Position, strings.TrimSpace(source.Steps[i].Text)
-						if i < len(uses) && uses[i] != nil {
-							use = uses[i]
-							position = use.Position
-						}
-						if len(step.Notes) > 0 {
-							// Name the chord pitch, not the whole chord.
-							if words := strings.Fields(strings.Trim(written, "[]")); len(words) == len(step.Notes) {
-								written = words[n]
-								if cut := strings.IndexAny(written, "^?!~"); cut > 0 {
-									written = written[:cut]
-								}
-							}
-						}
-					}
+					position, written, use := steps.locate(*id, i, n, len(step.Notes))
 					message := outOfZoneMessage(admitted, track, *id, use, written, note, gap)
 					if gap != step.Velocity {
 						message += fmt.Sprintf("; the step is written at velocity %d and humanize = %d can move it to %d", step.Velocity, pattern.Humanize, gap)
@@ -314,6 +290,146 @@ func stepPhraseUses(phrases map[string]notation.Phrase, pattern notation.Pattern
 		return nil
 	}
 	return uses
+}
+
+// stepSources finds where the steps of the lowered patterns were written.
+type stepSources struct {
+	sources map[string]notation.Pattern
+	phrases map[string]notation.Phrase
+	uses    map[string][]*notation.PhraseUse
+}
+
+func newStepSources(score *notation.Score) *stepSources {
+	s := &stepSources{sources: map[string]notation.Pattern{}, phrases: map[string]notation.Phrase{}, uses: map[string][]*notation.PhraseUse{}}
+	for _, pattern := range score.Patterns {
+		s.sources[pattern.Name] = pattern
+	}
+	for _, phrase := range score.Phrases {
+		s.phrases[phrase.Name] = phrase
+	}
+	return s
+}
+
+// locate returns the source position and text of step index of pattern and,
+// when a phrase use supplied the step, that use, whose position it returns
+// instead: the use may be what moved the step's pitch. For pitch chord of a
+// chord of size pitches it returns that pitch's word, not the whole chord.
+// A step it cannot find is placed at the pattern, with no text.
+func (s *stepSources) locate(pattern string, index, chord, pitches int) (notation.Position, string, *notation.PhraseUse) {
+	source := s.sources[pattern]
+	if index >= len(source.Steps) {
+		return source.Position, "", nil
+	}
+	uses, ok := s.uses[pattern]
+	if !ok {
+		uses = stepPhraseUses(s.phrases, source)
+		s.uses[pattern] = uses
+	}
+	position, written := source.Steps[index].Position, strings.TrimSpace(source.Steps[index].Text)
+	var use *notation.PhraseUse
+	if index < len(uses) && uses[index] != nil {
+		use = uses[index]
+		position = use.Position
+	}
+	if pitches > 0 {
+		// Name the chord pitch, not the whole chord.
+		if words := strings.Fields(strings.Trim(written, "[]")); len(words) == pitches {
+			written = words[chord]
+			if cut := strings.IndexAny(written, "^?!~"); cut > 0 {
+				written = written[:cut]
+			}
+		}
+	}
+	return position, written, use
+}
+
+// samplerRangeCode marks a note that a single-asset sampler cannot play: the
+// sample voice cannot pitch the sampler's asset that far from its root at an
+// output rate that a host plays at (44.1, 48 or 96 kHz). Render at such a rate
+// refuses the score before it writes audio, and the engine faults when it
+// plays the note.
+const samplerRangeCode = "CICADA-SAMPLER-RANGE"
+
+// samplerRangeDiagnostics reports each note that a track of a single-asset
+// sampler plays and that the sample voice cannot play at one of
+// sampleasset.OutputRates, at the note's source position: an error when the
+// note fails at 48 kHz, where render renders by default and Studio checks
+// edits, and a warning when it fails only at 44.1 or 96 kHz, where render
+// --rate and a host at that rate refuse it. It reads only the score: the
+// asset's declared rate, the sampler's root and the notes.
+func samplerRangeDiagnostics(p *project.Project, score *notation.Score) []notation.Diagnostic {
+	if p == nil || score == nil {
+		return nil
+	}
+	findings := sampleasset.SamplerRangeFindings(p, sampleasset.OutputRates)
+	if len(findings) == 0 {
+		return nil
+	}
+	steps := newStepSources(score)
+	patterns := map[string]project.Pattern{}
+	for _, pattern := range p.Patterns {
+		patterns[pattern.ID] = pattern
+	}
+	diagnostics := make([]notation.Diagnostic, 0, len(findings))
+	for _, finding := range findings {
+		// A performed note has no step; it is reported at its pattern.
+		position, written, use := steps.sources[finding.Pattern].Position, "", (*notation.PhraseUse)(nil)
+		if !finding.Performed {
+			position, written, use = steps.locate(finding.Pattern, finding.Step, finding.Chord, len(patterns[finding.Pattern].Data[finding.Step].Notes))
+		}
+		diagnostics = append(diagnostics, notation.Diagnostic{
+			Code: samplerRangeCode, Severity: rangeSeverity(finding.Rates), Position: position,
+			Message:  samplerRangeMessage(finding, written, use),
+			Expected: samplerRangeExpected(finding),
+			Found:    fmt.Sprintf("MIDI %d", finding.Note),
+		})
+	}
+	return diagnostics
+}
+
+// samplerRangeExpected is the range a finding's note must fall in, as
+// Diagnostic.Expected spells it.
+func samplerRangeExpected(finding sampleasset.RangeFinding) string {
+	if finding.Low > finding.High {
+		return "no MIDI note: the asset plays at no note at every output rate"
+	}
+	return fmt.Sprintf("MIDI %d to %d", finding.Low, finding.High)
+}
+
+// samplerRangeMessage names the note, its track and pattern, the sampler, its
+// asset and root, the notes the sampler does play, and the output rates and
+// playback ratio at which this one fails.
+func samplerRangeMessage(finding sampleasset.RangeFinding, written string, use *notation.PhraseUse) string {
+	pitch := fmt.Sprintf("MIDI %d", finding.Note)
+	switch {
+	case finding.Performed:
+		pitch = fmt.Sprintf("performed note %d (MIDI %d)", finding.Step+1, finding.Note)
+	case written != "":
+		pitch = fmt.Sprintf("pitch %s (MIDI %d)", written, finding.Note)
+	}
+	where := fmt.Sprintf("on track %s, pattern %s", finding.Track, finding.Pattern)
+	if use != nil {
+		where += ", from phrase " + use.Name
+		if use.Transpose != 0 {
+			where += fmt.Sprintf(" used with transpose %+d", use.Transpose)
+		}
+	}
+	plays := "no note at every output rate"
+	if finding.Low <= finding.High {
+		plays = fmt.Sprintf("MIDI %d to %d (%s to %s) at 44.1, 48 and 96 kHz", finding.Low, finding.High, midiPitchName(finding.Low), midiPitchName(finding.High))
+	}
+	var fails []string
+	for i, rate := range finding.Rates {
+		fails = append(fails, fmt.Sprintf("%.3g at %s kHz", finding.Ratios[i], strconv.FormatFloat(float64(rate)/1000, 'f', -1, 64)))
+	}
+	return fmt.Sprintf("%s %s, is out of range for sampler %s: with root %s (MIDI %d), its %d Hz asset %s plays %s; this note needs playback ratio %s, and the sample voice plays 0.125 to 8",
+		pitch, where, finding.Sampler, midiPitchName(finding.Root), finding.Root, finding.AssetRate, finding.Asset, plays, strings.Join(fails, ", "))
+}
+
+// midiPitchName spells a MIDI note as the score writes it: c4 is MIDI 60.
+func midiPitchName(note int) string {
+	names := [...]string{"c", "c#", "d", "d#", "e", "f", "f#", "g", "g#", "a", "a#", "b"}
+	return names[note%12] + strconv.Itoa(note/12-1)
 }
 
 // outOfZoneMessage names the note, its track and pattern, the pack and the keys

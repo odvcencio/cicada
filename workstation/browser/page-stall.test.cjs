@@ -98,6 +98,62 @@ test('a watched page whose beforeunload handler asks to stay still navigates', {
   }
 });
 
+// What the report recorded when producer-workflow froze in CI (main 2e8b08b7,
+// Studio browser shard 1): a Chrome renderer deadlock, not the product
+// (chrome-gpu-raster.cjs). Each case below changes one fact.
+function ciDeadlockFacts() {
+  const thread = (tid, comm, state, wchan, syscall) => ({ tid, comm, state, wchan, syscall });
+  return {
+    raster: 'disabled_software',
+    cpu: [[6345, 2]],
+    renderers: new Map([[6345, {
+      threads: [
+        thread(6345, 'chrome-headless', 'S', 'futex_do_wait', 'futex'),
+        thread(6348, 'ThreadPoolForeg', 'S', 'futex_do_wait', 'futex'),
+        thread(6351, 'Compositor', 'S', 'ep_poll', 'epoll_wait'),
+      ],
+      stack: 'Thread 1 (Thread 0x7fb419fbfe40 (LWP 6345) "chrome-headless"):\n#0  0x00007fb41a498e51 in ?? () from /lib/x86_64-linux-gnu/libc.so.6\n#1  0x00007fb41a49b8cd in pthread_cond_wait () from /lib/x86_64-linux-gnu/libc.so.6',
+    }]]),
+    go: { read: false, terminations: 6, answered: 0 },
+    blocking: [],
+  };
+}
+
+test('the stall report names the Chrome commit deadlock only when every fact matches', () => {
+  const { commitDeadlockHint } = require('./page-stall.cjs');
+  const hint = commitDeadlockHint(ciDeadlockFacts());
+  assert.match(hint, /^page-stall hint: matches the Chrome renderer commit deadlock seen in software raster \(not the product\); see workstation\/browser\/chrome-gpu-raster\.cjs /);
+  assert.match(hint, /rasterization disabled_software; renderer CPU at most 2%; renderer 6345's main thread in a futex wait \(pthread_cond_wait\) and its compositor thread idle; 6 Runtime\.terminateExecution, none answered/);
+  assert.equal(hint.includes('\n'), false, 'one line');
+  const withoutStack = ciDeadlockFacts();
+  withoutStack.renderers.get(6345).stack = '';
+  assert.match(commitDeadlockHint(withoutStack), /matches the Chrome renderer commit deadlock/, 'the thread table is enough without gdb');
+
+  const differs = {
+    'GPU rasterization': f => { f.raster = 'enabled_force'; },
+    'no graphics status': f => { f.raster = ''; },
+    'a busy renderer': f => { f.cpu = [[6345, 2], [7000, 40]]; },
+    'no CPU sample': f => { f.cpu = null; },
+    'script that answers a termination': f => { f.go.answered = 1; },
+    'a page that answered the read': f => { f.go.read = true; },
+    'no termination sent': f => { f.go.terminations = 0; },
+    'no Go snapshot': f => { f.go = null; },
+    'a synchronous request after the last heartbeat': f => { f.blocking = ['XMLHttpRequest.send SYNCHRONOUS']; },
+    'a dialog after the last heartbeat': f => { f.blocking = ['dialog alert "x"']; },
+    'a main thread that is running': f => { f.renderers.get(6345).threads[0] = { ...f.renderers.get(6345).threads[0], state: 'R', syscall: 'running', wchan: '-' }; },
+    'a main thread in poll': f => { f.renderers.get(6345).threads[0] = { ...f.renderers.get(6345).threads[0], wchan: 'poll_schedule_timeout', syscall: 'poll' }; },
+    'a busy compositor thread': f => { f.renderers.get(6345).threads[2] = { ...f.renderers.get(6345).threads[2], state: 'R', syscall: 'running', wchan: '-' }; },
+    'no compositor thread': f => { f.renderers.get(6345).threads.splice(2, 1); },
+    'a timed wait in the main thread': f => { f.renderers.get(6345).stack = '#1  0x00007fb41a49bd6e in pthread_cond_timedwait () from libc.so.6'; },
+    'no thread table (macOS, or native stacks off)': f => { f.renderers = new Map(); },
+  };
+  for (const [name, change] of Object.entries(differs)) {
+    const facts = ciDeadlockFacts();
+    change(facts);
+    assert.equal(commitDeadlockHint(facts), '', `${name}: must not match`);
+  }
+});
+
 test('gdb is installed only on a GitHub-hosted runner', () => {
   const { installRefusal } = require('./page-stall.cjs');
   assert.match(installRefusal({ CICADA_PAGE_STALL_NATIVE: 'install' }), /RUNNER_ENVIRONMENT is not set/);
@@ -190,10 +246,33 @@ for (const [mode, crumb] of [['xhr', /XMLHttpRequest\.open GET \/never SYNCHRONO
     assert.match(result.output, /renderer CPU over 1 s: pid \d+ \d+%/, result.output);
     assert.match(result.output, /native: \d+ Chrome processes: \d+ browser/, result.output);
     if (process.platform === 'linux') assert.match(result.output, /--- \d+ renderer ---\n(?:# )? {2}main thread: \S+ [SD] wchan=/, result.output);
+    assert.match(result.output, /graphics: rasterization \S+, compositing \S+/, result.output);
+    // A synchronous request or a dialog blocks the main thread the way Chrome's
+    // commit deadlock does; only the breadcrumb tells them apart.
+    assert.doesNotMatch(result.output, /page-stall hint/, result.output);
     assert.match(result.output, /--- last 30 lines of Chrome's log ---/, result.output);
     assertBudget(result.output);
   });
 }
+
+// The positive case end to end: the stand-in page silences the probe and then
+// blocks, so nothing is recorded after its last heartbeat, as with a wait
+// inside Chrome. The hint needs the Linux thread table and software raster
+// (CI's runners have no GPU).
+test('a page blocked outside script with nothing recorded matches the Chrome commit deadlock', { timeout: 90000 }, async () => {
+  const result = await run('unseen', 60000);
+  assert.equal(result.killed, false, result.output);
+  assert.match(result.output, failed);
+  assert.match(result.output, /go: the page did not answer within \d+ ms, after [1-9]\d* Runtime\.terminateExecution \(0 answered\)/, result.output);
+  assert.doesNotMatch(result.output, /SYNCHRONOUS/, `the probe recorded the request, so this test proves nothing:\n${result.output}`);
+  const software = /graphics: rasterization \S*software\b/.test(result.output);
+  if (process.platform === 'linux' && software) {
+    assert.match(result.output, /page-stall hint: matches the Chrome renderer commit deadlock seen in software raster \(not the product\); see workstation\/browser\/chrome-gpu-raster\.cjs \(rasterization \S+; renderer CPU at most \d+%; renderer \d+'s main thread in a futex wait/, result.output);
+  } else {
+    assert.doesNotMatch(result.output, /page-stall hint/, result.output);
+  }
+  assertBudget(result.output);
+});
 
 test('a closed page is neither stalled nor reported', { timeout: 60000 }, async () => {
   const result = await run('closed', 30000);

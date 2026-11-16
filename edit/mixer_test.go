@@ -282,7 +282,9 @@ func TestStudioMixerWriterInsertsEveryEffectFieldInFormatterOrder(t *testing.T) 
 			t.Fatalf("no fixture effect for %s", kind)
 		}
 		var value any = descriptor.Default
-		if descriptor.Curve == "enum" && len(descriptor.Values) > 0 {
+		if descriptor.Off && (descriptor.Default < descriptor.Min || descriptor.Default > descriptor.Max) {
+			value = "off" // a default of off, such as an echo highpass
+		} else if descriptor.Curve == "enum" && len(descriptor.Values) > 0 {
 			value = descriptor.Values[0]
 		} else if descriptor.Curve == "toggle" {
 			value = false

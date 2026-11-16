@@ -154,6 +154,8 @@ async function studio() {
   // Every foreground write goes through this route, so the steps can hold,
   // rewrite or inspect one. Recovery checkpoints pass straight through.
   const gates = [];
+  // answers hold a write's answer after the service applied it.
+  const answers = [];
   const rewrites = [];
   await page.route('**/__actions/**', async route => {
     const request = route.request();
@@ -172,6 +174,8 @@ async function studio() {
       const response = await route.fetch({postData: JSON.stringify(payload), maxRedirects: 0});
       record.status = response.status();
       record.result = await response.json();
+      const answer = answers.shift();
+      if (answer) await answer;
       await route.fulfill({response, body: JSON.stringify(record.result)});
     } finally {
       inFlight--;
@@ -188,6 +192,7 @@ async function studio() {
   const region = id => page.locator(`#update-${id}`);
   const revisionOf = id => region(id).getAttribute('data-region-revision');
   const hold = () => { let release; gates.push(new Promise(resolve => { release = resolve; })); return () => release(); };
+  const holdAnswer = () => { let release; answers.push(new Promise(resolve => { release = resolve; })); return () => release(); };
   // A cell is confirmed when it shows the wanted state, carries no pending
   // marker, and its region carries the revision the edit produced.
   const confirmed = async (selector, active, revision) => page.waitForFunction(({selector, active, revision}) => {
@@ -203,7 +208,7 @@ async function studio() {
     assert.equal(documents, 1, 'a document request ran during an edit');
     assert.deepEqual(errors, []);
   };
-  session = {page, base, state, posts, reads, sent, readOnly, refused, refusedRead, caughtUp, cell, region, revisionOf, hold, rewrites, confirmed, settled, status, noNavigation, original,
+  session = {page, base, state, posts, reads, sent, readOnly, refused, refusedRead, caughtUp, cell, region, revisionOf, hold, holdAnswer, rewrites, confirmed, settled, status, noNavigation, original,
     maxInFlight: () => maxInFlight, documentID: () => page.evaluate(() => window.__studioEdits.document)};
   return session;
 }
@@ -211,40 +216,156 @@ async function studio() {
 test('a piano-roll draw paints at once and is confirmed without a navigation', async () => {
   const {page, state, posts, cell, revisionOf, hold, confirmed, settled, noNavigation, original} = await studio();
   const before = await revisionOf('dock-clip');
-  const grid = await page.evaluateHandle(() => document.querySelector('#detail-panel-clip .piano-roll'));
-  assert.equal(await page.locator(cell(15)).getAttribute('data-active'), 'false');
-  const release = hold();
-  await page.locator(cell(15)).click();
-  // The answer is held, so this state can only be the pending paint.
-  await page.waitForFunction(selector => {
-    const el = document.querySelector(selector);
-    return el.getAttribute('data-active') === 'true' && el.hasAttribute('data-workspace-pending') && el.textContent === '●';
-  }, cell(15));
-  assert.equal(await revisionOf('dock-clip'), before, 'the pending paint advanced the region revision');
-  release();
-  await settled(1);
-  const record = posts[0];
-  assert.equal(record.status, 200, record.result?.message);
-  assert.match(record.payload.__cicada_regions, /(^|,)dock-clip:[0-9a-f]{16}(,|$)/, 'the edit names the visible Clip region with its digest');
-  assert.doesNotMatch(record.payload.__cicada_regions, /(^|,)center-session:/, 'a hidden tab is not visible');
-  const revision = record.result.data.revision;
-  assert.ok(revision && revision !== original.revision);
-  await confirmed(cell(15), true, revision);
-  assert.notEqual((await state('/api/state')).source, original.source, 'the draw was not saved');
-  assert.equal(await grid.evaluate(node => node.isConnected && node === document.querySelector('#detail-panel-clip .piano-roll')), true, 'the piano roll was replaced instead of patched');
-  // Rule R1: every region the response confirmed carries the new revision in
-  // its forms; a hidden region the response did not render keeps its own.
-  const fields = await page.evaluate(() => [...document.querySelectorAll('[data-update-region]')].map(wrapper => ({
-    id: wrapper.dataset.updateRegion, stale: wrapper.hasAttribute('data-region-stale'), revision: wrapper.dataset.regionRevision,
-    inputs: [...wrapper.querySelectorAll('input[type=hidden][name=revision]')].map(input => input.value),
-  })));
-  for (const field of fields) {
-    if (field.stale) continue;
-    assert.equal(field.revision, revision, `region ${field.id} is fresh but carries another revision`);
-    for (const value of field.inputs) assert.equal(value, revision, `region ${field.id} kept an old revision field`);
+  await page.evaluate(before => {
+    window.__regionRevisionGaps = [];
+    const observer = new MutationObserver(() => {
+      const revision = document.querySelector('#update-dock-clip').dataset.regionRevision;
+      if (revision === before) return;
+      window.__regionRevisionGaps.push(...[...document.querySelectorAll('[data-update-region]:not([data-region-stale])')]
+        .filter(node => node.dataset.regionRevision !== revision).map(node => node.dataset.updateRegion));
+    });
+    observer.observe(document.querySelector('#studio-shell'), {subtree: true, attributes: true, attributeFilter: ['data-region-revision', 'data-region-stale']});
+    window.__stopRegionRevisionObserver = () => observer.disconnect();
+  }, before);
+  try {
+    const grid = await page.evaluateHandle(() => document.querySelector('#detail-panel-clip .piano-roll'));
+    assert.equal(await page.locator(cell(15)).getAttribute('data-active'), 'false');
+    const release = hold();
+    await page.locator(cell(15)).click();
+    // The answer is held, so this state can only be the pending paint.
+    await page.waitForFunction(selector => {
+      const el = document.querySelector(selector);
+      return el.getAttribute('data-active') === 'true' && el.hasAttribute('data-workspace-pending') && el.textContent === '●';
+    }, cell(15));
+    assert.equal(await revisionOf('dock-clip'), before, 'the pending paint advanced the region revision');
+    release();
+    await settled(1);
+    const record = posts[0];
+    assert.equal(record.status, 200, record.result?.message);
+    assert.match(record.payload.__cicada_regions, /(^|,)dock-clip:[0-9a-f]{16}(,|$)/, 'the edit names the visible Clip region with its digest');
+    assert.doesNotMatch(record.payload.__cicada_regions, /(^|,)center-session:/, 'a hidden tab is not visible');
+    const revision = record.result.data.revision;
+    assert.ok(revision && revision !== original.revision);
+    await confirmed(cell(15), true, revision);
+    assert.notEqual((await state('/api/state')).source, original.source, 'the draw was not saved');
+    assert.equal(await grid.evaluate(node => node.isConnected && node === document.querySelector('#detail-panel-clip .piano-roll')), true, 'the piano roll was replaced instead of patched');
+    // Rule R1: every region the response confirmed carries the new revision in
+    // its forms; a hidden region the response did not render keeps its own.
+    const fields = await page.evaluate(() => [...document.querySelectorAll('[data-update-region]')].map(wrapper => ({
+      id: wrapper.dataset.updateRegion, stale: wrapper.hasAttribute('data-region-stale'), revision: wrapper.dataset.regionRevision,
+      inputs: [...wrapper.querySelectorAll('input[type=hidden][name=revision]')].map(input => input.value),
+    })));
+    for (const field of fields) {
+      if (field.stale) continue;
+      assert.equal(field.revision, revision, `region ${field.id} is fresh but carries another revision`);
+      for (const value of field.inputs) assert.equal(value, revision, `region ${field.id} kept an old revision field`);
+    }
+    await page.waitForFunction(() => !document.querySelector('#studio-shell').hasAttribute('aria-busy'));
+    const visible = await page.evaluate(() => [...document.querySelectorAll('[data-update-region]')].filter(wrapper => {
+      for (let node = wrapper.parentElement; node; node = node.parentElement) {
+        if (node.hidden || (node.tagName === 'DETAILS' && !node.open)) return false;
+      }
+      return wrapper.parentElement?.getClientRects().length > 0;
+    }).map(wrapper => ({id: wrapper.dataset.updateRegion, stale: wrapper.hasAttribute('data-region-stale'), revision: wrapper.dataset.regionRevision})));
+    for (const field of visible) {
+      assert.equal(field.stale, false, `visible region ${field.id} is stale`);
+      assert.equal(field.revision, revision, `visible region ${field.id} has another revision`);
+    }
+    assert.deepEqual(await page.evaluate(() => window.__regionRevisionGaps), [], 'a region was fresh at an older revision during the patch');
+    assert.equal(new URL(page.url()).searchParams.get('step'), '15', 'the inspected step follows the drawn cell');
+    await noNavigation();
+  } finally {
+    await page.evaluate(() => window.__stopRegionRevisionObserver());
   }
-  assert.equal(new URL(page.url()).searchParams.get('step'), '15', 'the inspected step follows the drawn cell');
-  await noNavigation();
+});
+
+test('an edit aborts the background read in flight', async () => {
+  const {page, posts, cell, confirmed, settled, caughtUp, refused} = await studio();
+  await caughtUp();
+  let release, heldResponse, heldURL, finished, claimed = false;
+  const gate = new Promise(resolve => { release = resolve; });
+  const done = new Promise(resolve => { finished = resolve; });
+  const handler = async route => {
+    if (claimed) return route.continue();
+    claimed = true;
+    heldURL = route.request().url();
+    try {
+      const response = await route.fetch();
+      heldResponse = await response.json();
+      await gate;
+      await route.fulfill({response, body: JSON.stringify(heldResponse)}).catch(() => {});
+    } finally {
+      finished();
+    }
+  };
+  await page.route('**/__studio/regions**', handler);
+  try {
+    let start = posts.length;
+    await page.locator(cell(15)).click();
+    await settled(start + 1);
+    const oldRevision = posts[start].result.data.revision;
+    await confirmed(cell(15), false, oldRevision);
+    await until(() => heldResponse, 'the stale-region read did not produce a response');
+    assert.equal(heldResponse.revision, oldRevision);
+
+    start = posts.length;
+    const refusedStart = refused.length;
+    await page.locator(cell(15)).click();
+    await until(() => refused.slice(refusedStart).some(url => url.href === heldURL), 'the in-flight region read was not aborted');
+    await settled(start + 1);
+    const revision = posts[start].result.data.revision;
+    assert.notEqual(revision, oldRevision);
+    await confirmed(cell(15), true, revision);
+    release();
+    await done;
+    await page.waitForFunction(() => !document.querySelector('#studio-shell').hasAttribute('aria-busy'));
+    const freshOld = await page.evaluate(old => [...document.querySelectorAll('[data-update-region]:not([data-region-stale])')]
+      .filter(node => node.dataset.regionRevision === old).map(node => node.dataset.updateRegion), oldRevision);
+    assert.deepEqual(freshOld, [], 'the released read left regions fresh at the old revision');
+  } finally {
+    release();
+    await page.unroute('**/__studio/regions**', handler);
+  }
+});
+
+test('a submit between region patches is sent once', async () => {
+  const {page, posts, sent, cell, settled, caughtUp} = await studio();
+  await caughtUp();
+  const before = await page.locator('#update-dock-clip').getAttribute('data-region-revision');
+  const start = posts.length, undoCount = sent('/__actions/undo');
+  await page.evaluate(before => {
+    window.__submitDuringApply = null;
+    const observer = new MutationObserver(() => {
+      if (document.querySelector('#update-dock-clip').dataset.regionRevision === before) return;
+      observer.disconnect();
+      const region = document.querySelector('#update-actions');
+      const form = document.querySelector('#undo-form');
+      const button = form.querySelector('button[type=submit]');
+      const stale = region.hasAttribute('data-region-stale');
+      form.requestSubmit(button);
+      window.__submitDuringApply = {stale, held: button.hasAttribute('data-workspace-held')};
+    });
+    observer.observe(document.querySelector('#update-dock-clip'), {attributes: true, attributeFilter: ['data-region-revision']});
+    window.__stopSubmitObserver = () => observer.disconnect();
+  }, before);
+  try {
+    await page.locator(cell(15)).click();
+    await settled(start + 2);
+    // Whether the submit is held or queued depends on which region was patched
+    // first; what must hold either way is that it was made during the apply
+    // and is sent exactly once.
+    assert.notEqual(await page.evaluate(() => window.__submitDuringApply), null, 'the submit was not made during the apply');
+    assert.deepEqual(posts.slice(start, start + 2).map(record => record.action), ['pattern', 'undo']);
+    assert.equal(posts[start + 1].status, 200, posts[start + 1].result?.message);
+    await page.waitForFunction(() => !document.querySelector('#studio-shell').hasAttribute('aria-busy'));
+    assert.equal(sent('/__actions/undo') - undoCount, 1, 'the held Undo was not sent exactly once');
+    const revision = posts[start + 1].result.data.revision;
+    const freshOld = await page.evaluate(revision => [...document.querySelectorAll('[data-update-region]:not([data-region-stale])')]
+      .filter(node => node.dataset.regionRevision !== revision).map(node => node.dataset.updateRegion), revision);
+    assert.deepEqual(freshOld, [], 'a region remained fresh at another revision');
+  } finally {
+    await page.evaluate(() => window.__stopSubmitObserver());
+  }
 });
 
 test('the answer to one draw keeps the pending paint of the next', async () => {
@@ -873,6 +994,49 @@ test('the Code editor stays mounted while other regions are patched', async () =
   await noNavigation();
 });
 
+test('a placement nudge during Undo is refused while the arrangement is saving', async () => {
+  const {page, state, posts, sent, settled, caughtUp, holdAnswer, status} = await studio();
+  const original = (await state('/api/state')).source;
+  const arranged = original.replace(/song\s*\{\s*main\*999\s*\}/, 'arrange { place hold-test keys continuity { at=@1.1.1 length=4bars } }');
+  assert.notEqual(arranged, original, 'the fixture song was not found');
+  const editor = page.locator('#score textarea').first();
+  await editor.fill(arranged);
+  await saveCode(page, state, arranged);
+  const block = () => page.locator('[data-placement-block="hold-test"]');
+  await page.keyboard.press('Alt+Shift+Digit1');
+  await block().waitFor();
+  await caughtUp();
+  const before = (await state('/api/state')).source;
+  const length = await block().getAttribute('data-placement-length');
+  await block().locator('[data-placement-resize]').focus();
+  await page.keyboard.press('ArrowLeft');
+  await until(async () => await block().getAttribute('data-placement-length') !== length, 'the resize did not save');
+  await until(async () => (await state('/api/state')).source !== before, 'the resize did not change the score');
+  await caughtUp();
+  const release = holdAnswer();
+  const start = posts.length;
+  try {
+    await page.locator('#undo-form button[type=submit]').click();
+    await until(() => posts.length > start && posts[start].status !== 0, 'the Undo did not reach the service');
+    assert.equal(posts[start].action, 'undo');
+    assert.ok(posts[start].status < 400, 'the Undo was refused');
+    const count = sent('/__actions/arrange');
+    await block().locator('.placement-select').focus();
+    await page.keyboard.press('ArrowRight');
+    assert.match(await status(), /arrangement is still saving.*try again/i);
+    release();
+    await settled(start + 1);
+    await caughtUp();
+    await page.waitForTimeout(400);
+    assert.equal(sent('/__actions/arrange'), count, 'the nudge sent an arrangement request');
+    assert.equal((await state('/api/state')).source, before, 'the nudge changed the Undo result');
+  } finally {
+    release();
+    await editor.fill(original);
+    await saveCode(page, state, original);
+  }
+});
+
 test('Code typed while a response is applied is held with its file revision', async () => {
   const {page, posts, cell, settled, region} = await studio();
   const fileRevision = await page.locator('#score input[name="fileRevision"]').inputValue();
@@ -952,6 +1116,58 @@ test('a form in a stale region is sent only after its region is read', async () 
   await until(async () => await mute().getAttribute('aria-pressed') !== pressed, 'the mute did not apply');
   await mute().click();
   await until(async () => await mute().getAttribute('aria-pressed') === pressed, 'the mute was not undone');
+});
+
+// Undo writes the file before its answer reaches the page, and the regions
+// it leaves behind are marked stale only once that answer is applied. A form
+// that GoSX sends itself (Mute) carries the revision its region shows, so a
+// click in between sent the revision from before the Undo and the service
+// refused it: "score changed on disk; reload before saving".
+test('a form clicked while an Undo is being answered is sent with the revision the Undo leaves', async () => {
+  const {page, posts, sent, cell, settled, caughtUp, holdAnswer} = await studio();
+  let mixerPost = null;
+  const onRequest = request => { if (!mixerPost && request.method() === 'POST' && new URL(request.url()).pathname === '/__actions/mixer') mixerPost = request; };
+  page.on('request', onRequest);
+  const mute = () => page.locator('#view-panel-mixer button[data-toggle=mute]').first();
+  try {
+    let start = posts.length;
+    await page.locator(cell(35)).click();
+    await settled(start + 1);
+    await page.keyboard.press('Alt+Shift+Digit3');
+    await page.locator('#view-tab-mixer[aria-selected="true"]').waitFor();
+    await caughtUp();
+    const pressed = await mute().getAttribute('aria-pressed');
+    const mixerCount = sent('/__actions/mixer');
+    const release = holdAnswer();
+    start = posts.length;
+    try {
+      await page.locator('#undo-form button[type=submit]').click();
+      await until(() => posts.length > start && posts[start].status !== 0, 'the Undo did not reach the service');
+      assert.equal(posts[start].action, 'undo');
+      assert.ok(posts[start].status < 400, `the Undo was refused: ${posts[start].status}`);
+      await mute().click();
+      await page.waitForTimeout(300);
+      if (mixerPost) {
+        release();
+        const early = await mixerPost.response();
+        assert.fail(`Mute was sent before the Undo was answered, with the revision from before the Undo; the service answered ${early ? early.status() : 'nothing'}`);
+      }
+    } finally {
+      release();
+    }
+    await settled(start + 1);
+    await until(() => mixerPost !== null, 'Mute was not sent once the Undo was applied');
+    const response = await mixerPost.response();
+    assert.ok(response && response.status() < 400, `Mute was refused: ${response && response.status()}`);
+    await until(async () => await mute().getAttribute('aria-pressed') !== pressed, 'the mute did not apply');
+    assert.equal(sent('/__actions/mixer'), mixerCount + 1, 'the held Mute was not sent exactly once');
+    // Put the track back as it was.
+    await mute().click();
+    await until(async () => await mute().getAttribute('aria-pressed') === pressed, 'the mute was not undone');
+  } finally {
+    page.off('request', onRequest);
+    await page.keyboard.press('Alt+Shift+Digit1');
+  }
 });
 
 test('a stale region whose text changed still sends a form whose values did not, once', async () => {

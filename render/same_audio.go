@@ -55,12 +55,13 @@ func validMasterGainDB(db float64) bool {
 	return !math.IsNaN(db) && !math.IsInf(db, 0) && db >= -120 && db <= 24
 }
 
-// sameNonGainOptions compares every Options field except the export gain,
-// MasterCache and NoteTap. TestSameAudioComparesEveryOption fails when a field
-// is added to Options without a decision here. Jobs never changes the WAV
-// bytes, but it sets Report.Jobs and Report.Lanes, so it is compared.
-// TrackStemsOnly never changes a WAV's bytes either, but it decides whether
-// Stems refuses a score, so it is compared too.
+// sameNonGainOptions compares every Options field except MasterGainDB,
+// MasterCache, NoteTap, StemTracks and StemBuses. NoteTap is checked by
+// SameAudio; StemTracks and StemBuses only choose the files Stems writes.
+// TestSameAudioComparesEveryOption fails when a field is added to Options
+// without a decision here. Jobs never changes the WAV bytes, but it sets
+// Report.Jobs and Report.Lanes, so it is compared. TrackStemsOnly also leaves
+// WAV bytes unchanged, but decides whether Stems refuses a score, so it is compared.
 func sameNonGainOptions(a, b Options) bool {
 	sameDither := a.Dither == nil && b.Dither == nil || a.Dither != nil && b.Dither != nil && *a.Dither == *b.Dither
 	return a.AssetRoot == b.AssetRoot && a.AssetDir == b.AssetDir && a.SamplerBaseline == b.SamplerBaseline &&

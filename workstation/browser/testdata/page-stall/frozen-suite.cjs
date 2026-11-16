@@ -10,6 +10,10 @@
 //   start      the page freezes while Go starts (wasm_exec.js run)
 //   xhr         the page blocks in native code on a synchronous request that is never answered
 //   dialog      the page blocks in native code on alert(), which the suite never answers
+//   unseen      as xhr, but the page first silences the probe, so the report
+//               sees what a wait inside Chrome itself (the commit deadlock in
+//               chrome-gpu-raster.cjs) shows: a main thread blocked outside
+//               script with nothing recorded after the last heartbeat
 //   closed      the test closes its page, waits, then fails
 //   hung-close  the test passes but browser.close() never finishes
 //   leak-pass   the test passes and leaves a server and a timer open
@@ -70,7 +74,7 @@ if (mode === 'resume' || mode === 'reenter' || mode === 'start') {
   });
 }
 
-if (mode === 'xhr' || mode === 'dialog') {
+if (mode === 'xhr' || mode === 'dialog' || mode === 'unseen') {
   test('a step on a page blocked in native code times out', { timeout: 90000 }, async t => {
     const { chromium } = require(process.env.CICADA_PLAYWRIGHT_MODULE || 'playwright');
     const browser = await chromium.launch(stall.withChromeLog({ headless: true, executablePath: process.env.CICADA_CHROME_PATH, args: ['--no-sandbox'] }, chromium));
@@ -80,9 +84,11 @@ if (mode === 'xhr' || mode === 'dialog') {
     // One local server serves the page and never answers /never. The page and
     // the request share an origin, so Chrome sends the request (it refuses a
     // public-looking origin's requests to 127.0.0.1).
-    const block = mode === 'xhr'
-      ? "const x = new XMLHttpRequest(); x.open('GET', '/never', false); x.send();"
-      : 'alert("blocked on purpose");';
+    const block = {
+      xhr: "const x = new XMLHttpRequest(); x.open('GET', '/never', false); x.send();",
+      dialog: 'alert("blocked on purpose");',
+      unseen: "globalThis.__cicadaStallBeat = () => {}; const x = new XMLHttpRequest(); x.open('GET', '/never', false); x.send();",
+    }[mode];
     const server = http.createServer((request, response) => {
       if (request.url === '/never') return;
       response.writeHead(200, { 'content-type': 'text/html' });

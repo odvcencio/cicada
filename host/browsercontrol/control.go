@@ -9,6 +9,7 @@ import (
 	"math"
 
 	"m31labs.dev/cicada/host/demopolicy"
+	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/project"
@@ -73,7 +74,7 @@ func New(p *project.Project, cfg engine.Config, policy demopolicy.Policy, send f
 	}
 	for _, address := range project.ParamAddresses(p) {
 		resolved, err := project.ResolveParameterPath(p, address.Address)
-		if err == nil && resolved.Descriptor.Live {
+		if err == nil && resolved.Descriptor.Live && resolved.ID != kernel.ParamFxDelayHighpass && resolved.ID != kernel.ParamFxTapeHighpass {
 			c.params[address.Address] = resolved
 		}
 	}

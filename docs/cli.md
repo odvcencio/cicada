@@ -6,12 +6,11 @@ or `cicada help lib COMMAND` for a library subcommand. Each command also accepts
 
 ## Audition
 
-`cicada audition SCORE [-o DIR] [--from BAR] [--bars N] [--json]` renders the
+`cicada audition SCORE [-o DIR] [--from BAR] [--bars N] [--tracks IDS] [--peaks N] [--detail] [--no-bands] [--image-width N] [--max-resident-pcm SIZE] [--json]` renders the
 mix and stems and reports the heard key, written and heard chords per bar,
 per-track level, brightness, attack, decay and rhythm, and per-section
 loudness. With `-o` it writes `spectrogram.png`, `chroma.png` and
-`rhythm.png`. See [Audition](manual/audition.md) for each field and the JSON
-schema.
+`rhythm.png` and `energy.png`. See [Audition](manual/audition.md) for the JSON schema and [Audition measurements](manual/audition-measures.md) for measurement details.
 
 ## Sampler pack memory
 
