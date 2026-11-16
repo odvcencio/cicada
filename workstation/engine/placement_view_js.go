@@ -41,7 +41,9 @@ const placementViewStorage = "cicada-placement-view"
 
 func readPlacementViewPreference(key string) (p placementViewPreference) {
 	p.Zoom = "48"
-	if key == "cicada-scene-view" {
+	// A scene song opens fitted to the window, except on a phone-width
+	// window, where a whole song would leave section names a letter wide.
+	if key == "cicada-scene-view" && js.Global().Get("innerWidth").Float() > 799 {
 		p.Zoom = "fit"
 	}
 	p.Snap = "240"

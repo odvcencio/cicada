@@ -11,7 +11,7 @@ func arrangementTools(placement bool, barTicks, beatTicks int64, meter string) g
 		return gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-placement-view", action), gosx.BoolAttr("data-studio-view-control")), gosx.Text(label))
 	}
 	var zoomOptions []gosx.Node
-	for _, option := range []struct{ value, label string }{{"fit", "Fit song"}, {"48", "1×"}, {"96", "2×"}, {"192", "4×"}, {"384", "8×"}} {
+	for _, option := range []struct{ value, label string }{{"fit", "Fit"}, {"48", "1×"}, {"96", "2×"}, {"192", "4×"}, {"384", "8×"}} {
 		attrs := gosx.Attrs(gosx.Attr("value", option.value))
 		if option.value == "48" {
 			attrs = append(attrs, gosx.BoolAttr("selected"))
@@ -43,7 +43,9 @@ func arrangementTools(placement bool, barTicks, beatTicks int64, meter string) g
 		editStatus = gosx.El("span", gosx.Attrs(gosx.BoolAttr("data-placement-edit-status"), gosx.Attr("role", "status"), gosx.Attr("aria-live", "polite"), gosx.Attr("class", "muted placement-edit-status")), gosx.Text("Drag moves · Option/Alt-drag copies · Shift-drag is free · hold edges to scroll"))
 	}
 	return gosx.El("div", gosx.Attrs(gosx.Attr("class", class), gosx.Attr("aria-label", "Arrangement navigation")),
-		field("Timeline zoom", gosx.El("select", gosx.Attrs(gosx.Attr("name", "placementZoom"), gosx.BoolAttr("data-studio-view-control"), gosx.Attr("aria-label", "Timeline zoom")), gosx.Fragment(zoomOptions...))),
+		// The visible label is short so the strip fits one row; the select's
+		// accessible name stays "Timeline zoom".
+		field("Zoom", gosx.El("select", gosx.Attrs(gosx.Attr("name", "placementZoom"), gosx.BoolAttr("data-studio-view-control"), gosx.Attr("aria-label", "Timeline zoom")), gosx.Fragment(zoomOptions...))),
 		snap,
 		viewButton("fit", "Fit song"), placementExtras,
 		gosx.El("label", gosx.Attrs(gosx.Attr("class", "placement-follow")), gosx.El("input", gosx.Attrs(gosx.Attr("type", "checkbox"), gosx.Attr("name", "placementFollow"), gosx.Attr("aria-label", "Follow song"), gosx.BoolAttr("data-studio-view-control"))), gosx.El("span", gosx.Attrs(gosx.BoolAttr("data-follow-label")), gosx.Text("Follow song"))),

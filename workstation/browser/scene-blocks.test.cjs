@@ -75,13 +75,20 @@ test('scene headers open guarded block controls and Undo restores the song', {ti
   await until(async()=> (await page.locator('[data-scene-navigation] [data-placement-playback-status]').textContent()).startsWith('Playing'), 'scene playback did not reach the view');
   await zoom.selectOption('192'); await follow.check();
   const box=await scroller.boundingBox(), rail=await scroller.locator('.timeline-track').first().evaluate(el=>el.getBoundingClientRect().width), pointerX=box.x+rail+100;
-  const tickAtPointer=()=>scroller.evaluate((el,x)=>{const world=el.querySelector('.scene-timeline'), rail=world.querySelector('.timeline-track').getBoundingClientRect().width; return (x-el.getBoundingClientRect().left-rail+el.scrollLeft)/(world.getBoundingClientRect().width-rail);},pointerX);
   const viewRequests=nonGet.length, viewRevision=(await state()).revision;
-  await page.mouse.move(pointerX,box.y+50); const anchor=await tickAtPointer();
-  await page.keyboard.down('Control'); await page.mouse.wheel(0,-120); await page.keyboard.up('Control');
+  await page.mouse.move(pointerX,box.y+50);
+  // The tick under the pointer is read, the view is zoomed with Ctrl and the
+  // wheel, and the tick is read again in one page task: while the song plays,
+  // a following view moves by itself between two separate readings.
+  const drift=await scroller.evaluate((el,[x,y])=>{
+    const world=el.querySelector('.scene-timeline'), rail=()=>world.querySelector('.timeline-track').getBoundingClientRect().width;
+    const tick=()=>(x-el.getBoundingClientRect().left-rail()+el.scrollLeft)/(world.getBoundingClientRect().width-rail());
+    const before=tick();
+    world.dispatchEvent(new WheelEvent('wheel',{deltaY:-120,ctrlKey:true,clientX:x,clientY:y,bubbles:true,cancelable:true}));
+    return Math.abs(tick()-before)*(world.getBoundingClientRect().width-rail());
+  },[pointerX,box.y+50]);
   await until(async()=>await zoom.inputValue()==='384','scene wheel zoom did not apply');
-  const width=await scroller.locator('.scene-timeline').evaluate(el=>el.getBoundingClientRect().width);
-  assert.ok(Math.abs((await tickAtPointer())-anchor)*(width-rail)<=1);
+  assert.ok(drift<=1,`the zoom moved the tick under the pointer by ${drift} px`);
   await page.mouse.wheel(150,0);
   await until(async()=>await follow.getAttribute('data-follow-paused')!==null,'scene scroll did not pause Follow');
   assert.equal(await follow.isChecked(),true); assert.equal(nonGet.length,viewRequests); assert.equal((await state()).revision,viewRevision);
