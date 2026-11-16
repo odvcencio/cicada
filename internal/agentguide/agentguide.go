@@ -37,7 +37,7 @@ var Lookups = []Lookup{
 	{Command: "cicada intents --json <kind>", Summary: "one intent kind: its fields, which are required, their units and allowed values, and examples that apply accepts"},
 	{Command: "cicada symbols --json <score>", Summary: "the names a score defines: tracks, patterns, scenes"},
 	{Command: "cicada explain <score> <track>.<control>", Summary: "one control of a track: its value in that score and where the value comes from"},
-	{Command: "cicada params", Summary: "the controls Cicada knows for its voices, effects and mixer, each with its path, the engines that have it (voices), its unit and its range; a long list"},
+	{Command: "cicada params --json --voice <voice>", Summary: "every control of one voice or patch, such as fm_bass: its range, unit, default, what it does and which way it moves level and brightness; --index lists the voices, effects and mixer strips"},
 	{Command: "cicada diagnostics --json <code>", Summary: "what a diagnostic code means and how to fix it"},
 	{Command: "cicada help --json <command>", Summary: "a command's usage and flags"},
 }

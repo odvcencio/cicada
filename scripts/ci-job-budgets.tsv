@@ -55,3 +55,4 @@
 9	pr	M2 AudioWorklet browser tests
 6	pr	M2 AudioWorklet gates
 55	nightly	M2 AudioWorklet nightly soak
+30	nightly	Measured sound directions (every control)
