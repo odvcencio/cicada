@@ -21,16 +21,17 @@ test('arranging zooms, reveals and follows playback without editing the song', {
  const browser=await playwright().chromium.launch({headless:true, executablePath:process.env.CICADA_CHROME_PATH,args:['--no-sandbox']});
  const context=await browser.newContext({viewport:{width:1440,height:1000}});
  const page=await context.newPage(); page.setDefaultTimeout(15000);
- const errors=[], posts=[], checks=[];
+ const errors=[], posts=[], checks=[], nonGet=[];
  page.on('pageerror',e=>errors.push(e.message));
- page.on('request',r=>{if(r.method()==='POST' && new URL(r.url()).pathname.startsWith('/__actions/'))posts.push(new URL(r.url()).pathname)});
+ // The Code lens asks for an analysis of the score in the background (a POST that changes nothing); it is not a request of the view.
+ page.on('request',r=>{if(r.method()!=='GET' && new URL(r.url()).pathname!=='/__code/analysis')nonGet.push(r.url()); if(r.method()==='POST' && new URL(r.url()).pathname.startsWith('/__actions/'))posts.push(new URL(r.url()).pathname)});
  const state=async()=>(await page.request.get(base+'/api/state')).json();
  const transport=async()=>(await page.request.get(base+'/api/transport')).json();
  const ready=async()=>page.locator('[data-placement-navigation-ready]').waitFor();
  const scroller=page.locator('.placement-scroll');
  const width=()=>page.locator('.placement-timeline').evaluate(el=>el.getBoundingClientRect().width);
  const zoom=page.getByLabel('Timeline zoom',{exact:true});
- const follow=page.getByLabel('Follow song',{exact:true});
+ const follow=page.locator('[name=placementFollow]');
  try {
   await page.goto(base+'/studio?placement=far-home'); await ready();
   const before=await state(); assert.ok(before.source.includes('cicada-placement-test: disposable fixture'));
@@ -40,6 +41,15 @@ test('arranging zooms, reveals and follows playback without editing the song', {
   for(const [value,multiple] of [['96',2],['192',4],['384',8],['48',1]]){
    await zoom.selectOption(value); await until(async()=>Math.abs((await width())-(label+(initial-label)*multiple))<1,'zoom scale incorrect');
   }
+  await zoom.selectOption('192');
+  const viewRequests=nonGet.length, viewRevision=(await state()).revision;
+  const box=await scroller.boundingBox(), pointerX=box.x+label+100;
+  const tickAtPointer=()=>scroller.evaluate((el,x)=>{const world=el.querySelector('.placement-timeline'), rail=world.querySelector('.placement-track').getBoundingClientRect().width; return (x-el.getBoundingClientRect().left-rail+el.scrollLeft)/(world.getBoundingClientRect().width-rail);},pointerX);
+  await page.mouse.move(pointerX,box.y+100); const anchor=await tickAtPointer();
+  await page.keyboard.down('Control'); await page.mouse.wheel(0,-120); await page.keyboard.up('Control');
+  await until(async()=>await zoom.inputValue()==='384','wheel zoom did not apply');
+  assert.ok(Math.abs((await tickAtPointer())-anchor)*(await width()-label)<=1);
+  assert.deepEqual(nonGet.slice(viewRequests),[],'zooming sent a request'); assert.equal((await state()).revision,viewRevision);
   await zoom.selectOption('192');
   await page.getByRole('button',{name:'Show selected',exact:true}).click();
   await until(async()=>(await scroller.evaluate(el=>el.scrollLeft))>2500,'late placement was not revealed');
@@ -82,14 +92,26 @@ test('arranging zooms, reveals and follows playback without editing the song', {
   await until(async()=>(await scroller.evaluate(el=>el.scrollLeft))>0,'Follow did not scroll');
   const first=Number(await line.getAttribute('data-playhead-tick'));
   await until(async()=>Number(await line.getAttribute('data-playhead-tick'))>first+240,'playhead did not advance');
-  await scroller.hover(); await page.mouse.wheel(250,0); await until(async()=>!(await follow.isChecked()),'manual timeline interaction did not release Follow');
+  const beforeScrollRequests=nonGet.length, beforeScrollRevision=(await state()).revision;
+  await scroller.hover(); await page.mouse.wheel(250,0); await until(async()=>await follow.getAttribute('data-follow-paused')!==null,'manual scroll did not pause Follow');
+  assert.equal(await follow.isChecked(),true); assert.equal(nonGet.length,beforeScrollRequests); assert.equal((await state()).revision,beforeScrollRevision);
+  assert.equal(await page.getByRole('checkbox',{name:'Follow (paused)',exact:true}).count(),1);
+  await follow.click();
+  await until(async()=>await follow.getAttribute('data-follow-paused')===null,'one click did not resume Follow');
+  assert.equal(await page.getByRole('checkbox',{name:'Follow song',exact:true}).count(),1);
+  await scroller.hover(); await page.mouse.wheel(250,0);
+  await until(async()=>await follow.getAttribute('data-follow-paused')!==null,'manual scroll did not pause Follow again');
   await page.getByRole('button',{name:'Pause',exact:true}).first().click();
   await until(async()=>!(await transport()).playing,'Pause did not settle');
   await new Promise(r=>setTimeout(r,400)); const paused=await line.getAttribute('data-playhead-tick');
   await new Promise(r=>setTimeout(r,300)); assert.equal(await line.getAttribute('data-playhead-tick'),paused);
+  await page.getByRole('button',{name:'Play',exact:true}).first().click();
+  await until(async()=>await follow.getAttribute('data-follow-paused')===null,'restarting playback did not resume Follow');
+  await page.getByRole('button',{name:'Pause',exact:true}).first().click();
+  await until(async()=>!(await transport()).playing,'second Pause did not settle');
   await page.getByRole('button',{name:'Return to start',exact:true}).first().click();
   await until(async()=>Number(await line.getAttribute('data-playhead-tick'))===0,'Home did not reset the playhead');
-  checks.push('native playhead advances, Follow scrolls, manual scroll releases it, Pause and Home settle');
+  checks.push('native playhead advances, Follow scrolls, manual scroll pauses it, Pause and Home settle');
 
   await page.getByRole('button',{name:'Fit song',exact:true}).click();
   await until(async()=>(await page.locator('[data-gosx-live-bind=bar]').first().innerText())==='1' && (await page.locator('[data-gosx-live-bind=step]').first().innerText())==='1','toolbar position did not settle after Home');

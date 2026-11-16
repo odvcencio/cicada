@@ -58,8 +58,8 @@ test('Studio placement gestures save once, cancel cleanly and retain the working
   await page.getByRole('button',{name:'Undo',exact:true}).click();await length(15120);await undo();
   check('successive keyboard moves and trims retain their focused control and individual Undo steps');
 
-  const n=arrangePosts();await page.getByLabel('Follow song',{exact:true}).check();await gesture({hold:true});
-  assert.equal(await page.getByLabel('Follow song',{exact:true}).isChecked(),false);
+  const n=arrangePosts();await page.locator('[name=placementFollow]').check();await gesture({hold:true});
+  assert.equal(await page.locator('[name=placementFollow]').isChecked(),false);
   assert.equal(await block().getAttribute('data-placement-preview'),'at');assert.equal((await state()).source,baseline);assert.equal(arrangePosts(),n);
   if(proof){fs.mkdirSync(proof,{recursive:true});await page.screenshot({path:path.join(proof,'placement-drag-preview-1440.png')})}
   await page.mouse.up();await at(17280);assert.equal(arrangePosts(),n+1);await undo();

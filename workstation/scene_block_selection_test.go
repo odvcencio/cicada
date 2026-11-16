@@ -123,6 +123,12 @@ func TestShellSceneArrangementControls(t *testing.T) {
 		t.Fatal("missing session panel after arrangement")
 	}
 	body = body[:end]
+	assertArrangementViewTools(t, body, false)
+	for _, want := range []string{`data-scene-start="0"`, `data-scene-length="15360"`, `data-scene-start="15360"`, `data-scene-ticks="46080"`, `data-placement-playhead`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("scene geometry missing %s", want)
+		}
+	}
 	last := -1
 	for _, label := range []string{"Play full song", "Stop listening", "Loop an exact range", "Add section", ">Project</summary>"} {
 		at := strings.Index(body, label)

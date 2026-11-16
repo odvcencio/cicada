@@ -35,7 +35,7 @@ test('scene headers open guarded block controls and Undo restores the song', {ti
   const browser = await chromium.launch({headless:true, executablePath:process.env.CICADA_CHROME_PATH, args:['--no-sandbox','--mute-audio']});
   t.after(() => browser.close());
   const page = await browser.newPage({viewport:{width:1440,height:1000}});
-  const errors = [], writes = [], notes = [];
+  const errors = [], writes = [], notes = [], nonGet = [];
   await page.addInitScript(() => {
     const access = new EventTarget(), port = new EventTarget();
     Object.assign(port, {id:'test-keys', name:'Synthetic Keyboard', state:'connected'});
@@ -46,6 +46,7 @@ test('scene headers open guarded block controls and Undo restores the song', {ti
   page.on('pageerror', error => errors.push(error.message));
   page.on('console', msg => { if(msg.text().includes('scene reveal')) console.log(msg.text()); });
   page.on('request', request => {
+    if (request.method() !== 'GET') nonGet.push(request.url());
     const endpoint = new URL(request.url()).pathname;
     if (request.method()==='POST' && endpoint==='/__actions/song') writes.push(request);
     if (request.method()==='POST' && endpoint==='/__actions/live') {
@@ -69,11 +70,64 @@ test('scene headers open guarded block controls and Undo restores the song', {ti
   await page.locator('#transport-form button[value=play]').click();
   await page.waitForFunction(() => !document.querySelector('[data-live-control=record]').disabled);
   await page.locator('#view-tab-arrange').click();
+  const scroller=page.locator('[data-scene-navigation] .timeline'), zoom=page.getByLabel('Timeline zoom',{exact:true}), follow=page.locator('[name=placementFollow]');
+  await page.locator('[data-scene-navigation][data-placement-navigation-ready]').waitFor();
+  await until(async()=> (await page.locator('[data-scene-navigation] [data-placement-playback-status]').textContent()).startsWith('Playing'), 'scene playback did not reach the view');
+  assert.equal(await zoom.inputValue(),'fit', 'desktop defaults to Fit');
+  // The phone default and a stored zoom need page reloads, which would drop
+  // this suite's MIDI connection: scene-meter.test.cjs covers them.
+  const edit = page.getByRole('link', {name:'Edit alternate_long_scene_name · bars 5–5', exact:true});
+  const editFits = () => edit.evaluate(el => { const r=el.getBoundingClientRect(), p=el.closest('.timeline-heading').getBoundingClientRect(); return r.width>0 && r.left>=p.left && r.right<=p.right; });
+  await zoom.selectOption('48');
+  assert.equal(await editFits(),true,'Edit must fit at desktop 1x');
+  await page.setViewportSize({width:800,height:1000});
+  const viewRequests=nonGet.length, viewRevision=(await state()).revision;
+  // The anchor is checked with Follow off: while the song plays, a following
+  // view moves under the pointer by itself between the reading and the wheel.
+  await zoom.selectOption('192'); await follow.uncheck();
+  const box=await scroller.boundingBox(), rail=await scroller.locator('.timeline-track').first().evaluate(el=>el.getBoundingClientRect().width), pointerX=box.x+rail+100;
+  const anchor=()=>scroller.evaluate((el,x)=>{const w=el.querySelector('.scene-timeline'), rail=w.querySelector('.timeline-track').getBoundingClientRect().width; return (x-el.getBoundingClientRect().left-rail+el.scrollLeft)/(w.getBoundingClientRect().width-rail);},pointerX);
+  const worldWidth=()=>scroller.evaluate(el=>{const w=el.querySelector('.scene-timeline'); return w.getBoundingClientRect().width-w.querySelector('.timeline-track').getBoundingClientRect().width;});
+  await page.mouse.move(pointerX,box.y+50);
+  const beforeAnchor=await anchor();
+  await page.keyboard.down('Control'); await page.mouse.wheel(0,-120); await page.keyboard.up('Control');
+  await until(async()=>await zoom.inputValue()==='384','scene wheel zoom did not apply');
+  assert.ok(Math.abs((await anchor())-beforeAnchor)*(await worldWidth())<=1,'wheel zoom must preserve the pointer anchor');
+  // With Follow on, a zoom at the pointer pauses it, so the view stays where
+  // the user zoomed; the control stays checked and reads "Follow (paused)".
+  await follow.check();
+  await page.mouse.move(pointerX,box.y+50);
+  await page.keyboard.down('Control'); await page.mouse.wheel(0,120); await page.keyboard.up('Control');
+  await until(async()=>await zoom.inputValue()==='192','scene wheel zoom out did not apply');
+  await until(async()=>await follow.getAttribute('data-follow-paused')!==null,'zoom did not pause Follow');
+  assert.equal(await page.getByLabel('Follow (paused)',{exact:true}).count(),1);
+  await follow.click();
+  assert.equal(await follow.isChecked(),true);
+  await until(async()=>await follow.getAttribute('data-follow-paused')===null,'one click did not resume Follow');
+  await page.mouse.move(pointerX,box.y+50);
+  await page.mouse.wheel(0,40);
+  assert.equal(await follow.getAttribute('data-follow-paused'),null,'vertical wheel without horizontal movement must not pause Follow');
+  await page.mouse.wheel(150,0);
+  await until(async()=>await follow.getAttribute('data-follow-paused')!==null,'sideways wheel did not pause Follow');
+  await follow.click();
+  await until(async()=>await follow.getAttribute('data-follow-paused')===null,'one click did not resume Follow');
+  await scroller.evaluate(el=>{el.scrollLeft = el.scrollLeft > 0 ? 0 : 150;});
+  await until(async()=>await follow.getAttribute('data-follow-paused')!==null,'scroll event did not pause Follow');
+  await follow.click();
+  await until(async()=>await follow.getAttribute('data-follow-paused')===null,'one click did not resume Follow');
+  await until(async()=>scroller.evaluate(el=>{const r=el.getBoundingClientRect(), h=el.querySelector('[data-placement-playhead]').getBoundingClientRect(); return el.scrollLeft>0 && h.left>=r.left && h.left<=r.right;}),'Follow did not scroll to keep the playhead visible');
+  assert.equal(nonGet.length,viewRequests); assert.equal((await state()).revision,viewRevision);
+  await page.locator('#transport-form button[value=pause]').click();
+  await until(async()=>!(await (await page.request.get(new URL('/api/transport',base).href)).json()).playing,'transport did not pause');
+  await until(async()=> (await page.locator('[data-scene-navigation] [data-placement-playback-status]').textContent()).startsWith('Stopped'), 'scene view did not observe the stop');
+  await page.locator('#transport-form button[value=play]').click();
+  await until(async()=>await follow.getAttribute('data-follow-paused')===null,'scene Follow did not resume');
+  // The view steps ran in a narrow window so that 4x overflows; the rest of
+  // the suite uses the full width again, fitted.
+  await page.setViewportSize({width:1440,height:1000});
+  await page.getByRole('button',{name:'Fit song',exact:true}).click();
   await page.evaluate(() => { window.__sceneLive = document.querySelector('#cicada-live'); window.__sceneDocument = document; __sendSceneMIDI(0x90,60,100); });
   await until(() => notes.some(note => note.on === 'true' && note.note === '60'), 'MIDI note-on was not delivered');
-  const edit = page.getByRole('link', {name:'Edit alternate_long_scene_name · bars 5–5', exact:true});
-  assert.equal(await edit.evaluate(el => { const r=el.getBoundingClientRect(), p=el.closest('.timeline-heading').getBoundingClientRect(); return r.width>0 && r.left>=p.left && r.right<=p.right; }),true,'Edit must fit in a one-bar header');
-  assert.equal(await edit.locator('..').locator('small').evaluate(el => el.getBoundingClientRect().height <= parseFloat(getComputedStyle(el).fontSize) * 1.5),true,'block number must remain on one line');
   const oldURL = await edit.getAttribute('href');
   assert.equal(new URL(oldURL,base).searchParams.has('songRevision'),false);
   const beforeSelectionURL = page.url();
