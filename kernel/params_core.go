@@ -65,7 +65,7 @@ var Params = [...]ParamSpec{
 	{45, "track", "linear", 0, 1, 0.2, 0.01, 5, false, false, false},
 	{46, "track", "log", 5, 500, 30, 0.1, 5, false, false, false},
 	{47, "track", "log", 20, 200, 60, 0.1, 5, false, false, false},
-	{48, "track", "linear", 10, 100, 55, 0.01, 5, false, false, false},
+	{48, "track", "integer", 10, 100, 55, 1, 5, false, false, false},
 	{49, "track", "enum", 0, 1, 0, 0.01, 0, false, false, false},
 	{50, "track", "toggle", 0, 1, 0, 0.01, 0, false, false, false},
 	{51, "track", "enum", 0, 6, 2, 0.01, 0, false, false, false},

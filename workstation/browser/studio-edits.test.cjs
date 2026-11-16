@@ -764,7 +764,7 @@ test('a checkpoint of the saved text that lands after the save keeps no copy, an
   // whatever the timing.
   const {answers, refused, release, stop} = await checkpointAnswers(other, {refuse: true});
   try {
-    // One input event, so every checkpoint carries the whole text.
+    // fill inserts the whole text at once, so every checkpoint carries it.
     await other.locator('#score textarea').first().fill(text);
     await until(() => refused.count > 0, 'the other window sent no checkpoint');
     await typeAtEnd(page, phrase);
@@ -879,6 +879,13 @@ test('a checkpoint answer that cannot be read is a failed attempt, and the windo
         .observe(document.body, {subtree: true, childList: true, characterData: true});
     });
     await editor.fill(text);
+    // One fill fires an input event for each line and each line break, all
+    // with the same final text. Those events, and any later event that
+    // changes no text, must not turn the retry into a different checkpoint:
+    // the copy is new, so its one edit has sequence 1.
+    await until(() => sent.length >= 1, 'the window did not send a checkpoint');
+    assert.equal(sent[0].sequence, '1', 'input events that changed no text advanced the sequence');
+    for (let i = 0; i < 3; i++) await editor.dispatchEvent('input');
     await until(() => sent.length >= 2, 'the window did not send the checkpoint again');
     assert.equal(sent[0].content, text, 'the first checkpoint did not carry the text');
     assert.deepEqual(sent[1], sent[0], 'the second attempt was not the same checkpoint');
@@ -1599,6 +1606,168 @@ test('a held Undo is dropped after a refused edit', async () => {
   await page.waitForTimeout(400);
   assert.equal(posts.length, start + 1, 'the held Undo was sent after a refused edit');
   assert.match(await status(), /Undo or Redo waiting behind it was not sent/, 'the dropped Undo was not reported');
+});
+
+// Transport commands the service runs without a revision check (play, pause,
+// stop, return to start) never wait behind a score write and are never
+// dropped when a read finds another client's save.
+test('Play in the shell starts while a read that finds another save is held', async () => {
+  const {caughtUp, page, state, posts, cell, settled} = await studio();
+  const held = [];
+  await page.route('**/__studio/regions**', route => { held.push(route); });
+  try {
+    const start = posts.length;
+    await page.locator(cell(50)).click();
+    await settled(start + 1);
+    await until(() => held.length > 0, 'the write was not followed by a read');
+    const other = await otherClient();
+    await other.locator(cell(51)).click();
+    await other.waitForFunction(selector => document.querySelector(selector)?.getAttribute('data-active') === 'true' && !document.querySelector(selector).hasAttribute('data-workspace-pending'), cell(51));
+    await page.locator('#transport-form button[value=play]').click();
+    await until(async () => (await state('/api/transport')).playing, 'Play did not start while a read was held');
+  } finally {
+    await page.unroute('**/__studio/regions**');
+    for (const route of held) await route.continue().catch(() => {});
+  }
+  // The held read finds the other save; playback goes on.
+  await caughtUp();
+  assert.equal((await state('/api/transport')).playing, true, 'the read that found another save stopped playback');
+  await page.locator('#transport-form button[value=stop]').click();
+  await until(async () => !(await state('/api/transport')).playing, 'Stop did not stop playback');
+});
+
+test('Play in the panel view is not dropped by a refresh that finds another save, and a dropped edit is named', async () => {
+  const {base, state, cell} = await studio();
+  const {context} = await sharedBrowser();
+  const panel = await context.newPage();
+  panel.setDefaultTimeout(15_000);
+  // The panel view polls the project revision each second and queues a
+  // refresh when it moves. Hold that refresh.
+  let refresh = null, release;
+  const released = new Promise(resolve => { release = resolve; });
+  await panel.route('**/__workspace**', async route => {
+    if (route.request().method() === 'GET' && !refresh) {
+      refresh = route;
+      await released;
+    }
+    await route.continue().catch(() => {});
+  });
+  try {
+    await panel.goto(new URL('/?panel=patterns&pattern=continuity&step=1', base).href);
+    await panel.locator('#cicada-workspace[data-workspace-reactive="ready"]').waitFor({timeout: 30_000});
+    const other = await otherClient();
+    await other.locator(cell(52)).click();
+    await other.waitForFunction(selector => document.querySelector(selector)?.getAttribute('data-active') === 'true' && !document.querySelector(selector).hasAttribute('data-workspace-pending'), cell(52));
+    await until(() => refresh !== null, 'the panel view did not refresh after another save');
+    // Play goes out at once; a draw waits behind the refresh, which finds the
+    // other save, so the draw is dropped and named.
+    await panel.locator('.toolbar form[action="/__actions/transport"] button[value="play"]').click();
+    await until(async () => (await state('/api/transport')).playing, 'Play waited behind the refresh');
+    await panel.locator('[data-workspace-tool=draw]').click();
+    const target = panel.locator(cell(53).replace('#detail-panel-clip ', ''));
+    const label = await target.getAttribute('aria-label');
+    await target.click();
+    release();
+    await until(async () => /Another change to the song was saved, so this was not sent: /.test(await panel.locator('[data-workspace-status]').textContent()), 'the dropped draw was not reported');
+    assert.match(await panel.locator('[data-workspace-status]').textContent(), new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), 'the report did not name the dropped draw');
+    assert.equal((await state('/api/transport')).playing, true, 'the refresh stopped playback');
+    // A successful Stop says nothing, so the report of the dropped draw stays.
+    const notice = await panel.locator('[data-workspace-status]').textContent();
+    await panel.evaluate(() => {
+      window.__statusAfterStop = [];
+      const node = document.querySelector('[data-workspace-status]');
+      new MutationObserver(() => window.__statusAfterStop.push(node.textContent)).observe(node, {subtree: true, childList: true, characterData: true});
+    });
+    const stopReply = panel.waitForResponse(response => new URL(response.url()).pathname === '/__actions/transport' && response.request().method() === 'POST');
+    await panel.locator('.toolbar form[action="/__actions/transport"] button[value="stop"]').click();
+    await stopReply;
+    await until(async () => !(await state('/api/transport')).playing, 'Stop did not stop playback');
+    // The engine handles the reply as soon as the page's fetch settles.
+    await panel.evaluate(() => new Promise(resolve => setTimeout(resolve, 250)));
+    assert.equal(await panel.locator('[data-workspace-status]').textContent(), notice,
+      `Stop replaced the report of the dropped draw: ${JSON.stringify(await panel.evaluate(() => window.__statusAfterStop))}`);
+  } finally {
+    release();
+    await panel.close();
+  }
+  // The suite's page has not seen the other client's save. A step link (a
+  // GoSX navigation) renders it again at the saved revision.
+  const {page} = await studio();
+  await page.locator('#detail-panel-clip .piano-roll .step-number').nth(1).click();
+  await page.waitForFunction(() => new URL(location.href).searchParams.get('step') === '2');
+  await page.locator('#studio-shell[data-shell-edits="ready"]').waitFor();
+  await until(async () => await page.locator('#undo-form input[name=revision]').inputValue() === (await state('/api/state')).revision, 'the page did not catch up with the saved song');
+});
+
+// Transport commands sent beside the queue go one at a time, in click order:
+// Stop pressed just after Play is sent after Play's answer, so playback ends.
+test('Play then Stop pressed 10 ms apart in the panel view ends stopped, every time', async () => {
+  const {base, state} = await studio();
+  const {context} = await sharedBrowser();
+  const panel = await context.newPage();
+  panel.setDefaultTimeout(15_000);
+  let replies = 0;
+  panel.on('response', response => {
+    if (new URL(response.url()).pathname === '/__actions/transport' && response.request().method() === 'POST') replies++;
+  });
+  try {
+    await panel.goto(new URL('/?panel=patterns&pattern=continuity&step=1', base).href);
+    await panel.locator('#cicada-workspace[data-workspace-reactive="ready"]').waitFor({timeout: 30_000});
+    for (let run = 1; run <= 30; run++) {
+      const before = replies;
+      await panel.evaluate(() => {
+        const button = value => document.querySelector(`.toolbar form[action="/__actions/transport"] button[value="${value}"]`);
+        button('play').click();
+        setTimeout(() => button('stop').click(), 10);
+      });
+      await until(() => replies >= before + 2, `run ${run}: Play and Stop were not both answered`);
+      await until(async () => !(await state('/api/transport')).playing, `run ${run}: playback did not end stopped`);
+    }
+  } finally {
+    await panel.close();
+  }
+});
+
+test('a transport reply does not restore the previous panel selection', async () => {
+  const {base, cell} = await studio();
+  const {context} = await sharedBrowser();
+  const panel = await context.newPage();
+  panel.setDefaultTimeout(15_000);
+  let readHeld = false, transportHeld = false, releaseRead, releaseTransport;
+  const readGate = new Promise(resolve => { releaseRead = resolve; });
+  const transportGate = new Promise(resolve => { releaseTransport = resolve; });
+  await panel.route('**/__workspace**', async route => {
+    if (!readHeld && route.request().method() === 'GET') {
+      readHeld = true;
+      await readGate;
+    }
+    await route.continue().catch(() => {});
+  });
+  await panel.route('**/__actions/transport', async route => {
+    const response = await route.fetch();
+    transportHeld = true;
+    await transportGate;
+    await route.fulfill({response}).catch(() => {});
+  });
+  try {
+    await panel.goto(new URL('/?panel=patterns&pattern=continuity&step=1', base).href);
+    await panel.locator('#cicada-workspace[data-workspace-reactive="ready"]').waitFor({timeout: 30_000});
+    await panel.locator(cell(2).replace('#detail-panel-clip ', '')).click();
+    await until(() => readHeld, 'the selection read did not start');
+    await panel.locator('.toolbar form[action="/__actions/transport"] button[value="play"]').click();
+    await until(() => transportHeld, 'Play did not return');
+    releaseRead();
+    await panel.waitForFunction(() => new URL(location.href).searchParams.get('step') === '2');
+    const transportReply = panel.waitForResponse(response => new URL(response.url()).pathname === '/__actions/transport');
+    releaseTransport();
+    await transportReply;
+    await panel.waitForTimeout(250);
+    assert.equal(new URL(panel.url()).searchParams.get('step'), '2', 'Play restored the old selection');
+  } finally {
+    releaseRead();
+    releaseTransport();
+    await panel.close();
+  }
 });
 
 test('closing the shell while a write is in flight leaves no error and the next edit works', async () => {

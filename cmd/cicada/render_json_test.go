@@ -181,6 +181,13 @@ func TestRenderJSONLoudnessShortfallRemedyWorks(t *testing.T) {
 				if loudness == nil || loudness.TargetMet || loudness.IntegratedLUFS == nil || len(result.Outputs) != 1 {
 					t.Fatalf("loudness: %+v outputs %+v", loudness, result.Outputs)
 				}
+				wantStage := "master_input"
+				if tc.name == "master chain" || tc.name == "full master chain" {
+					wantStage = "post_chain"
+				}
+				if loudness.GainStage != wantStage || loudness.MasterLimiterReductionDB != 0 || loudness.LastLimiterReductionDB != 0 {
+					t.Fatalf("loudness gain placement: %+v", loudness)
+				}
 				if !strings.Contains(stderr, remedy.Summary) || remedy.File != filepath.ToSlash(score) || remedy.Revision != edits.Revision(source) || remedy.Replaces != tc.replaces {
 					t.Fatalf("remedy: %+v\n%s", remedy, stderr)
 				}

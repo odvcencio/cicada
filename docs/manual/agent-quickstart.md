@@ -174,10 +174,10 @@ A refusal exits non-zero; `apply` and `render` give `error` with a stable
 3. Guessing a name or a control: `apply` exits 1 with `intent_refused` and a
    message such as `unknown pattern "lines"` (`field` is `entity`) or
    `track keys does not expose sound parameter "cutoff"`. Way out: names from
-   `symbols --json`. For a control, take a `path` from `cicada params` whose
-   `voices` hold the track's engine (`fm_bass` is `fm`, `poly_keys` is
-   `analog`, others their own name) and confirm it with `cicada explain`,
-   which fails for a control the track lacks. `level` and `pan` fit any track.
+   `symbols --json`; a track's controls, with range, unit, value and which way
+   each moves level and brightness, from
+   `cicada explain track:<track> <score> --json`. `level` and `pan` fit any
+   track.
 
 ## Look things up
 
@@ -185,6 +185,6 @@ A refusal exits non-zero; `apply` and `render` give `error` with a stable
 - `cicada intents --json <kind>`: a kind's fields and examples.
 - `cicada symbols --json <score>`: the names a score defines.
 - `cicada explain <score> <track>.<control>`: a control's value.
-- `cicada params`: controls, with engine, unit and range.
+- `cicada params --json --voice <voice>`: a voice's controls.
 - `cicada diagnostics --json <code>`: a code's meaning and fix.
 - `cicada help --json <command>`: a command's usage and flags.
