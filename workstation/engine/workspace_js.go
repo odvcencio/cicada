@@ -118,6 +118,7 @@ type workspaceUI struct {
 	editors          map[string]workspaceEditorBaseline
 	placements       *placementEditorUI
 	sources          map[string]*sourceRecovery
+	sourceStatusText string // the last recovery status shown, put back after a patch renders its node again
 	// The newest project revision this tab has rendered. Only a different
 	// revision on disk is another editor's change worth refreshing for.
 	projectRevision atomic.Value
