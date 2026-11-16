@@ -72,16 +72,18 @@ func (u *workspaceUI) captureSource(control js.Value) {
 		copy = &sourceRecovery{id: hex.EncodeToString(id[:]), file: file, base: base, parent: workspaceFieldValue(form, "recoveryId"), parentHash: workspaceFieldValue(form, "recoveryHash")}
 		u.sources[file] = copy
 	}
-	// An input event that leaves the text as the copy already holds it is not
-	// a new edit (a patch that puts the draft back into a re-rendered editor
-	// sends one). Giving it a new sequence would turn a retry of a failed
-	// checkpoint into a different checkpoint of the same text. The form's
-	// recovery fields are still written: a re-rendered form has lost them.
-	value := control.Get("value").String()
-	changed := copy.sequence == 0 || copy.content != value || copy.clean != clean
+	// An input event is a new edit only when it changes the text or the clean
+	// state the copy holds, or when the copy is new. One paste or one
+	// programmatic insertion of several lines fires an input event for each
+	// line and each line break, all with the same final text; giving each a
+	// new sequence would let a checkpoint sent during the burst differ from
+	// its own retry. The form's recovery fields and the status line are
+	// written either way, because a patch may have rendered them again.
+	text := control.Get("value").String()
+	changed := copy.sequence == 0 || copy.content != text || copy.clean != clean
 	if changed {
 		copy.sequence++
-		copy.content, copy.clean, copy.dirty = value, clean, true
+		copy.content, copy.clean, copy.dirty = text, clean, true
 	}
 	copy.control = control
 	for name, value := range map[string]string{"recoveryId": copy.id, "recoverySequence": strconv.FormatUint(copy.sequence, 10), "recoveryParentId": copy.parent, "recoveryParentHash": copy.parentHash} {
@@ -91,10 +93,13 @@ func (u *workspaceUI) captureSource(control js.Value) {
 	}
 	if changed {
 		u.sourceStatus("Keeping a private recovery copy… The score file is unchanged.")
+	} else if u.sourceStatusText != "" {
+		u.sourceStatus(u.sourceStatusText)
 	}
 }
 
 func (u *workspaceUI) sourceStatus(text string) {
+	u.sourceStatusText = text
 	if node := u.root.Call("querySelector", "[data-source-recovery-status]"); workspacePresent(node) {
 		node.Set("textContent", text)
 	}

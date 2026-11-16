@@ -648,7 +648,7 @@ test('a checkpoint of the saved text that lands after the save keeps no copy, an
   // whatever the timing.
   const {answers, refused, release, stop} = await checkpointAnswers(other, {refuse: true});
   try {
-    // One input event, so every checkpoint carries the whole text.
+    // fill inserts the whole text at once, so every checkpoint carries it.
     await other.locator('#score textarea').first().fill(text);
     await until(() => refused.count > 0, 'the other window sent no checkpoint');
     await typeAtEnd(page, phrase);
@@ -763,10 +763,12 @@ test('a checkpoint answer that cannot be read is a failed attempt, and the windo
         .observe(document.body, {subtree: true, childList: true, characterData: true});
     });
     await editor.fill(text);
-    // An input event that changes no text (a patch that puts the draft back
-    // into a re-rendered editor sends one) must not turn the retry into a
-    // different checkpoint.
+    // One fill fires an input event for each line and each line break, all
+    // with the same final text. Those events, and any later event that
+    // changes no text, must not turn the retry into a different checkpoint:
+    // the copy is new, so its one edit has sequence 1.
     await until(() => sent.length >= 1, 'the window did not send a checkpoint');
+    assert.equal(sent[0].sequence, '1', 'input events that changed no text advanced the sequence');
     for (let i = 0; i < 3; i++) await editor.dispatchEvent('input');
     await until(() => sent.length >= 2, 'the window did not send the checkpoint again');
     assert.equal(sent[0].content, text, 'the first checkpoint did not carry the text');
