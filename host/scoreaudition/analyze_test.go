@@ -261,6 +261,19 @@ song { a*2 }
 	if len(a.Report.Bars) < 2 || a.Report.Bars[1].Bar != 2 || len(a.Report.Bars[1].WrittenNotes) == 0 {
 		t.Fatalf("bar 2: %+v", a.Report.Bars)
 	}
+	if !strings.Contains(textOf(a), "step 1-12 (swing)") {
+		t.Fatal("text rhythm heading does not follow meter")
+	}
+	img, scaled := a.chromaImage(0, 2, 10000)
+	if scaled || img.Bounds().Dx() != 24*chromaCell {
+		t.Fatalf("3/4 chroma dimensions: %v scaled=%v", img.Bounds(), scaled)
+	}
+	if got := img.NRGBAAt(12*chromaCell, 0); got.R != 255 || got.G != 255 || got.B != 255 {
+		t.Fatalf("missing bar line at 3/4 boundary: %v", got)
+	}
+	if len(a.Report.Loudness.ShortTermPerBeatLUFS) != 6 {
+		t.Fatalf("3/4 beat measurements: %d", len(a.Report.Loudness.ShortTermPerBeatLUFS))
+	}
 	plain := analyze(t, strings.Replace(source, "meter 3/4\n", "", 1))
 	data, err := json.Marshal(plain.Report)
 	if err != nil {

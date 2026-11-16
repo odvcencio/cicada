@@ -2156,7 +2156,20 @@ func (e *Engine) setDelayDivision(division fx.DelayDivision) {
 	}
 }
 
+// echoHighpassHz reads an echo high-pass control: minus infinity is off,
+// which the echo takes as a cutoff of 0.
+func echoHighpassHz(value float32) float64 {
+	if math.IsInf(float64(value), -1) {
+		return 0
+	}
+	return float64(value)
+}
+
 func (e *Engine) setGlobalParam(id kernel.ParamID, value float32) {
+	if !fx.EchoHighpassEnabled && (id == kernel.ParamFxDelayHighpass || id == kernel.ParamFxTapeHighpass) {
+		e.fault(FaultParam)
+		return
+	}
 	switch id {
 	case kernel.ParamFxDriveGain, kernel.ParamFxDriveTone, kernel.ParamFxDriveMix:
 		for track := 0; track < e.tracks; track++ {
@@ -2178,10 +2191,14 @@ func (e *Engine) setGlobalParam(id kernel.ParamID, value float32) {
 				return
 			}
 		}
-	case kernel.ParamFxDelayTime, kernel.ParamFxDelayFeedback, kernel.ParamFxDelayDamp, kernel.ParamFxDelayPingpong, kernel.ParamFxDelayWidth, kernel.ParamFxDelayMix:
+	case kernel.ParamFxDelayTime, kernel.ParamFxDelayFeedback, kernel.ParamFxDelayDamp, kernel.ParamFxDelayPingpong, kernel.ParamFxDelayWidth, kernel.ParamFxDelayMix, kernel.ParamFxDelayHighpass:
 		if e.delayA != nil {
 			params := e.delayA.Params()
 			switch id {
+			case kernel.ParamFxDelayHighpass:
+				if fx.EchoHighpassEnabled {
+					params.HighpassHz = echoHighpassHz(value)
+				}
 			case kernel.ParamFxDelayTime:
 				params.Division, params.TimeMs = fx.FreeDelay, float64(value)
 			case kernel.ParamFxDelayFeedback:
@@ -2200,10 +2217,14 @@ func (e *Engine) setGlobalParam(id kernel.ParamID, value float32) {
 				return
 			}
 		}
-	case kernel.ParamFxTapeTime, kernel.ParamFxTapeFeedback, kernel.ParamFxTapeWow, kernel.ParamFxTapeFlutter, kernel.ParamFxTapeSaturation, kernel.ParamFxTapeDamp:
+	case kernel.ParamFxTapeTime, kernel.ParamFxTapeFeedback, kernel.ParamFxTapeWow, kernel.ParamFxTapeFlutter, kernel.ParamFxTapeSaturation, kernel.ParamFxTapeDamp, kernel.ParamFxTapeHighpass:
 		if tapeEnabled && e.tapeA != nil {
 			params := e.tapeA.Params()
 			switch id {
+			case kernel.ParamFxTapeHighpass:
+				if fx.EchoHighpassEnabled {
+					params.HighpassHz = echoHighpassHz(value)
+				}
 			case kernel.ParamFxTapeTime:
 				params.Division, params.TimeMs = fx.FreeDelay, float64(value)
 			case kernel.ParamFxTapeFeedback:

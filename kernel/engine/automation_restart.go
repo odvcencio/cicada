@@ -90,6 +90,10 @@ func (e *Engine) authoredValue(lane automationLane, base *sceneParameterState) (
 		case tapeEnabled && id >= kernel.ParamFxTapeTime && id <= kernel.ParamFxTapeDamp:
 			t := &base.tape
 			return float32([...]float64{t.TimeMs, t.Feedback, t.Wow, t.Flutter, t.Saturation, t.DampHz}[id-kernel.ParamFxTapeTime]), id != kernel.ParamFxTapeTime || t.Division == fx.FreeDelay
+		case fx.EchoHighpassEnabled && id == kernel.ParamFxDelayHighpass:
+			return echoHighpassControl(d.HighpassHz), true
+		case fx.EchoHighpassEnabled && tapeEnabled && id == kernel.ParamFxTapeHighpass:
+			return echoHighpassControl(base.tape.HighpassHz), true
 		case id >= kernel.ParamFxReverbSize && id <= kernel.ParamFxReverbMix:
 			return float32([...]float64{r.Size, r.DecaySec * 1000, r.DampHz, r.HighpassHz, r.PredelayMs, r.Mix}[id-kernel.ParamFxReverbSize]), true
 		case id >= kernel.ParamFxCompThreshold && id <= kernel.ParamFxCompMix:
@@ -137,4 +141,13 @@ func (e *Engine) authoredValue(lane automationLane, base *sceneParameterState) (
 		return float32(math.Inf(-1)), true
 	}
 	return float32([...]float64{d.Tune, d.Decay * 1000, d.LevelDB, d.Pan}[control]), true
+}
+
+// echoHighpassControl is the control value of an echo high-pass cutoff: a
+// cutoff of 0 is off, which the registry row carries as minus infinity.
+func echoHighpassControl(hz float64) float32 {
+	if hz == 0 {
+		return float32(math.Inf(-1))
+	}
+	return float32(hz)
 }

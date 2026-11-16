@@ -87,6 +87,8 @@ together.
 - [Exporting](exporting.md) — render WAV, stems, and MIDI.
 - [Audition](audition.md) — check what a score sounds like: heard key, chords,
   per-track level, brightness, decay and rhythm, with images.
+- [Audition measures](audition-measures.md) — how audition measures loudness,
+  band owners, activity and peaks, its detail fields, limits and cost.
 - [Live playback and mixing](next-level.md) — use native audio, host macros, MIDI, and mixer settings.
 - [Modulation](modulation.md) — create sources and route them to track controls.
 - [Hosting the engine](engine-host.md) — integrate Cicada's Go or TinyGo audio
