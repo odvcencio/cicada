@@ -16,14 +16,14 @@ const (
 	featureHumanize      = "humanize"
 	featureSamplerChords = "sampler chords"
 	featureKitLanes      = "sampler kit lanes"
+	featureEchoHighpass  = "echo highpass"
 	featureReverbReturns = "reverb returns"
 )
 
 // portableFeatureRefusals lists every use of a feature that portable (browser
-// and WAM2) images refuse: the tape echo, reverb returns after the first,
-// pattern humanize, sampler kit lanes and sampler chords. The image encoder
-// stops at the first, so check reads the project itself to report them all at
-// once. kinds holds the features found.
+// and WAM2) images refuse: tape echo, echo highpass, extra reverb returns,
+// pattern humanize, sampler kit lanes and sampler chords. The encoder stops at
+// the first, so check reports them all at once. kinds holds the features found.
 func portableFeatureRefusals(p *project.Project) (diagnostics []notation.Diagnostic, kinds map[string]bool) {
 	kinds = map[string]bool{}
 	var messages []string
@@ -35,6 +35,28 @@ func portableFeatureRefusals(p *project.Project) (diagnostics []notation.Diagnos
 		}
 		if (effect.Kind == "reverb" || effect.Kind == "" && effect.ID == "reverb") && !project.MasterHasInsert(p, effect.ID) {
 			reverbs = append(reverbs, effect.ID)
+		}
+		if effect.Kind != "delay" && effect.Kind != "tape" && !(effect.Kind == "" && effect.ID == "delay") {
+			continue
+		}
+		path := effect.ID + ".highpass"
+		if value, ok := effect.Params["highpass"]; ok && !(value.Unit == "enum" && value.Text == "off") {
+			kinds[featureEchoHighpass] = true
+			messages = append(messages, fmt.Sprintf("effect %s sets highpass, which portable images do not have", effect.ID))
+		}
+		for _, scene := range p.Scenes {
+			for _, setting := range scene.Settings {
+				if setting.Path == path {
+					kinds[featureEchoHighpass] = true
+					messages = append(messages, fmt.Sprintf("scene %s sets %s, which portable images do not have", scene.ID, path))
+				}
+			}
+		}
+		for _, lane := range p.Automation {
+			if lane.Path == path {
+				kinds[featureEchoHighpass] = true
+				messages = append(messages, fmt.Sprintf("an automate lane moves %s, which portable images do not have", path))
+			}
 		}
 	}
 	for i := 1; i < len(reverbs); i++ {
@@ -114,6 +136,8 @@ func imageFeatureKind(message string) string {
 	switch {
 	case strings.Contains(message, "portable images have no tape echo"):
 		return featureTape
+	case strings.Contains(message, "portable images have no echo highpass"):
+		return featureEchoHighpass
 	case strings.Contains(message, "portable images hold one reverb return"):
 		return featureReverbReturns
 	case strings.Contains(message, "portable images have no pattern humanize"):

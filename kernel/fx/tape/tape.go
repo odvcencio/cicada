@@ -60,6 +60,9 @@ type Params struct {
 	Flutter    float64 // 0 to 1
 	Saturation float64 // 0 to 1
 	DampHz     float64 // 1000 to 16000
+	// HighpassHz is the cutoff of the in-loop high-pass, 20 Hz to 2 kHz, or 0
+	// for off; see fx.EchoHighpass. It is left out of JSON when off.
+	HighpassHz float64 `json:",omitempty"`
 }
 
 func DefaultParams() Params {
@@ -71,9 +74,12 @@ func finite(v float64) bool { return v == v && v <= math.MaxFloat64 && v >= -mat
 func unit(v float64) bool { return finite(v) && v >= 0 && v <= 1 }
 
 func (p Params) Validate() error {
+	if !fx.EchoHighpassEnabled && p.HighpassHz != 0 {
+		return Error("portable kernel has no echo high-pass")
+	}
 	if p.Division.String() == "invalid" || !finite(p.TimeMs) || !finite(p.Feedback) || !finite(p.DampHz) ||
 		p.Feedback < 0 || p.Feedback > .95 || p.DampHz < 1_000 || p.DampHz > 16_000 ||
-		!unit(p.Wow) || !unit(p.Flutter) || !unit(p.Saturation) {
+		!unit(p.Wow) || !unit(p.Flutter) || !unit(p.Saturation) || !fx.ValidEchoHighpass(p.HighpassHz) {
 		return ErrParams
 	}
 	if p.Division == fx.FreeDelay {
@@ -126,6 +132,7 @@ type Tape struct {
 	flutterFrames        float64
 	maxDelay             float64
 	feedbackState        stereo
+	highpass             fx.EchoHighpass
 	fault, excited       bool
 	frames               uint32 // Process calls since New or Reset, for flushControls
 }
@@ -201,6 +208,9 @@ func (t *Tape) SetParams(p Params) error {
 	t.tFeedback = p.Feedback
 	t.tDamp = 1 - detmath.Exp(-2*math.Pi*p.DampHz/t.sampleRate)
 	t.tWow, t.tFlutter, t.tSat = p.Wow, p.Flutter, p.Saturation
+	if fx.EchoHighpassEnabled {
+		t.highpass.Set(p.HighpassHz, t.sampleRate)
+	}
 	return nil
 }
 
@@ -238,6 +248,9 @@ func (t *Tape) Reset() {
 	t.feedback, t.damp, t.wow, t.flutter, t.sat = t.tFeedback, t.tDamp, t.tWow, t.tFlutter, t.tSat
 	t.wowPhase = [2]uint32{}
 	t.flutterPhase = [2]uint32{}
+	if fx.EchoHighpassEnabled {
+		t.highpass.Reset()
+	}
 	t.frames = 0
 }
 
@@ -249,6 +262,9 @@ func (t *Tape) Reset() {
 // normal values (the read delay, 1 + 3*sat, the input), which absorb it. The
 // damping coefficient's target is never zero.
 func (t *Tape) flushControls() {
+	if fx.EchoHighpassEnabled {
+		t.highpass.Flush()
+	}
 	t.feedback, t.sat = subnormal.Flush64(t.feedback), subnormal.Flush64(t.sat)
 	t.wow, t.flutter = subnormal.Flush64(t.wow), subnormal.Flush64(t.flutter)
 }
@@ -281,6 +297,9 @@ func (t *Tape) advance() float64 {
 	t.wow += float64((t.tWow - t.wow) * t.smooth)
 	t.flutter += float64((t.tFlutter - t.flutter) * t.smooth)
 	t.sat += float64((t.tSat - t.sat) * t.smooth)
+	if fx.EchoHighpassEnabled {
+		t.highpass.Advance(t.smooth)
+	}
 	t.frames++
 	if t.frames%subnormal.SweepFrames == 0 {
 		t.flushControls()
@@ -338,10 +357,14 @@ func (t *Tape) Process(left, right float32) (float32, float32) {
 	// small-signal loop gain stays at the feedback setting while loud repeats
 	// compress. At saturation 0 the drive is 1 and the loop is the delay's.
 	drive := 1 + float64(3*t.sat)
-	t.buffer[t.position] = stereo{
-		x.left + fastmath.Tanh(float64(t.feedbackState.left*t.feedback)*drive)/drive,
-		x.right + fastmath.Tanh(float64(t.feedbackState.right*t.feedback)*drive)/drive,
+	lineL := x.left + fastmath.Tanh(float64(t.feedbackState.left*t.feedback)*drive)/drive
+	lineR := x.right + fastmath.Tanh(float64(t.feedbackState.right*t.feedback)*drive)/drive
+	if fx.EchoHighpassEnabled && t.highpass.Active() {
+		// As in the delay: the high-pass filters what enters the line, so
+		// repeat n has passed it n times; damp filters only the feedback.
+		lineL, lineR = t.highpass.Process(lineL, lineR)
 	}
+	t.buffer[t.position] = stereo{lineL, lineR}
 	t.position++
 	if t.position == len(t.buffer) {
 		t.position = 0

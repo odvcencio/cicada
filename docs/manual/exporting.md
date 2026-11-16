@@ -34,6 +34,10 @@ the earlier bars before writing the selected range, so instruments and effects
 have the state they would have reached in a full render. Pass the same range
 options to `verify-wav`.
 
+`cicada check` warns when a whole-song render exceeds 256 bars on the direct
+mixer or 256 tempo changes. The score remains valid; render shorter ranges
+with `--from` and `--bars`.
+
 The render summary reports duration, pre-limiter peak, limiter activity, and
 output clipping. `verify-wav` checks sample rate, bit depth, duration, peak,
 DC offset, finite float data, and full-scale integer samples.
@@ -75,6 +79,16 @@ The directory contains numbered `01-<track>.wav` files, then `return-a.wav`,
 The music stem is tapped before the music-bus compressor; the master includes
 compression and limiting. The verifier checks timing, finite samples, and the
 sum of component stems against the bus taps.
+
+Stems are 32-bit float by default. `--bits 24` or `--bits 16` writes PCM
+instead, with the same deterministic TPDF dither as `cicada render` unless
+`--dither=false`; a sample beyond full scale clips, which a float stem would
+keep. `--tracks bass,kick` writes only those tracks' stems and `master.wav`:
+every track still plays, so each file equals the one in a full set, and an
+analysis of a few tracks costs a fraction of the disk. A name the score does
+not have fails with the score's track names (`unknown_track` with
+`valid_tracks` under `--json`). `verify-stems` needs a full float32 set and
+refuses a chosen or PCM one.
 
 For a new mix, import the numbered tracks and both effect returns at the same
 start position. `music.wav` and `sfx.wav` are grouped alternatives, and

@@ -284,7 +284,9 @@ type applyIntentJSON struct {
 // one; reason names why an intent was refused when it says (with uses, the
 // references that block it, file, the other source file the edit would have
 // to change, and range, the bounds a value broke); diagnostic and note carry
-// a note refusal of editnotes as data.
+// a note refusal of editnotes as data. For an edited score that does not
+// compile because of one of its diagnostics, diagnostic is that diagnostic's
+// code, and expected and found are its values when it has them.
 type applyErrorJSON struct {
 	Code       string            `json:"code"`
 	Message    string            `json:"message"`
@@ -292,6 +294,8 @@ type applyErrorJSON struct {
 	Kind       string            `json:"kind,omitempty"`
 	Field      string            `json:"field,omitempty"`
 	Diagnostic string            `json:"diagnostic,omitempty"`
+	Expected   string            `json:"expected,omitempty"`
+	Found      string            `json:"found,omitempty"`
 	Reason     string            `json:"reason,omitempty"`
 	Note       map[string]any    `json:"note,omitempty"`
 	Uses       []string          `json:"uses,omitempty"`
@@ -329,6 +333,10 @@ func writeApplyJSON(w io.Writer, result applyResult, err error) error {
 			index := located.Index
 			failure.Index, failure.Kind, failure.Field = &index, located.Kind, located.Field
 			failure.Message = pathsAsJSON(located.Err.Error(), result.sources)
+		}
+		var compiled *scoreDiagnosticError
+		if errors.As(err, &compiled) {
+			failure.Diagnostic, failure.Expected, failure.Found = compiled.diagnostic.Code, compiled.diagnostic.Expected, compiled.diagnostic.Found
 		}
 		var refusal *edits.NoteError
 		if errors.As(err, &refusal) {

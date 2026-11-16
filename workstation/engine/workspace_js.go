@@ -123,8 +123,12 @@ type workspaceUI struct {
 	projectRevision atomic.Value
 	// shell is set on /studio, where the queue patches update regions
 	// (shell_edits_js.go) instead of the whole workspace.
-	shell      bool
-	reading    bool // a background read of stale regions is queued or running
+	shell   bool
+	reading bool // a background read of stale regions is queued or running
+	// edits counts queued and running POST jobs other than transport. Each edit moves
+	// the saved revision, so a form that GoSX would send itself holds the
+	// revision from before it: submit holds such a form until they finish.
+	edits      int
 	cancelRead func()
 	idle       *time.Timer
 	idleDelay  time.Duration
@@ -489,6 +493,12 @@ func (u *workspaceUI) submit(event js.Value) {
 			// A second press while its request is pending is not sent.
 			return
 		}
+		if u.edits > 0 && workspaceActionPath(workspaceAttr(form, "action")) == "/__actions/arrange" {
+			workspaceStop(event)
+			u.statusGeneration++
+			u.status.Set("The arrangement is still saving. Try again.")
+			return
+		}
 		if u.shellHolding(form) {
 			// One hold per form: a second click while it waits does nothing.
 			workspaceStop(event)
@@ -503,15 +513,22 @@ func (u *workspaceUI) submit(event js.Value) {
 		domDrop(form, "data-workspace-updated")
 		// #transport-form never waits for a region read, as before; only its
 		// Stop during a recording is not revision-free (workspaceTransportFree).
-		if region := domCall(form, "closest", "[data-update-region]"); strings.EqualFold(workspaceAttr(form, "method"), "post") && workspaceAttr(form, "id") != "transport-form" && workspacePresent(region) && domHas(region, "data-region-stale") && !domHas(region, "data-region-reload") && !shellHeld(region) {
+		if region := domCall(form, "closest", "[data-update-region]"); strings.EqualFold(workspaceAttr(form, "method"), "post") && workspaceAttr(form, "id") != "transport-form" && workspacePresent(region) && (domHas(region, "data-region-stale") || u.edits > 0 && !shellCaptures(form, submitter)) && !domHas(region, "data-region-reload") && !shellHeld(region) {
+			// The split form is captured during an edit; here its region is stale
+			// because the arrangement changed under the form.
 			if workspaceActionPath(workspaceAttr(form, "action")) == "/__actions/split-placement" {
 				workspaceStop(event)
 				u.status.Set("The arrangement changed. Check the refreshed placement before splitting it.")
 				u.refreshStale(regionsVisibleStale)
 				return
 			}
-			// A form in a stale region still carries an older revision. Read
-			// the region first; nothing is sent until it is current.
+			// A form in a stale region still carries an older revision, and
+			// so does every form while an edit such as Undo is on its way:
+			// the region is marked stale only once that edit's response is
+			// applied, and the service refuses the older revision ("score
+			// changed on disk"). Read the region first; nothing is sent until
+			// it is current. Captured edits queue behind it and take its
+			// revision instead (runJob).
 			workspaceStop(event)
 			u.refreshThenSubmit(region, form, submitter)
 			return
@@ -1027,6 +1044,9 @@ func (u *workspaceUI) queue(job workspaceJob) {
 		if job.target == "/__actions/transport" {
 			u.queuedTransport++
 		}
+		if job.method == methodPost && job.target != "/__actions/transport" {
+			u.edits++
+		}
 	default:
 		workspacePending(job, -1)
 		u.blocked.Store(true)
@@ -1054,6 +1074,9 @@ func (u *workspaceUI) drain(drop func(workspaceJob) bool) (dropped string) {
 		}
 		if job.target == "/__actions/transport" {
 			u.queuedTransport--
+		}
+		if job.method == methodPost && job.target != "/__actions/transport" {
+			u.edits--
 		}
 		u.settle(job, true)
 		if job.ctx != nil {
@@ -1094,6 +1117,9 @@ func (u *workspaceUI) run() {
 				u.queuedTransport--
 			}
 			u.busy.Store(false)
+			if job.method == methodPost && job.target != "/__actions/transport" {
+				u.edits--
+			}
 			if !open {
 				return
 			}
