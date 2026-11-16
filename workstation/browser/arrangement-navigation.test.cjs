@@ -31,7 +31,7 @@ test('arranging zooms, reveals and follows playback without editing the song', {
  const scroller=page.locator('.placement-scroll');
  const width=()=>page.locator('.placement-timeline').evaluate(el=>el.getBoundingClientRect().width);
  const zoom=page.getByLabel('Timeline zoom',{exact:true});
- const follow=page.getByLabel('Follow song',{exact:true});
+ const follow=page.locator('[name=placementFollow]');
  try {
   await page.goto(base+'/studio?placement=far-home'); await ready();
   const before=await state(); assert.ok(before.source.includes('cicada-placement-test: disposable fixture'));
@@ -95,6 +95,12 @@ test('arranging zooms, reveals and follows playback without editing the song', {
   const beforeScrollRequests=nonGet.length, beforeScrollRevision=(await state()).revision;
   await scroller.hover(); await page.mouse.wheel(250,0); await until(async()=>await follow.getAttribute('data-follow-paused')!==null,'manual scroll did not pause Follow');
   assert.equal(await follow.isChecked(),true); assert.equal(nonGet.length,beforeScrollRequests); assert.equal((await state()).revision,beforeScrollRevision);
+  assert.equal(await page.getByRole('checkbox',{name:'Follow (paused)',exact:true}).count(),1);
+  await follow.click();
+  await until(async()=>await follow.getAttribute('data-follow-paused')===null,'one click did not resume Follow');
+  assert.equal(await page.getByRole('checkbox',{name:'Follow song',exact:true}).count(),1);
+  await scroller.hover(); await page.mouse.wheel(250,0);
+  await until(async()=>await follow.getAttribute('data-follow-paused')!==null,'manual scroll did not pause Follow again');
   await page.getByRole('button',{name:'Pause',exact:true}).first().click();
   await until(async()=>!(await transport()).playing,'Pause did not settle');
   await new Promise(r=>setTimeout(r,400)); const paused=await line.getAttribute('data-playhead-tick');

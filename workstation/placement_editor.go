@@ -86,6 +86,8 @@ func placementTimeline(p *project.Project, placements []project.Placement, selec
 	navigation := gosx.Attrs(gosx.BoolAttr("data-placement-navigation"), gosx.Attr("data-placement-bars", strconv.FormatInt(bars, 10)))
 	meter := ""
 	if p.Meter != nil {
+		// Shift+Arrow moves one 4/4 bar in the browser; explain why it is
+		// disabled instead of moving a placement by the wrong length.
 		meter = meterName(p.Meter)
 		navigation = append(navigation, gosx.Attr("data-placement-bar-moves-off", "Shift+Arrow moves by a 4/4 bar, so it is off in this "+meter+" song until Studio draws its meter. Move with the arrow keys or type a position."))
 	}

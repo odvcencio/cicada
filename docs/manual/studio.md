@@ -148,15 +148,16 @@ Release to save the entire gesture as one edit. Escape restores the placement
 and its original horizontal view. Changing the timeline view, hiding or
 resizing the window, or switching away from the window cancels the gesture safely.
 
-Both the scene matrix and placement lanes have a view strip. Use **Timeline
-zoom** for 1×–8× detail and **Fit song** for an overview. Hold Ctrl or Cmd
-and turn the wheel over the timeline to zoom around the pointer. The playhead
-shows the transport position. **Follow song** advances the view near its edge;
-manual scrolling pauses Follow while leaving it checked. Playback restarting or
-toggling Follow resumes it. Scenes snap to whole bars. Placements also offer
-**Snap step**, **Copy drag**, and **Show selected**. Each form remembers its
-view in the current window. These controls leave the score and unsaved Code
-drafts unchanged.
+Both the scene matrix and placement lanes have a view strip. Use **Zoom** for
+1×–8× detail and **Fit song** for an overview. A scene song opens fitted, or
+at 1× in a phone-width window. Hold Ctrl or Cmd and turn the wheel over the
+timeline to zoom around the pointer. The playhead shows the transport position.
+**Follow song** advances the view near its edge. A manual scroll or zoom at the
+pointer pauses Follow; click it once to resume. Dragging a block or pressing
+**Show selected** turns Follow off. Placements also offer **Snap step** and
+**Copy drag**. Each view (the scene arrangement and the placement editor)
+remembers its zoom, Follow and scroll position in the current window. These
+controls leave the score and unsaved Code drafts unchanged.
 
 The placement controls change the track, pattern or clip, exact **Start**,
 and **Length**. Start accepts `@bar.beat.step` or exact ticks. Length accepts
@@ -209,7 +210,7 @@ playback. **Play full song** restores all parts and starts at the beginning;
 
 ![Tidal Glass placement editing and listening controls, captured from the release build at 1440 px.](screenshots/studio-session-listening-1440.png)
 
-For a scene song, the Arrange tool strip provides playback, exact looping, **Add section**, and **Project**. Choose a section’s **Edit** link to open its controls below the lanes. For every project with scenes, the scene launch grid is in Session.
+For a scene song, the Arrange tool strip provides playback, exact looping, **Zoom**, **Fit song**, **Follow song**, **Add section**, and **Project**. Choose a section’s **Edit** link to open its controls below the lanes. For every project with scenes, the scene launch grid is in Session.
 
 **Project** opens project settings for the title, tempo, key, and scale. Tempo keeps up
 to three decimal places. Changing the key retunes scale-degree notes; explicit

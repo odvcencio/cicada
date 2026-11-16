@@ -72,7 +72,7 @@ segment_runs() {
 	gestures) echo placement-gestures ;;
 	precision) echo placement-precision ;;
 	startup) echo startup ;;
-	scene_blocks) echo scene-blocks ;;
+	scene_blocks) echo scene-blocks scene-meter ;;
 	sampler_waveform) echo sampler-waveform ;;
 	autoscroll) echo placement-autoscroll ;;
 	placement_commands) echo placement-commands ;;
@@ -590,6 +590,12 @@ seg_scene_blocks() {
 	node workstation/browser/scene-blocks.test.cjs --write-fixture "$browser_root/scene-blocks/main.cicada"
 	start_studio "$browser_root/scene-blocks/main.cicada" build/studio-scene-blocks-server.log
 	run_suite scene-blocks node --test workstation/browser/scene-blocks.test.cjs | tee build/studio-scene-blocks-report.txt
+	stop_studio
+	# scene-meter: approximately 15 s, including the slow 3/4 playback.
+	mkdir -p "$browser_root/scene-meter"
+	node workstation/browser/scene-meter.test.cjs --write-fixture "$browser_root/scene-meter/main.cicada"
+	start_studio "$browser_root/scene-meter/main.cicada" build/studio-scene-meter-server.log
+	run_suite scene-meter node --test workstation/browser/scene-meter.test.cjs | tee build/studio-scene-meter-report.txt
 	stop_studio
 }
 

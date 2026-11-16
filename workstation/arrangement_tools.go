@@ -13,7 +13,7 @@ func arrangementTools(placement bool, barTicks, beatTicks int64, meter string) g
 	var zoomOptions []gosx.Node
 	for _, option := range []struct{ value, label string }{{"fit", "Fit"}, {"48", "1×"}, {"96", "2×"}, {"192", "4×"}, {"384", "8×"}} {
 		attrs := gosx.Attrs(gosx.Attr("value", option.value))
-		if option.value == "48" {
+		if (placement && option.value == "48") || (!placement && option.value == "fit") {
 			attrs = append(attrs, gosx.BoolAttr("selected"))
 		}
 		zoomOptions = append(zoomOptions, gosx.El("option", attrs, gosx.Text(option.label)))
@@ -26,6 +26,8 @@ func arrangementTools(placement bool, barTicks, beatTicks int64, meter string) g
 			attrs = append(attrs, gosx.BoolAttr("selected"))
 		}
 		label := option.label
+		// Studio's grid is still 4/4 (time-signatures phase 5): a bar or beat
+		// snap it cannot draw would act as a sixteenth, so it is offered off.
 		if (label == "Bar" && option.value != fourFourBar) || (label == "Beat" && option.value != fourFourBeat) {
 			attrs = append(attrs, gosx.BoolAttr("disabled"))
 			label += " (off until Studio draws " + meter + ")"
@@ -33,7 +35,7 @@ func arrangementTools(placement bool, barTicks, beatTicks int64, meter string) g
 		snapOptions = append(snapOptions, gosx.El("option", attrs, gosx.Text(label)))
 	}
 	class := "arrange-view-tools"
-	snap := gosx.El("span", gosx.Text("Snap: whole bars"))
+	snap := gosx.El("span", gosx.Attrs(gosx.Attr("class", "scene-snap-hint")), gosx.Text("Snap: whole bars"))
 	var placementExtras, editStatus gosx.Node = gosx.Fragment(), gosx.Fragment()
 	if placement {
 		class = "placement-navigation"
@@ -48,7 +50,7 @@ func arrangementTools(placement bool, barTicks, beatTicks int64, meter string) g
 		field("Zoom", gosx.El("select", gosx.Attrs(gosx.Attr("name", "placementZoom"), gosx.BoolAttr("data-studio-view-control"), gosx.Attr("aria-label", "Timeline zoom")), gosx.Fragment(zoomOptions...))),
 		snap,
 		viewButton("fit", "Fit song"), placementExtras,
-		gosx.El("label", gosx.Attrs(gosx.Attr("class", "placement-follow")), gosx.El("input", gosx.Attrs(gosx.Attr("type", "checkbox"), gosx.Attr("name", "placementFollow"), gosx.Attr("aria-label", "Follow song"), gosx.BoolAttr("data-studio-view-control"))), gosx.El("span", gosx.Attrs(gosx.BoolAttr("data-follow-label")), gosx.Text("Follow song"))),
+		gosx.El("label", gosx.Attrs(gosx.Attr("class", "placement-follow")), gosx.El("input", gosx.Attrs(gosx.Attr("type", "checkbox"), gosx.Attr("name", "placementFollow"), gosx.BoolAttr("data-studio-view-control"))), gosx.El("span", gosx.Attrs(gosx.BoolAttr("data-follow-label")), gosx.Text("Follow song"))),
 		gosx.El("span", gosx.Attrs(gosx.BoolAttr("data-placement-playback-status"), gosx.Attr("class", "muted")), gosx.Text("Timeline view")),
 		editStatus)
 }

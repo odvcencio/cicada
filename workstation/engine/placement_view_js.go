@@ -17,14 +17,17 @@ import (
 var placementViewPublisher = &sharedLoop{start: func(ctx context.Context) { go runPlacementView(ctx) }}
 
 type placementView struct {
-	zoom, snap                    string
-	follow, copyDrag              bool
-	root, scroll, world           js.Value
-	width, left                   float64
-	stored                        placementViewPreference
-	key                           string
-	paused, playing, programmatic bool
-	expectedLeft, expectedTop     float64
+	zoom, snap          string
+	follow, copyDrag    bool
+	root, scroll, world js.Value
+	width, left         float64
+	stored              placementViewPreference
+	key                 string
+	paused, playing     bool
+	expectedLeft        float64
+	wheelCallback       js.Func
+	wheelDelta          float64
+	wheelAt             time.Time
 }
 
 // Session preferences keep a working viewport through ordinary form returns
@@ -96,7 +99,14 @@ func (v *placementView) find() bool {
 		v.key, v.zoom, v.snap, v.copyDrag, v.follow, v.left, v.stored = key, p.Zoom, p.Snap, p.Copy, p.Follow, p.Scroll, p
 		v.paused, v.playing = false, false
 	}
-	v.scroll = root.Call("querySelector", scrollSelector)
+	scroll := root.Call("querySelector", scrollSelector)
+	if !workspacePresent(v.scroll) || !v.scroll.Equal(scroll) {
+		if workspacePresent(v.scroll) {
+			v.scroll.Call("removeEventListener", "wheel", v.wheelCallback)
+		}
+		v.scroll = scroll
+		v.scroll.Call("addEventListener", "wheel", v.wheelCallback, map[string]any{"passive": false})
+	}
 	v.world = root.Call("querySelector", worldSelector)
 	restore := changed || !root.Call("hasAttribute", "data-placement-navigation-ready").Bool()
 	if restore {
@@ -171,11 +181,8 @@ func (v *placementView) scale(preserve bool, anchors ...float64) {
 }
 
 func (v *placementView) setScroll(left float64) {
-	v.programmatic = true
 	v.scroll.Set("scrollLeft", left)
 	v.expectedLeft = v.scroll.Get("scrollLeft").Float()
-	v.expectedTop = v.scroll.Get("scrollTop").Float()
-	v.programmatic = false
 }
 
 func (v *placementView) showPause() {
@@ -244,7 +251,11 @@ func (v *placementView) event(event js.Value) {
 		case "placementCopy":
 			v.copyDrag = checked.Type() == js.TypeBoolean && checked.Bool()
 		case "placementFollow":
-			v.follow = checked.Type() == js.TypeBoolean && checked.Bool()
+			if v.paused && v.follow {
+				v.follow = true
+			} else {
+				v.follow = checked.Type() == js.TypeBoolean && checked.Bool()
+			}
 			v.paused = false
 			v.showPause()
 			target.Set("checked", v.follow)
@@ -272,31 +283,30 @@ func (v *placementView) event(event js.Value) {
 		if workspacePresent(target.Call("closest", ".placement-scroll, .timeline")) {
 			if event.Get("ctrlKey").Bool() || event.Get("metaKey").Bool() {
 				event.Call("preventDefault")
-				options := []string{"fit", "48", "96", "192", "384"}
-				index := 0
-				for i, option := range options {
-					if option == v.zoom {
-						index = i
-						break
-					}
-				}
-				if event.Get("deltaY").Float() < 0 {
-					index = min(len(options)-1, index+1)
-				} else {
-					index = max(0, index-1)
-				}
-				v.zoom = options[index]
-				v.root.Call("querySelector", "[name=placementZoom]").Set("value", v.zoom)
-				rect := v.scroll.Call("getBoundingClientRect")
-				anchor := event.Get("clientX").Float() - rect.Get("left").Float() - v.labelWidth()
-				v.scale(true, anchor)
-			} else {
 				v.pauseFollow()
+				delta := event.Get("deltaY").Float()
+				now := time.Now()
+				if now.Sub(v.wheelAt) > 300*time.Millisecond || delta*v.wheelDelta < 0 {
+					v.wheelDelta = 0
+				}
+				v.wheelAt = now
+				v.wheelDelta += delta
+				for math.Abs(v.wheelDelta) >= 100 {
+					direction := math.Copysign(1, v.wheelDelta)
+					v.wheelDelta -= direction * 100
+					fit := math.Max(.000001, (v.scroll.Get("clientWidth").Float()-v.labelWidth())/v.bars())
+					v.zoom = nextPlacementZoom(v.zoom, fit, direction < 0)
+					v.root.Call("querySelector", "[name=placementZoom]").Set("value", v.zoom)
+					rect := v.scroll.Call("getBoundingClientRect")
+					anchor := event.Get("clientX").Float() - rect.Get("left").Float() - v.labelWidth()
+					v.scale(true, anchor)
+				}
 			}
 		}
 	case "scroll":
-		if target.Equal(v.scroll) && !v.programmatic && (math.Abs(v.scroll.Get("scrollLeft").Float()-v.expectedLeft) > 0.5 || math.Abs(v.scroll.Get("scrollTop").Float()-v.expectedTop) > 0.5) {
+		if target.Equal(v.scroll) && math.Abs(v.scroll.Get("scrollLeft").Float()-v.expectedLeft) > 0.5 {
 			v.pauseFollow()
+			v.expectedLeft = v.scroll.Get("scrollLeft").Float()
 		}
 
 	}
@@ -322,6 +332,7 @@ func (v *placementView) draw() {
 	line.Set("hidden", !ready)
 	if !ready {
 		status := v.root.Call("querySelector", "[data-placement-playback-status]")
+		status.Call("setAttribute", "data-playback-unavailable", "")
 		text := "Playback position unavailable"
 		if update.At.IsZero() {
 			text = "Connecting to playback…"
@@ -333,6 +344,7 @@ func (v *placementView) draw() {
 	}
 	ticks := v.bars() * float64(control.GridBarTicks())
 	if v.key != placementViewStorage {
+		// A scene song's lanes span its real length, in the song's meter.
 		ticks = float64(placementTicks(v.scroll, "data-scene-ticks"))
 	}
 	if ticks <= 0 {
@@ -341,7 +353,7 @@ func (v *placementView) draw() {
 	tick := math.Min(ticks, math.Max(0, head.At(time.Since(update.At))))
 	label := v.labelWidth()
 	width := v.world.Call("getBoundingClientRect").Get("width").Float() - label
-	x := label + width*tick/ticks
+	x := label + width*placementPlayheadFraction(tick, ticks)
 	leftStyle := fmt.Sprintf("%.3fpx", x)
 	if line.Get("style").Get("left").String() != leftStyle {
 		line.Get("style").Set("left", leftStyle)
@@ -349,6 +361,7 @@ func (v *placementView) draw() {
 	line.Call("setAttribute", "data-playhead-tick", strconv.FormatInt(int64(tick), 10))
 	text := fmt.Sprintf("%s · %s", map[bool]string{true: "Playing", false: "Stopped"}[head.Playing], vocalPos(int64(tick)/240*240))
 	status := v.root.Call("querySelector", "[data-placement-playback-status]")
+	status.Call("removeAttribute", "data-playback-unavailable")
 	if status.Get("textContent").String() != text {
 		status.Set("textContent", text)
 	}
@@ -371,11 +384,15 @@ func runPlacementView(ctx context.Context) {
 		}
 		return nil
 	})
-	for _, name := range []string{"click", "input", "change", "pointerdown", "wheel", "scroll"} {
+	v.wheelCallback = callback
+	for _, name := range []string{"click", "input", "change", "scroll"} {
 		document.Call("addEventListener", name, callback, map[string]any{"capture": true, "passive": false})
 	}
 	defer func() {
-		for _, name := range []string{"click", "input", "change", "pointerdown", "wheel", "scroll"} {
+		if workspacePresent(v.scroll) {
+			v.scroll.Call("removeEventListener", "wheel", callback)
+		}
+		for _, name := range []string{"click", "input", "change", "scroll"} {
 			document.Call("removeEventListener", name, callback, true)
 		}
 		callback.Release()
