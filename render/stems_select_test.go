@@ -147,7 +147,7 @@ func TestStemsDitherStreamsAreDistinct(t *testing.T) {
 }
 
 func TestStemsMeterMetadataAllFormats(t *testing.T) {
-	score, diagnostics := notation.Parse([]byte("cicada 2\nmeter 3/4\ntempo 120\ntrack lead acid {}\npattern riff { c3 . . . }\nscene a { lead = riff }\nsong { a*1 }\n"))
+	score, diagnostics := notation.Parse([]byte("cicada 2\nmeter 3/4\ntempo 120\ntrack lead acid {}\npattern riff { c3 . . . }\nscene a { lead = riff }\nscene b { lead = riff tempo = 90 }\nsong { a b }\n"))
 	for _, d := range diagnostics {
 		if d.Severity == "error" {
 			t.Fatalf("parse: %+v", d)
@@ -159,17 +159,19 @@ func TestStemsMeterMetadataAllFormats(t *testing.T) {
 			if _, err := Stems(score, Options{SampleRate: 48000, Bits: bits}, dir); err != nil {
 				t.Fatal(err)
 			}
-			data, err := os.ReadFile(filepath.Join(dir, "master.wav"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if int(binary.LittleEndian.Uint32(data[4:8])) != len(data)-8 {
-				t.Fatal("RIFF size does not include meter metadata")
-			}
-			start := 44 + int(binary.LittleEndian.Uint32(data[40:44]))
-			timing, err := readWAVTiming(bytes.NewReader(data), int64(start), int64(len(data)))
-			if err != nil || timing.beats != 3 || timing.unit != 4 {
-				t.Fatalf("meter metadata: %+v, %v", timing, err)
+			for _, name := range []string{"master.wav", "01-lead.wav"} {
+				data, err := os.ReadFile(filepath.Join(dir, name))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if int(binary.LittleEndian.Uint32(data[4:8])) != len(data)-8 {
+					t.Fatal("RIFF size does not include meter metadata")
+				}
+				start := 44 + int(binary.LittleEndian.Uint32(data[40:44]))
+				timing, err := readWAVTiming(bytes.NewReader(data), int64(start), int64(len(data)))
+				if err != nil || timing.beats != 3 || timing.unit != 4 || len(timing.changes) != 1 || timing.changes[0].Bar != 1 || timing.changes[0].BPMMilli != 90000 {
+					t.Fatalf("%s timing metadata: %+v, %v", name, timing, err)
+				}
 			}
 		})
 	}

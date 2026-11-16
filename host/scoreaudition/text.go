@@ -11,11 +11,21 @@ import (
 
 var blocks = []rune("·▁▂▃▄▅▆▇█")
 
-func rhythmRow(profile []float64) string {
+func rhythmRow(profile []float64, groups []int) string {
 	var b strings.Builder
+	group, boundary := 0, 4
+	if len(groups) > 0 {
+		boundary = groups[0]
+	}
 	for i, v := range profile {
-		if i > 0 && i%4 == 0 {
+		if i == boundary {
 			b.WriteByte(' ')
+			group++
+			if group < len(groups) {
+				boundary += groups[group]
+			} else {
+				boundary += 4
+			}
 		}
 		b.WriteRune(blocks[int(math.Round(math.Max(0, math.Min(1, v))*8))])
 	}
@@ -78,7 +88,7 @@ func (r *Report) WriteText(w io.Writer) {
 		if t.Decay20LowerBound {
 			bound = ">"
 		}
-		fmt.Fprintf(w, "  %-10s %7.1f %7.1f %5.1f%% %8.1f %7.0f %7.1f %s%7.0f %7.2f  %s (%.0f%%)\n", t.ID, t.RMSdBFS, t.LevelVsLoudestDB, t.EnergySharePct, t.BandVsMixDB, t.CentroidHz, t.AttackMs, bound, t.Decay20Ms, t.OnsetsPerBar, rhythmRow(t.Rhythm), t.SwingPercent)
+		fmt.Fprintf(w, "  %-10s %7.1f %7.1f %5.1f%% %8.1f %7.0f %7.1f %s%7.0f %7.2f  %s (%.0f%%)\n", t.ID, t.RMSdBFS, t.LevelVsLoudestDB, t.EnergySharePct, t.BandVsMixDB, t.CentroidHz, t.AttackMs, bound, t.Decay20Ms, t.OnsetsPerBar, rhythmRow(t.Rhythm, r.rhythmGroups), t.SwingPercent)
 	}
 	fmt.Fprintf(w, "\nsections:\n")
 	for _, s := range r.Sections {
@@ -232,7 +242,11 @@ func (r *Report) writeActivity(w io.Writer) {
 		return
 	}
 	a := r.Activity
-	fmt.Fprintf(w, "\nactivity per bar (█ within 3 dB of the track's loudest bar, one step per 3 dB, · not sounding: under %g dB or silent; a bar with no note start is measured after its first %g s) and repeats (bars whose played notes equal the bar before, =4: four bars before):\n", -a.SoundingBelowPeakDB, a.TailGraceS)
+	grace := fmt.Sprintf("its first %g s", a.TailGraceS)
+	if r.Score.Meter != "" {
+		grace += " (at most half the bar)"
+	}
+	fmt.Fprintf(w, "\nactivity per bar (█ within 3 dB of the track's loudest bar, one step per 3 dB, · not sounding: under %g dB or silent; a bar with no note start is measured after %s) and repeats (bars whose played notes equal the bar before, =4: four bars before):\n", -a.SoundingBelowPeakDB, grace)
 	fmt.Fprintf(w, "  %-12s %5s %5s %5s %4s  bars %d-%d\n", "track", "notes", "=prev", "=4", "run", r.Score.FromBar, r.Score.FromBar+r.Score.Bars-1)
 	for _, t := range r.Tracks {
 		var row strings.Builder

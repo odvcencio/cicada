@@ -83,6 +83,8 @@ type Report struct {
 	Peaks          []PeakReport    `json:"peaks"`
 	// Pictures lists every image file written to -o, with its bar range.
 	Pictures []Picture `json:"pictures,omitempty"`
+
+	rhythmGroups []int
 }
 
 type Facts struct {
@@ -379,6 +381,16 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	a := &Analysis{rate: rate, specHop: specHopSize, firstBarIdx: opts.From, framesPerBar: framesPerBar}
 	r := &a.Report
 	r.Schema, r.Format, r.Title, r.SampleRate = Schema, FormatVersion, p.Title, rate
+	cellsPerBeat := int(meterMap.BeatTicks(0) / seq.TicksPerStep)
+	if p.Meter != nil && len(p.Meter.Groups) > 0 {
+		for _, group := range p.Meter.Groups {
+			r.rhythmGroups = append(r.rhythmGroups, group*cellsPerBeat)
+		}
+	} else {
+		for i := int64(0); i < meterMap.BeatsInBar(0); i++ {
+			r.rhythmGroups = append(r.rhythmGroups, cellsPerBeat)
+		}
+	}
 	r.Score = Facts{TempoBPM: round(bpm, 3), WrittenKey: fmt.Sprintf("%s %s", noteNames[p.Key.Root%12], p.Key.Scale), SongBars: songBars, FromBar: opts.From + 1, Bars: bars, TempoChanges: tempoChanges}
 
 	if p.Meter != nil {
@@ -605,7 +617,7 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 		for b := 0; b < bars; b++ {
 			lo, hi := min(barSample(b), stems[ti].Len()), min(barSample(b+1), stems[ti].Len())
 			if played[ti] {
-				lo = min(lo+graceSamples, hi)
+				lo = graceEnd(lo, hi, graceSamples)
 			}
 			barSounding[ti][b] = hi > lo && rmsDB(stems[ti].Slice(lo, hi)) >= silentDB
 		}

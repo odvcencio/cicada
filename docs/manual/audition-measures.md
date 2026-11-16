@@ -79,7 +79,7 @@ whether the track sounds and how loud it is against its own loudest bar: `█`
 is within 3 dB, each step down is 3 dB more, and `·` means it does not sound:
 its RMS in the bar is more than 30 dB under its loudest bar, or under -80
 dBFS. For a track that plays notes, a bar where no note starts is measured
-after its first 0.5 s, so the release tail of the bar before does not count;
+after its first 0.5 s (in a bar no longer than 0.5 s, after its first half), so the release tail of the bar before does not count;
 a held note still does. Entrances, exits and drop-outs read straight off the
 rows. The numbers before them count, from the notes the renderer played (so
 chance and humanize are what sounded, unlike a MIDI export): `notes`, the bars

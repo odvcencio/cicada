@@ -2,7 +2,11 @@ package scoreaudition
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
+	"image/color"
+	"image/png"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +14,32 @@ import (
 
 	"m31labs.dev/cicada/notation"
 )
+
+func TestDefaultMeterOutputCompatibility(t *testing.T) {
+	a := analyze(t, skankMajor)
+	data, err := json.Marshal(a.Report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, err := a.Images()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"report":          "fb9525c468e0736094f485639f174913dd762ad57edfe1d477a762af7487a6db",
+		"text":            "2254624ac1eca5ddcc93c2fa43f32211a890cd09b911ea178ccf7eccb9e091d8",
+		"spectrogram.png": "dbd38d46ef659b4dce5dc9ce2e8dc9eddf12d9ecaaa7db7b613ce52d0abcf417",
+		"chroma.png":      "4d73221459189aa065fa40f81c28aeb877d4729ca67f01835af85f5e4dba5371",
+		"rhythm.png":      "8aba28738374c037ffce5ca2a6dadaaf833c6da64fd679e9b4e448c1f6674472",
+		"energy.png":      "50a987b2a8232a11f9be416471a38f5b010b6cc7a94bdb6c959f7d9195ac2e24",
+	}
+	files["report"], files["text"] = data, []byte(textOf(a))
+	for name, hash := range want {
+		if got := fmt.Sprintf("%x", sha256.Sum256(files[name])); got != hash {
+			t.Errorf("%s hash %s, want %s", name, got, hash)
+		}
+	}
+}
 
 func analyze(t *testing.T, source string) *Analysis {
 	t.Helper()
@@ -251,7 +281,7 @@ tempo 120
 track bass acid {}
 pattern riff { . . . . . . . . . . . . c3 . . . . . . . . . . . }
 scene a { bass = riff }
-song { a*2 }
+song { a*8 }
 `
 	a := analyze(t, source)
 	tr := track(t, a, "bass")
@@ -264,15 +294,46 @@ song { a*2 }
 	if !strings.Contains(textOf(a), "step 1-12 (swing)") {
 		t.Fatal("text rhythm heading does not follow meter")
 	}
-	img, scaled := a.chromaImage(0, 2, 10000)
-	if scaled || img.Bounds().Dx() != 24*chromaCell {
+	img, scaled := a.chromaImage(0, 1, 10000)
+	if scaled || img.Bounds().Dx() != 12*chromaCell {
 		t.Fatalf("3/4 chroma dimensions: %v scaled=%v", img.Bounds(), scaled)
 	}
+	img, _ = a.chromaImage(0, 2, 10000)
 	if got := img.NRGBAAt(12*chromaCell, 0); got.R != 255 || got.G != 255 || got.B != 255 {
 		t.Fatalf("missing bar line at 3/4 boundary: %v", got)
 	}
-	if len(a.Report.Loudness.ShortTermPerBeatLUFS) != 6 {
+	if len(a.Report.Loudness.ShortTermPerBeatLUFS) != 24 {
 		t.Fatalf("3/4 beat measurements: %d", len(a.Report.Loudness.ShortTermPerBeatLUFS))
+	}
+	files, pictures, err := a.Pictures(400)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pages []string
+	for _, p := range pictures {
+		if p.Kind == "rhythm" && p.Width != 12*24 {
+			t.Errorf("rhythm width %d", p.Width)
+		}
+		if strings.HasPrefix(p.File, "chroma-bars-") {
+			pages = append(pages, fmt.Sprintf("%d-%d:%d", p.FromBar, p.ToBar, p.Width))
+		}
+	}
+	if got := strings.Join(pages, " "); got != "1-4:144 5-8:144" {
+		t.Errorf("pages %s", got)
+	}
+	energy, err := png.Decode(bytes.NewReader(files["energy.png"]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for b := 1; b < 8; b++ {
+		x := b * 3 * a.rate / 2 * energy.Bounds().Dx() / a.mixLen
+		want := color.RGBA{36, 36, 44, 255}
+		if b%4 == 0 {
+			want = color.RGBA{64, 64, 72, 255}
+		}
+		if got := color.RGBAModel.Convert(energy.At(x, 17)).(color.RGBA); got != want {
+			t.Errorf("energy bar %d at %d: %v want %v", b+1, x, got, want)
+		}
 	}
 	plain := analyze(t, strings.Replace(source, "meter 3/4\n", "", 1))
 	data, err := json.Marshal(plain.Report)
@@ -281,5 +342,84 @@ song { a*2 }
 	}
 	if bytes.Contains(data, []byte(`"ticks_per_bar"`)) || bytes.Contains(data, []byte(`"meter"`)) {
 		t.Fatalf("default meter fields: %s", data)
+	}
+}
+
+func TestSevenEightAuditionGrouping(t *testing.T) {
+	a := analyze(t, `cicada 2
+meter 7/8 2+2+3
+tempo 120
+track bass acid {}
+pattern riff { c3 . . . . . . . . . . . . . }
+scene a { bass = riff }
+song { a*1 }
+`)
+	tr := track(t, a, "bass")
+	if len(tr.Rhythm) != 14 || len(a.Report.Loudness.ShortTermPerBeatLUFS) != 7 {
+		t.Fatalf("rhythm %d beats %d", len(tr.Rhythm), len(a.Report.Loudness.ShortTermPerBeatLUFS))
+	}
+	row := rhythmRow(tr.Rhythm, a.Report.rhythmGroups)
+	if parts := strings.Fields(row); len(parts) != 3 || len([]rune(parts[0])) != 4 || len([]rune(parts[1])) != 4 || len([]rune(parts[2])) != 6 || !strings.Contains(textOf(a), row) {
+		t.Errorf("rhythm row %q", row)
+	}
+	b := analyze(t, `cicada 2
+meter 6/8
+tempo 120
+track bass acid {}
+pattern riff { c3 . . . . . . . . . . . }
+scene a { bass = riff }
+song { a*1 }
+`)
+	parts := strings.Fields(rhythmRow(track(t, b, "bass").Rhythm, b.Report.rhythmGroups))
+	if len(parts) != 6 {
+		t.Fatalf("6/8 beat groups %v", parts)
+	}
+	for _, part := range parts {
+		if len([]rune(part)) != 2 {
+			t.Errorf("6/8 beat group %q", part)
+		}
+	}
+}
+
+func TestShortBarHeldNoteSounds(t *testing.T) {
+	a := analyze(t, `cicada 2
+meter 2/4
+tempo 240
+instrument tone { voice mono { out = sine(pitch) * adsr(gate, 5ms, 10ms, 1, 10ms) * velocity * 0.05 } }
+track bed tone {}
+pattern held notes { gate = 100% a3 - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - }
+scene first { bed = held }
+song { first*4 }
+`)
+	tr := track(t, a, "bed")
+	if tr.ActiveBars != 4 {
+		t.Errorf("active bars %d", tr.ActiveBars)
+	}
+	if len(tr.Sounding) < 4 || !tr.Sounding[1] || !tr.Sounding[2] || !tr.Sounding[3] || len(tr.SoundingSpans) != 1 || tr.SoundingSpans[0] != (BarSpan{1, 4}) {
+		t.Errorf("sounding %v spans %v", tr.Sounding, tr.SoundingSpans)
+	}
+	for _, b := range a.Report.Bars[1:4] {
+		if b.Sounding == nil || len(*b.Sounding) != 1 || (*b.Sounding)[0] != "bed" {
+			t.Errorf("bar %d sounding %v", b.Bar, b.Sounding)
+		}
+	}
+	if !strings.Contains(textOf(a), "████") {
+		t.Error("activity row does not show four sounding bars")
+	}
+}
+
+// A bar longer than the grace keeps the whole grace, whatever the meter (the
+// shortest 4/4 bar, 0.8 s at 300 BPM, is one). A bar no longer than the grace
+// tests its second half, so the window is never empty.
+func TestGraceEndDependsOnTheBarLengthAlone(t *testing.T) {
+	for _, c := range []struct{ lo, hi, grace, want int }{
+		{0, 800, 500, 500},   // longer than the grace: unchanged
+		{0, 501, 500, 500},   // just longer
+		{0, 500, 500, 250},   // as long as the grace: its middle
+		{100, 400, 500, 250}, // shorter: its middle
+	} {
+		if got := graceEnd(c.lo, c.hi, c.grace); got != c.want {
+			t.Errorf("graceEnd(%d, %d, %d) = %d, want %d", c.lo, c.hi, c.grace, got, c.want)
+		}
 	}
 }
