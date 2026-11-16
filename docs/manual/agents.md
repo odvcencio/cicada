@@ -712,15 +712,21 @@ With a loudness target (`--loudness`, or `--export` with a profile that sets
 one), `loudness` gives the target and tolerance, the measured
 `integrated_lufs`, `true_peak_dbtp` and `sample_peak_dbfs`, the
 `applied_gain_db`, whether `target_met`, the passes, where the gain went
-(`gain_stage`), the master limiter's gain reduction and the DC correction. A
-measurement is `null` when there is none.
+(`gain_stage`), the limiters' gain reduction and the DC correction. A
+measurement is `null` when there is none. `gain_stage` is `master_input`
+when there is no master chain or the last limiter is its first insert;
+`before_last_limiter` when inserts precede the last limiter; and `post_chain`
+when a chain has no limiter. New values may be added. `master_limiter_reduction_db`
+is the largest reduction of any master limiter. `last_limiter_reduction_db` is
+the reduction of the last master limiter, which the 6 dB guard bounds.
+`largest_limiter_reduction_db` also includes the safety limiter.
 
 The search runs up to six passes and synthesizes the song only once.
 `syntheses`, `replays` and `repeats` count how the `passes` got their audio,
 and add up to `passes`: a synthesis renders the song in full; a replay runs
-only the master stage again on the first pass's stored mix; a repeat is not
-rendered, because its gain differs from an earlier pass's by less than the
-renderer can show, so its audio and measurement are that pass's. `pass_log`
+again only what follows the export gain, on the first pass's stored mix; a
+repeat is not rendered, because its gain differs from an earlier pass's by less
+than the renderer can show, so its audio and measurement are that pass's. `pass_log`
 has one entry per pass, in order: the `gain_db` it applied, its measured
 `integrated_lufs` and `true_peak_dbtp`, and `render`, which is `synthesized`,
 `replayed` or `repeated` (with `same_as`, the number of the pass it repeats).
@@ -777,7 +783,7 @@ to check whether reuse caused a difference you see.
         "render": "replayed"
       }
     ],
-    "gain_stage": "post_chain"
+    "gain_stage": "master_input"
   }
 }
 ```
@@ -884,14 +890,20 @@ command prints and, when the documentation gives a fix for that cause, a
 - `true_peak_and_dc_unmet`: no pass met the true-peak ceiling and the DC limit.
 - `loudness_unmeasurable`: the render has no measurable loudness.
 - `true_peak_over_ceiling`: the best pass is still above the true-peak ceiling.
-- `limiter_reduction_over_maximum`: the master limiter would reduce more than 6 dB.
-- `loudness_shortfall_at_limiter_maximum`: the target needs more than the master limiter's 6 dB maximum.
-- `loudness_shortfall_at_input_gain_cap`: the target needs more than +12 dB ahead of the master limiter.
-- `loudness_shortfall_at_true_peak_ceiling`: without a master limiter, the gain stops at the true-peak ceiling.
-- `loudness_target_missed`: the best pass is outside the tolerance for another reason.
+- `limiter_reduction_over_maximum`: the master chain's last limiter would reduce more than 6 dB.
+- `loudness_shortfall_at_limiter_maximum`: the target needs more than the 6 dB maximum of the master chain's last limiter.
+- `loudness_shortfall_at_input_gain_cap`: the target needs more than +12 dB of gain into the master chain's last limiter; the message names track and master levels (the master is limited to +6 dB), and a lower target.
+- `loudness_shortfall_at_true_peak_ceiling`: the gain stops at the true-peak ceiling: without a master limiter at the best pass, or, with one, a louder pass went over the ceiling while still too quiet.
+- `loudness_shortfall_at_gain_maximum`: without a master limiter, the gain reached its maximum and the mix is still too quiet. The maximum is +24 dB minus any positive master level.
+- `loudness_target_missed_at_pass_limit`: the search used all six passes before it came within the tolerance; the message names the nearest louder pass that broke a limit, if one did.
+- `loudness_target_missed`: the best pass is outside the tolerance and none of the limits above stopped the search; the search's rules do not produce it today.
 <!-- /render-error-codes -->
 
 After a shortfall the best pass is still written and listed in `outputs`.
+A shortfall that names a limit gives it in `limit` as well, as a value with its
+unit: `6dB` for the last limiter's maximum reduction, `+12dB` for the gain cap
+into it, `+24dB` for the maximum export gain without a limiter, the export's
+ceiling in `dBTP` for the true-peak ceiling, and `6` for the passes.
 
 `remedy` has a `summary`, the `file` to change, the file's `revision` when the
 render read it (the form `cicada apply` uses), and the `score_text` to put in
@@ -959,6 +971,7 @@ export loud { loudness = -9LUFS true_peak = -1dBTP normalize = off }
   "error": {
     "code": "loudness_shortfall_at_true_peak_ceiling",
     "message": "loudness target shortfall 1.86 LU: achieved -10.86 LUFS at true-peak ceiling -1.05 dBTP (target -9.00 LUFS)",
+    "limit": "-1dBTP",
     "remedy": {
       "summary": "add a limiter with ceiling = -1dBTP, the export's true-peak ceiling, as the last master insert, so the gain goes in ahead of it and it holds that ceiling (docs/audio/mix-chain.md, Export loudness targets): cicada apply with an addeffect intent (effectkind limiter, inserton master, settings ceiling), or the same in the score text",
       "file": "loud.cicada",
@@ -1022,12 +1035,13 @@ export loud { loudness = -9LUFS true_peak = -1dBTP normalize = off }
   ],
   "loudness": {
     "target_lufs": -9,
-    "integrated_lufs": -9.28794649255763,
-    "true_peak_dbtp": -1.7761707377820928,
-    "applied_gain_db": 7.771192867260213,
+    "integrated_lufs": -9.287946344905963,
+    "true_peak_dbtp": -1.7761707634793302,
+    "applied_gain_db": 7.7711934508864156,
     "target_met": true,
-    "gain_stage": "master_input",
-    "master_limiter_reduction_db": 3.3003585823440833
+    "gain_stage": "before_last_limiter",
+    "master_limiter_reduction_db": 3.3003594528612807,
+    "last_limiter_reduction_db": 3.3003594528612807
   }
 }
 ```
