@@ -22,6 +22,16 @@ import (
 
 const shellIdleRefresh = 250 * time.Millisecond
 
+// shellUI is the bound shell's edit queue; shellSay shows a message in its
+// status line, so a keyboard command that does nothing can say why.
+var shellUI *workspaceUI
+
+func shellSay(message string) {
+	if shellUI != nil {
+		shellUI.status.Set(message)
+	}
+}
+
 func bindShellEdits(ctx context.Context, root js.Value, props workspaceProps) func() {
 	patch := js.Undefined()
 	if gosx := js.Global().Get("__gosx"); workspacePresent(gosx) && workspacePresent(gosx.Get("host")) && workspacePresent(gosx.Get("host").Get("patch")) {
@@ -32,7 +42,7 @@ func bindShellEdits(ctx context.Context, root js.Value, props workspaceProps) fu
 		return func() {}
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	u := &workspaceUI{root: root, patch: patch, props: props, ctx: ctx, cancel: cancel, jobs: make(chan workspaceJob, 128), revision: signal.New(props.Revision), sourceRevision: props.SourceRevision, status: signal.New(""), drafts: map[string]workspaceDraft{}, editors: map[string]workspaceEditorBaseline{}, shell: true, own: workspaceVersion{Revision: props.Revision, SourceRevision: props.SourceRevision}}
+	u := &workspaceUI{root: root, patch: patch, props: props, ctx: ctx, cancel: cancel, jobs: make(chan workspaceJob, 128), revision: signal.New(props.Revision), sourceRevision: props.SourceRevision, status: signal.New(""), transportError: signal.New(""), drafts: map[string]workspaceDraft{}, editors: map[string]workspaceEditorBaseline{}, shell: true, own: workspaceVersion{Revision: props.Revision, SourceRevision: props.SourceRevision}}
 	u.seedEditorBaseline()
 	// A page that replaced the old one in place can keep the old lock.
 	u.syncHistoryLock()
@@ -53,7 +63,7 @@ func bindShellEdits(ctx context.Context, root js.Value, props workspaceProps) fu
 	}
 	watch := signal.Watch(func() {
 		if node := domCall(root, "querySelector", "[data-workspace-status]"); workspacePresent(node) {
-			node.Set("textContent", u.status.Get())
+			node.Set("textContent", u.statusText())
 		}
 		if node := domCall(root, "querySelector", "[data-workspace-retry]"); workspacePresent(node) {
 			node.Set("hidden", !u.blocked.Load())
@@ -118,6 +128,7 @@ func bindShellEdits(ctx context.Context, root js.Value, props workspaceProps) fu
 		}
 	}
 	domSet(root, "data-shell-edits", "ready")
+	shellUI = u
 	go u.run()
 	return func() {
 		if u.closed.Swap(true) {
@@ -137,6 +148,9 @@ func bindShellEdits(ctx context.Context, root js.Value, props workspaceProps) fu
 		u.clearQueue()
 		u.restoreAll()
 		domDrop(root, "data-shell-edits")
+		if shellUI == u {
+			shellUI = nil
+		}
 	}
 }
 
@@ -608,20 +622,27 @@ func (u *workspaceUI) settleHold(h *shellHold, outcome int) {
 	case u.reloading && outcome == holdOwn:
 		js.Global().Get("sessionStorage").Call("setItem", shellNotice, shellChanged)
 	case outcome == holdFailed || u.blocked.Load() || !h.form.Get("isConnected").Bool() || domHas(region, "data-region-stale"):
-		u.status.Set("This panel could not be refreshed, so nothing was saved. Submit it again.")
+		u.holdStatus("This panel could not be refreshed, so nothing was saved. Submit it again.")
 	case !shellVisible(region):
-		u.status.Set(shellClosed)
+		u.holdStatus(shellClosed)
 	case outcome == holdForeign:
 		domSet(h.form, "data-workspace-updated", "")
-		u.status.Set(shellForeign)
+		u.holdStatus(shellForeign)
 	case shellFormValues(h.form, h.submitter) != h.values:
 		domSet(h.form, "data-workspace-updated", "")
-		u.status.Set(shellChanged)
+		u.holdStatus(shellChanged)
 	case workspacePresent(h.submitter):
 		h.form.Call("requestSubmit", h.submitter)
 	default:
 		h.form.Call("requestSubmit")
 	}
+}
+
+func (u *workspaceUI) holdStatus(message string) {
+	if current := u.status.Get(); strings.Contains(current, "this was not sent:") || strings.Contains(current, "Not sent:") {
+		message = current + " " + message
+	}
+	u.status.Set(message)
 }
 
 const (
@@ -697,7 +718,7 @@ func (u *workspaceUI) dropHistory() {
 			return id == "undo-form" || id == "redo-form"
 		}
 		return job.target == "/__actions/undo" || job.target == "/__actions/redo"
-	}) > 0 {
+	}) != "" {
 		u.status.Set(u.status.Get() + " The Undo or Redo waiting behind it was not sent.")
 	}
 }
