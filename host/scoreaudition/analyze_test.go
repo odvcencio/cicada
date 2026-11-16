@@ -25,20 +25,46 @@ func TestDefaultMeterOutputCompatibility(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The pictures are pinned by their pixels (pixelHash). They were taken from
+	// files whose bytes matched main's for this song under Go 1.25.1.
 	want := map[string]string{
 		"report":          "fb9525c468e0736094f485639f174913dd762ad57edfe1d477a762af7487a6db",
 		"text":            "2254624ac1eca5ddcc93c2fa43f32211a890cd09b911ea178ccf7eccb9e091d8",
-		"spectrogram.png": "dbd38d46ef659b4dce5dc9ce2e8dc9eddf12d9ecaaa7db7b613ce52d0abcf417",
-		"chroma.png":      "4d73221459189aa065fa40f81c28aeb877d4729ca67f01835af85f5e4dba5371",
-		"rhythm.png":      "8aba28738374c037ffce5ca2a6dadaaf833c6da64fd679e9b4e448c1f6674472",
-		"energy.png":      "50a987b2a8232a11f9be416471a38f5b010b6cc7a94bdb6c959f7d9195ac2e24",
+		"spectrogram.png": "293687959e1b647311c52b5ca5c1a8be791cf1ed044bd4da9fcd20575871d1ce",
+		"chroma.png":      "1eea1c7529a2b3337f95510a5b27d489818af03cb4abda30fa55c09fd42df63d",
+		"rhythm.png":      "b31f7069d87994c85f1c47a36adb41f603338eabbe8849bb5fa15393d3819c67",
+		"energy.png":      "2113488701f788225f18fd1f5ab1f5a5e5f4c431b2389b40fae13b6ee8285cfe",
 	}
 	files["report"], files["text"] = data, []byte(textOf(a))
 	for name, hash := range want {
-		if got := fmt.Sprintf("%x", sha256.Sum256(files[name])); got != hash {
+		got := fmt.Sprintf("%x", sha256.Sum256(files[name]))
+		if strings.HasSuffix(name, ".png") {
+			got = pixelHash(t, files[name])
+		}
+		if got != hash {
 			t.Errorf("%s hash %s, want %s", name, got, hash)
 		}
 	}
+}
+
+// pixelHash hashes a picture's size and pixels, not its file: the bytes a PNG
+// encoder writes differ between Go versions, the pixels do not.
+func pixelHash(t *testing.T, data []byte) string {
+	t.Helper()
+	img, err := png.Decode(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := sha256.New()
+	b := img.Bounds()
+	fmt.Fprintf(h, "%dx%d\n", b.Dx(), b.Dy())
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			c := color.NRGBAModel.Convert(img.At(x, y)).(color.NRGBA)
+			h.Write([]byte{c.R, c.G, c.B, c.A})
+		}
+	}
+	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
 func analyze(t *testing.T, source string) *Analysis {

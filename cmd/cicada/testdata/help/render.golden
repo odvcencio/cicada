@@ -8,7 +8,7 @@ Flags:
   --bits <16|24|32>            WAV bit depth (default 24)
   --from <bar>                 one-based start bar (default 1)
   --bars <n>                   bars to render; 0 means through song end
-  --tail <duration>            render tail (default 3s)
+  --tail <duration>            render tail, 0s to 60s (default 3s)
   --dither=<bool>              deterministic TPDF dither for integer PCM (default true)
   --normalize=<bool>           peak normalize to -1 dBFS (default false)
   --block <frames>             offline block size (default 4096)

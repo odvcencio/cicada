@@ -267,7 +267,11 @@ func removeEffect(ctx *Context, intent Intent) error {
 	if file := effect.Position.File; file != "" && file != ctx.Options.Path {
 		return &ReasonError{Reason: "declared_in_other_file", Field: "name", File: file, Message: fmt.Sprintf("effect %s is declared in %s, another file of the project; this edit changes only %s", in.Name, file, entryName(ctx.Options.Path))}
 	}
-	if uses := effectUses(score, effect); len(uses) > 0 {
+	plan, err := ctx.CurrentPlan()
+	if err != nil {
+		return err
+	}
+	if uses := effectUses(score, effect, plan); len(uses) > 0 {
 		return &ReasonError{Reason: "effect_in_use", Field: "name", Uses: uses, Message: fmt.Sprintf("effect %s is still used by %s; remove those first", in.Name, strings.Join(uses, ", "))}
 	}
 	if file, uses := effectRoutesElsewhere(score, in.Name, ctx.Options.Path); len(uses) > 0 {
@@ -334,10 +338,24 @@ func effectRoutesElsewhere(score *notation.Score, name, entry string) (string, [
 // named sends the removal takes with it: automation, scene settings,
 // modulation routes, MIDI mappings, live macros, presets that target it, and
 // an edition-1 return's send_a (delay or tape) or send_b (reverb) levels.
-func effectUses(score *notation.Score, effect *notation.Effect) []string {
+func effectUses(score *notation.Score, effect *notation.Effect, plan *Plan) []string {
 	name := effect.Name
 	prefix := name + "."
 	var uses []string
+	usesEffect := func(path string) bool {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+		if plan == nil || plan.SameParameterPath == nil {
+			return false
+		}
+		for _, track := range score.Tracks {
+			if plan.SameParameterPath(path, track.Name+".send."+name) {
+				return true
+			}
+		}
+		return false
+	}
 	for _, preset := range score.Presets {
 		if preset.Target == name {
 			uses = append(uses, fmt.Sprintf("preset %s (line %d)", preset.Name, preset.Position.Line))
@@ -352,32 +370,32 @@ func effectUses(score *notation.Score, effect *notation.Effect) []string {
 		}
 	}
 	for _, lane := range score.Automation {
-		if strings.HasPrefix(lane.Path, prefix) {
+		if usesEffect(lane.Path) {
 			uses = append(uses, fmt.Sprintf("automation %s (line %d)", lane.Path, lane.Position.Line))
 		}
 	}
 	for _, scene := range score.Scenes {
 		for _, setting := range scene.Settings {
-			if strings.HasPrefix(setting.Path, prefix) {
+			if usesEffect(setting.Path) {
 				uses = append(uses, fmt.Sprintf("scene %s setting %s (line %d)", scene.Name, setting.Path, setting.Position.Line))
 			}
 		}
 	}
 	for _, route := range score.Routes {
-		if strings.HasPrefix(route.Target, prefix) {
+		if usesEffect(route.Target) {
 			uses = append(uses, fmt.Sprintf("modulation route %s -> %s (line %d)", route.Source, route.Target, route.Position.Line))
 		}
 	}
 	if score.MIDI != nil {
 		for _, mapping := range score.MIDI.Mappings {
-			if strings.HasPrefix(mapping.Target, prefix) {
+			if usesEffect(mapping.Target) {
 				uses = append(uses, fmt.Sprintf("MIDI mapping %s (line %d)", mapping.Target, mapping.Position.Line))
 			}
 		}
 	}
 	if score.Live != nil {
 		for _, macro := range score.Live.Macros {
-			if strings.HasPrefix(macro.Target, prefix) {
+			if usesEffect(macro.Target) {
 				uses = append(uses, fmt.Sprintf("live macro %s (line %d)", macro.Name, macro.Position.Line))
 			}
 		}

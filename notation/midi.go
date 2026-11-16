@@ -139,7 +139,7 @@ func validateMIDI(s *Score) []Diagnostic {
 			}
 			for _, value := range []string{m.Min, m.Max} {
 				if value != "" {
-					if err := validateSceneValue(desc, m.Target, value); err != nil {
+					if err := validateRangeValue(desc, m.Target, value); err != nil {
 						add("CICADA-MIDI", "invalid MIDI range: "+err.Error(), m.Position)
 					}
 				}

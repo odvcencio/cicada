@@ -44,7 +44,7 @@ func Cicada() *grammargen.Grammar {
 	))
 
 	g.Define("automate_decl", seq(str("automate"), field("path", sym("parameter_path")), str("{"), repeat(choice(sym("automation_point"), sym("automation_recall"))), str("}")))
-	g.Define("automation_point", seq(field("at", sym("musical_position")), field("value", sym("number")), optional(seq(field("shape", sym("identifier")), optional(field("curve", sym("number")))))))
+	g.Define("automation_point", seq(field("at", sym("musical_position")), field("value", choice(sym("number"), sym("identifier"))), optional(seq(field("shape", sym("identifier")), optional(field("curve", sym("number")))))))
 	g.Define("musical_position", token(pat(`@[0-9]+\.[0-9]+\.[0-9]+`)))
 
 	// Edition-2 audio declarations share typed key/value bodies.

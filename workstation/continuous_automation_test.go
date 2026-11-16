@@ -11,6 +11,7 @@ import (
 
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
+	"m31labs.dev/gosx"
 )
 
 func continuousAutomationApp(t *testing.T) *httptest.Server {
@@ -54,6 +55,24 @@ func TestContinuousAutomationSessionShowsCurvesAndSceneControls(t *testing.T) {
 	for _, text := range []string{`id="continuous-automation"`, `data-continuous-path="bass.cutoff"`, `data-continuous-path="bass.pan"`, `aria-label="bass.cutoff automation"`, "@1.1.1: 400Hz, linear", "@3.1.1: 0.6, smooth", "Bar 5", "Scene automation", "Add or replace point"} {
 		if !strings.Contains(page, text) {
 			t.Errorf("session is missing %q", text)
+		}
+	}
+}
+
+func TestContinuousAutomationLevelDB(t *testing.T) {
+	source := []byte("cicada 2\ntempo 120\ntrack bass acid {}\npattern p { c3 }\nscene main { bass = p }\nsong { main*2 }\nautomate bass.level { @1.1.1 -6dB @2.1.1 -12dB }\n")
+	score, ds := notation.Parse(source)
+	if len(ds) != 0 {
+		t.Fatal(ds)
+	}
+	p, ds := project.FromScore(score)
+	if len(ds) != 0 {
+		t.Fatal(ds)
+	}
+	html := gosx.RenderHTML(continuousAutomation(p))
+	for _, want := range []string{"-6dB", "-12dB", "M 16.000 16.000"} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("missing %q: %s", want, html)
 		}
 	}
 }

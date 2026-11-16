@@ -158,3 +158,20 @@ func TestEffectIntentsRefuseEditsToOtherFiles(t *testing.T) {
 		})
 	}
 }
+
+func TestRemoveEffectRefusesSendPathAliases(t *testing.T) {
+	for _, lane := range []string{"bass.send.room", "bass.send.reverb"} {
+		source := "cicada 2\ntempo 120\nfx room reverb {}\ntrack bass acid {}\npattern p { c3 }\nscene main { bass = p }\nsong { main*2 }\nautomate " + lane + " { @1.1.1 0.5 }\n"
+		path := filepath.Join(t.TempDir(), "score.cicada")
+		if err := os.WriteFile(path, []byte(source), 0600); err != nil {
+			t.Fatal(err)
+		}
+		var result applyJSONResult
+		if err := json.Unmarshal([]byte(probeApply(t, path, `{"kind":"removeeffect","name":"room"}`)), &result); err != nil {
+			t.Fatal(err)
+		}
+		if result.Error == nil || result.Error.Reason != "effect_in_use" {
+			t.Fatalf("%s: %+v", lane, result.Error)
+		}
+	}
+}

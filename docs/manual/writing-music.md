@@ -484,7 +484,7 @@ bus music { insert = fx.comp }
 ```
 
 A track line names a send by its effect (`send room = -12dB`). A scene,
-`automate` lane, route or macro names it by its return instead: `bass.send.delay`
+`automate` lane, route or macro names it by its effect or its return: `bass.send.delay`
 is the send to the delay or tape return, and `bass.send.reverb` is the send to
 the first reverb the score declares. A send to a later reverb has no such path
 yet and is refused there; `cicada explain` says which effect a send path feeds.

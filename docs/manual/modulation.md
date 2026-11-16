@@ -77,7 +77,11 @@ song { verse }
 ```
 
 The source must be declared in the project. Graph modulation inside authored
-drum-kit lanes is not supported.
+drum-kit lanes is not supported: an instrument that a kit lane plays may not
+read `mod(name)` or `lfo(...)`, and `cicada check` refuses it with
+`CICADA-UNSUPPORTED`, naming the kit, the lane and the instrument. To move a
+drum voice with a modulation source, play its instrument on its own track
+with a note pattern.
 For a playable example, see
 [`examples/detail/instrument-modulation.cicada`](../../examples/detail/instrument-modulation.cicada).
 
@@ -144,8 +148,9 @@ the authored value. MIDI controls cannot reach an authored parameter yet.
 
 Native playback, `render` and `stems` move these parameters. The
 portable browser and WAM images refuse a score that moves one. Reading a
-modulation source inside the instrument with `mod(name)` still works there,
-and in drum-kit graph lanes, where live parameters are not available.
+modulation source inside the instrument with `mod(name)` still works there.
+Drum-kit graph lanes have neither: they take no live parameters and cannot
+read `mod(name)` or `lfo(...)` (see above).
 
 ## Studio and inspection
 

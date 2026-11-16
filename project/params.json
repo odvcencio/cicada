@@ -70,7 +70,8 @@
     "live": true,
     "automatable": true,
     "persist": "source",
-    "schema": "mixer.send_a"
+    "schema": "mixer.send_a",
+    "note": "The value is a linear gain from 0 to 1, or a level from -60dB to 0dB as a track block's send line takes it. An automation lane uses one of the two units for all its points: in dB (off for silence) it ramps in dB, in linear gain it ramps in gain. The path also takes the declared name of the delay or tape effect: <track>.send.<name>."
   },
   {
     "id": "mix.send_b",
@@ -94,7 +95,8 @@
     "live": true,
     "automatable": true,
     "persist": "source",
-    "schema": "mixer.send_b"
+    "schema": "mixer.send_b",
+    "note": "The value is a linear gain from 0 to 1, or a level from -60dB to 0dB as a track block's send line takes it. An automation lane uses one of the two units for all its points: in dB (off for silence) it ramps in dB, in linear gain it ramps in gain. The path also takes the declared name of the reverb effect: <track>.send.<name>."
   },
   {
     "id": "mix.mute",

@@ -143,7 +143,8 @@ func Compare(produced, fresh *State) error {
 
 // comparePlans compares two plans' data, then their functions by their answers
 // (CopySource of every pattern, CopyForTrack of the first pattern on the first
-// track, ResolveParam of every parameter address of the project).
+// track, ResolveParam of every parameter address of the project, and
+// SameParameterPath of pairs of those addresses).
 func comparePlans(produced, fresh *edit.Plan, p *project.Project) error {
 	if produced == nil || fresh == nil {
 		return fmt.Errorf("a plan is missing (produced %t, full compile %t)", produced != nil, fresh != nil)
@@ -194,6 +195,22 @@ func comparePlans(produced, fresh *edit.Plan, p *project.Project) error {
 			}
 		}
 	}
+	if (produced.SameParameterPath == nil) != (fresh.SameParameterPath == nil) {
+		return fmt.Errorf("SameParameterPath is missing on one side")
+	}
+	if fresh.SameParameterPath != nil {
+		// Each address against itself and against its neighbour: one pair
+		// that names the same control and one that does not.
+		addresses := project.ParamAddresses(p)
+		for i, address := range addresses {
+			other := addresses[(i+1)%len(addresses)].Address
+			for _, pair := range [][2]string{{address.Address, address.Address}, {address.Address, other}, {address.Address, "no.such.parameter"}} {
+				if produced.SameParameterPath(pair[0], pair[1]) != fresh.SameParameterPath(pair[0], pair[1]) {
+					return fmt.Errorf("SameParameterPath(%q, %q) answers differ", pair[0], pair[1])
+				}
+			}
+		}
+	}
 	return nil
 }
 
@@ -201,7 +218,7 @@ func comparePlans(produced, fresh *edit.Plan, p *project.Project) error {
 // reflect.DeepEqual cannot compare.
 func planData(plan *edit.Plan) edit.Plan {
 	data := *plan
-	data.ResolveParam = nil
+	data.ResolveParam, data.SameParameterPath = nil, nil
 	data.Patterns = append([]edit.Pattern(nil), plan.Patterns...)
 	for i := range data.Patterns {
 		data.Patterns[i].CopySource, data.Patterns[i].CopyForTrack = nil, nil
