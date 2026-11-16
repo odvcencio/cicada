@@ -82,35 +82,9 @@ func placementTimeline(p *project.Project, placements []project.Placement, selec
 			gosx.El("span", gosx.Attrs(gosx.Attr("class", "placement-track")), gosx.El("strong", gosx.Attrs(gosx.Attr("title", track.ID)), gosx.Text(track.ID)), gosx.El("small", gosx.Attrs(gosx.Attr("title", track.Kind)), gosx.Text(track.Kind)), rail(track.ID)),
 			gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-lane"), gosx.Attr("data-placement-ticks", strconv.FormatInt(ticks, 10)), gosx.Attr("style", fmt.Sprintf("height:%dpx", max(1, len(laneEnds))*68+8)), gosx.Attr("role", "group"), gosx.Attr("aria-label", track.ID+" placements")), gosx.Fragment(blocks...))))
 	}
-	viewButton := func(action, label string) gosx.Node {
-		return gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-placement-view", action)), gosx.Text(label))
-	}
-	var zoomOptions []gosx.Node
-	for _, option := range []struct{ value, label string }{{"fit", "Fit song"}, {"48", "1×"}, {"96", "2×"}, {"192", "4×"}, {"384", "8×"}} {
-		attrs := gosx.Attrs(gosx.Attr("value", option.value))
-		if option.value == "48" {
-			attrs = append(attrs, gosx.BoolAttr("selected"))
-		}
-		zoomOptions = append(zoomOptions, gosx.El("option", attrs, gosx.Text(option.label)))
-	}
-	var snapOptions []gosx.Node
-	barSnap, beatSnap := strconv.FormatInt(meterMap.BarTicks(0), 10), strconv.FormatInt(meterMap.BeatTicks(0), 10)
-	for _, option := range []struct{ value, label string }{{barSnap, "Bar"}, {beatSnap, "Beat"}, {"480", "1/8"}, {"320", "1/8T"}, {"240", "1/16"}, {"160", "1/16T"}, {"120", "1/32"}, {"1", "Off"}} {
-		attrs := gosx.Attrs(gosx.Attr("value", option.value))
-		if option.value == "240" {
-			attrs = append(attrs, gosx.BoolAttr("selected"))
-		}
-		snapOptions = append(snapOptions, gosx.El("option", attrs, gosx.Text(option.label)))
-	}
+
 	return gosx.El("section", gosx.Attrs(gosx.BoolAttr("data-placement-navigation"), gosx.Attr("data-placement-bars", strconv.FormatInt(bars, 10))),
-		gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-navigation"), gosx.Attr("aria-label", "Arrangement navigation")),
-			field("Timeline zoom", gosx.El("select", gosx.Attrs(gosx.Attr("name", "placementZoom"), gosx.BoolAttr("data-studio-view-control"), gosx.Attr("aria-label", "Timeline zoom")), gosx.Fragment(zoomOptions...))),
-			field("Snap step", gosx.El("select", gosx.Attrs(gosx.Attr("name", "placementSnap"), gosx.BoolAttr("data-studio-view-control"), gosx.Attr("aria-label", "Snap step"), gosx.Attr("title", "Move and trim increments preserve timing offsets. T = triplet. Pattern starts remain on sixteenths. Shift-drag bypasses snap within those limits.")), gosx.Fragment(snapOptions...))),
-			gosx.El("label", gosx.Attrs(gosx.Attr("class", "placement-follow")), gosx.El("input", gosx.Attrs(gosx.Attr("type", "checkbox"), gosx.Attr("name", "placementCopy"), gosx.Attr("aria-label", "Copy on drag"), gosx.BoolAttr("data-studio-view-control"))), gosx.Text("Copy drag")),
-			viewButton("fit", "Fit song"), viewButton("selected", "Show selected"),
-			gosx.El("label", gosx.Attrs(gosx.Attr("class", "placement-follow")), gosx.El("input", gosx.Attrs(gosx.Attr("type", "checkbox"), gosx.Attr("name", "placementFollow"), gosx.BoolAttr("data-studio-view-control"))), gosx.Text("Follow song")),
-			gosx.El("span", gosx.Attrs(gosx.BoolAttr("data-placement-playback-status"), gosx.Attr("class", "muted")), gosx.Text("Timeline view")),
-			gosx.El("span", gosx.Attrs(gosx.BoolAttr("data-placement-edit-status"), gosx.Attr("role", "status"), gosx.Attr("aria-live", "polite"), gosx.Attr("class", "muted placement-edit-status")), gosx.Text("Drag moves · Option/Alt-drag copies · Shift-drag is free · hold edges to scroll"))),
+		arrangementTools(true, meterMap.BarTicks(0), meterMap.BeatTicks(0)),
 		gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll placement-scroll"), gosx.Attr("aria-label", "Placement editor")),
 			gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-timeline"), gosx.Attr("style", fmt.Sprintf("--placement-bars:%d", bars))),
 				gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-playhead"), gosx.BoolAttr("data-placement-playhead"), gosx.BoolAttr("hidden"), gosx.Attr("aria-hidden", "true"))), gosx.Fragment(rows...))))

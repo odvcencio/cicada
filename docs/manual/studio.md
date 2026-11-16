@@ -150,13 +150,15 @@ Release to save the entire gesture as one edit. Escape restores the placement
 and its original horizontal view. Changing the timeline view, hiding or
 resizing the window, or switching away from the window cancels the gesture safely.
 
-Use **Timeline zoom** for 1×–8× detail, **Fit song** for an overview, and
-**Show selected** to bring the inspected placement into view. The playhead
-shows the native transport position. **Follow song** advances the view
-near its edge; touching or scrolling the timeline turns Follow off. Zoom and
-Follow stay in place when switching Arrange and Session. Zoom and horizontal
-scroll also survive placement saves and Undo in the current window. These view controls
-leave the score and unsaved Code drafts unchanged.
+Both the scene matrix and placement lanes have a view strip. Use **Timeline
+zoom** for 1×–8× detail and **Fit song** for an overview. Hold Ctrl or Cmd
+and turn the wheel over the timeline to zoom around the pointer. The playhead
+shows the transport position. **Follow song** advances the view near its edge;
+manual scrolling pauses Follow while leaving it checked. Playback restarting or
+toggling Follow resumes it. Scenes snap to whole bars. Placements also offer
+**Snap step**, **Copy drag**, and **Show selected**. Each form remembers its
+view in the current window. These controls leave the score and unsaved Code
+drafts unchanged.
 
 The placement controls change the track, pattern or clip, exact **Start**,
 and **Length**. Start accepts `@bar.beat.step` or exact ticks. Length accepts

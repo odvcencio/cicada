@@ -28,7 +28,7 @@ func playbackVisible() bool {
 	if document.Get("hidden").Bool() {
 		return false
 	}
-	nodes := document.Call("querySelectorAll", ".placement-scroll, [data-vocal-scroll]")
+	nodes := document.Call("querySelectorAll", ".placement-scroll, [data-scene-navigation] .timeline, [data-vocal-scroll]")
 	for i := 0; i < nodes.Length(); i++ {
 		if nodes.Index(i).Call("getClientRects").Length() > 0 {
 			return true

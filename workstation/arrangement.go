@@ -46,8 +46,11 @@ func (s *studioApp) arrangementView(ctx *server.Context, v workspace, csrf, sele
 	}
 	var columns []string
 	columns = append(columns, "var(--timeline-track-width,130px)")
+	tickStart := int64(0)
 	for _, entry := range p.Song {
-		columns = append(columns, fmt.Sprintf("minmax(110px,%dfr)", entry.Bars))
+		length := p.MeterMap().BarsTicks(tickStart, int64(entry.Bars))
+		columns = append(columns, fmt.Sprintf("minmax(0,%.9ffr)", float64(length)))
+		tickStart += length
 	}
 	style := "grid-template-columns:" + strings.Join(columns, " ") + ";--timeline-scenes:" + strconv.Itoa(len(p.Song))
 	var ruler []gosx.Node
@@ -77,7 +80,7 @@ func (s *studioApp) arrangementView(ctx *server.Context, v workspace, csrf, sele
 		}
 		editLabel := "Edit " + label
 		editLink := gosx.El("a", gosx.Attrs(gosx.Attr("href", selectionPath+"?"+selection.Encode()+"#song-block-"+i), gosx.Attr("class", "timeline-edit"), gosx.Attr("data-song-index", i), gosx.Attr("aria-label", editLabel)), gosx.Text("Edit"))
-		ruler = append(ruler, gosx.El("div", gosx.Attrs(gosx.Attr("class", "timeline-heading"), gosx.Attr("title", fmt.Sprintf("Bars %d–%d", bar, bar+int(entry.Bars)-1))),
+		ruler = append(ruler, gosx.El("div", gosx.Attrs(gosx.Attr("class", "timeline-heading"), gosx.Attr("data-scene-start", strconv.FormatInt(p.MeterMap().BarStart(int64(bar-1)), 10)), gosx.Attr("data-scene-length", strconv.FormatInt(p.MeterMap().BarsTicks(p.MeterMap().BarStart(int64(bar-1)), int64(entry.Bars)), 10)), gosx.Attr("title", fmt.Sprintf("Bars %d–%d", bar, bar+int(entry.Bars)-1))),
 			gosx.El("div", gosx.Attrs(gosx.Attr("class", "timeline-section")), gosx.El("small", gosx.Text(fmt.Sprintf("%02d", index+1))), play, editLink),
 			barRuler(bar, int(entry.Bars))))
 		controls := []gosx.Node{s.form(v, csrf, "session", "song", hidden("action", "scene"), hidden("index", i), block, field("Scene", selectInput("scene", entry.Scene, sceneNames)), submit("", "", "Replace scene")), s.form(v, csrf, "session", "song", hidden("action", "bars"), hidden("index", i), block, field("Bars", wholeInput("bars", int(entry.Bars), 1, 999)), submit("", "", "Set length"))}
@@ -175,12 +178,13 @@ func (s *studioApp) arrangementView(ctx *server.Context, v workspace, csrf, sele
 		tools := gosx.El("section", gosx.Attrs(gosx.Attr("class", "arrange-tools"), gosx.Attr("aria-label", "Arrangement tools"), gosx.BoolAttr("data-dismiss-scope")),
 			s.listeningForm(v, csrf, selected, submit("action", "fullSong", "Play full song")),
 			s.listeningForm(v, csrf, selected, submit("action", "stop", "Stop listening")),
+			arrangementTools(false, 0, 0),
 			panel("Loop an exact range", exact, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("A section runs from its marker to the next marker, or the song end. Loop end is exclusive. Playback controls keep your arrangement unchanged."))),
 			gosx.El("div", gosx.Attrs(gosx.Attr("class", "arrange-tools-spacer"))),
 			panel("Add section", appendBlock),
 			panel("Project", settings, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Changing the key retunes scale-degree notes. Explicit letter pitches retain their pitch."))))
-		return ui.Panel(ui.PanelProps{ID: "arrangement", Title: "Arrangement"}, tools,
-			gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll timeline"), gosx.Attr("aria-label", "Song timeline")), gosx.Fragment(rows...)),
+		return ui.Panel(ui.PanelProps{ID: "arrangement", Title: "Arrangement"}, gosx.El("div", gosx.Attrs(gosx.BoolAttr("data-scene-navigation"), gosx.Attr("data-placement-bars", strconv.Itoa(bar-1))), tools,
+			gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll timeline"), gosx.Attr("aria-label", "Song timeline"), gosx.Attr("data-scene-ticks", strconv.FormatInt(tickStart, 10))), gosx.El("div", gosx.Attrs(gosx.Attr("class", "scene-timeline"), gosx.Attr("style", fmt.Sprintf("--placement-bars:%d", bar-1))), gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-playhead"), gosx.BoolAttr("data-placement-playhead"), gosx.BoolAttr("hidden"), gosx.Attr("aria-hidden", "true"))), gosx.Fragment(rows...)))),
 			gosx.El("p", gosx.Attrs(gosx.Attr("class", "arrange-status")), gosx.Text(length+" · Click a clip to edit it below. ↳ carries the previous pattern. After a song edit, choose Edit again to continue.")),
 			gosx.El("p", gosx.Attrs(gosx.BoolAttr("data-scene-open-status"), gosx.Attr("role", "status"), gosx.Attr("aria-live", "polite"), gosx.Attr("class", "scene-open-status"))), selectionNotice,
 			gosx.El("div", gosx.Attrs(gosx.Attr("class", "arrangement-blocks"), gosx.Attr("role", "group"), gosx.Attr("aria-label", "Section inspector")), gosx.Fragment(blocks...)))

@@ -122,3 +122,15 @@
 }
 .shell #arrangement :is(.timeline-row > .timeline-track,.placement-row > .placement-track) { padding-block:3px; }
 .shell #arrangement :is(.timeline-track,.placement-track) small { line-height:1.1; }
+
+/* Shared arrangement view controls and scene geometry. */
+.shell #arrangement :is(.arrange-view-tools,.placement-navigation) { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:0; }
+.shell #arrangement :is(.arrange-view-tools,.placement-navigation) .field { display:flex; flex-direction:row; align-items:center; gap:4px; width:auto; margin:0; }
+.shell #arrangement :is(.arrange-view-tools,.placement-navigation) :is(select,button,.placement-follow) { box-sizing:border-box; min-height:26px; height:28px; padding-block:2px; }
+.shell #arrangement :is(.arrange-view-tools,.placement-navigation) [data-placement-playback-status] { flex-basis:auto; }
+.shell #arrangement .scene-timeline { position:relative; width:calc(var(--timeline-track-width,130px) + var(--placement-bars) * var(--placement-bar-width,48px)); }
+.shell #arrangement .scene-timeline .timeline-row { min-width:0; }
+.shell #arrangement .scene-timeline .timeline-row:nth-child(2) { position:sticky; top:0; z-index:3; min-height:0; background:var(--raised); }
+.shell #arrangement .scene-timeline .timeline-row:nth-child(2) > .timeline-track { display:flex; align-items:end; padding:0 8px 6px; color:var(--muted); font:500 10px var(--mono); letter-spacing:.1em; text-transform:uppercase; }
+.shell #arrangement .scene-timeline .timeline-heading { min-width:0; overflow:hidden; }
+.shell #arrangement .scene-timeline .timeline-row:nth-child(2) > .timeline-track::before { content:none; }

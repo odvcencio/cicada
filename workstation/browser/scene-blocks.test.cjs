@@ -35,7 +35,7 @@ test('scene headers open guarded block controls and Undo restores the song', {ti
   const browser = await chromium.launch({headless:true, executablePath:process.env.CICADA_CHROME_PATH, args:['--no-sandbox','--mute-audio']});
   t.after(() => browser.close());
   const page = await browser.newPage({viewport:{width:1440,height:1000}});
-  const errors = [], writes = [], notes = [];
+  const errors = [], writes = [], notes = [], nonGet = [];
   await page.addInitScript(() => {
     const access = new EventTarget(), port = new EventTarget();
     Object.assign(port, {id:'test-keys', name:'Synthetic Keyboard', state:'connected'});
@@ -46,6 +46,7 @@ test('scene headers open guarded block controls and Undo restores the song', {ti
   page.on('pageerror', error => errors.push(error.message));
   page.on('console', msg => { if(msg.text().includes('scene reveal')) console.log(msg.text()); });
   page.on('request', request => {
+    if (request.method() !== 'GET') nonGet.push(request.url());
     const endpoint = new URL(request.url()).pathname;
     if (request.method()==='POST' && endpoint==='/__actions/song') writes.push(request);
     if (request.method()==='POST' && endpoint==='/__actions/live') {
@@ -69,6 +70,27 @@ test('scene headers open guarded block controls and Undo restores the song', {ti
   await page.locator('#transport-form button[value=play]').click();
   await page.waitForFunction(() => !document.querySelector('[data-live-control=record]').disabled);
   await page.locator('#view-tab-arrange').click();
+  const scroller=page.locator('[data-scene-navigation] .timeline'), zoom=page.getByLabel('Timeline zoom',{exact:true}), follow=page.getByLabel('Follow song',{exact:true});
+  await page.locator('[data-scene-navigation][data-placement-navigation-ready]').waitFor();
+  await until(async()=> (await page.locator('[data-scene-navigation] [data-placement-playback-status]').textContent()).startsWith('Playing'), 'scene playback did not reach the view');
+  await zoom.selectOption('192'); await follow.check();
+  const box=await scroller.boundingBox(), rail=await scroller.locator('.timeline-track').first().evaluate(el=>el.getBoundingClientRect().width), pointerX=box.x+rail+100;
+  const tickAtPointer=()=>scroller.evaluate((el,x)=>{const world=el.querySelector('.scene-timeline'), rail=world.querySelector('.timeline-track').getBoundingClientRect().width; return (x-el.getBoundingClientRect().left-rail+el.scrollLeft)/(world.getBoundingClientRect().width-rail);},pointerX);
+  const viewRequests=nonGet.length, viewRevision=(await state()).revision;
+  await page.mouse.move(pointerX,box.y+50); const anchor=await tickAtPointer();
+  await page.keyboard.down('Control'); await page.mouse.wheel(0,-120); await page.keyboard.up('Control');
+  await until(async()=>await zoom.inputValue()==='384','scene wheel zoom did not apply');
+  const width=await scroller.locator('.scene-timeline').evaluate(el=>el.getBoundingClientRect().width);
+  assert.ok(Math.abs((await tickAtPointer())-anchor)*(width-rail)<=1);
+  await page.mouse.wheel(150,0);
+  await until(async()=>await follow.getAttribute('data-follow-paused')!==null,'scene scroll did not pause Follow');
+  assert.equal(await follow.isChecked(),true); assert.equal(nonGet.length,viewRequests); assert.equal((await state()).revision,viewRevision);
+  await page.locator('#transport-form button[value=pause]').click();
+  await until(async()=>!(await (await page.request.get(new URL('/api/transport',base).href)).json()).playing,'transport did not pause');
+  await page.waitForTimeout(400); // Let the shared playback publisher observe the stop.
+  await page.locator('#transport-form button[value=play]').click();
+  await until(async()=>await follow.getAttribute('data-follow-paused')===null,'scene Follow did not resume');
+  await page.getByRole('button',{name:'Fit song',exact:true}).click();
   await page.evaluate(() => { window.__sceneLive = document.querySelector('#cicada-live'); window.__sceneDocument = document; __sendSceneMIDI(0x90,60,100); });
   await until(() => notes.some(note => note.on === 'true' && note.note === '60'), 'MIDI note-on was not delivered');
   const edit = page.getByRole('link', {name:'Edit alternate_long_scene_name · bars 5–5', exact:true});

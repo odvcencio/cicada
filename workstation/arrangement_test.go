@@ -77,6 +77,7 @@ func TestNamedPlacementSessionShowsActualArrangement(t *testing.T) {
 	app := httptest.NewServer(handler)
 	t.Cleanup(app.Close)
 	page := getPage(t, app.Client(), app.URL+"/?panel=session")
+	assertArrangementViewTools(t, page, true)
 	for _, want := range []string{`name="source_revision" value="all-project-sources"`, `name="gosx-page-cache" content="no-store"`, `aria-label="Named placement timeline"`, `aria-label="Placement editor"`, "24 bars", "1:12 at 80.0 BPM", "9 placements", `data-placement-id="far-in"`, "@5.2.1", "@9.2.1", "shore @1.1.1", "open-water @9.1.1", `data-placement-block="far-in"`, `data-placement-inspector="far-in"`, `aria-label="Resize placement far-in"`, "Update placement", "Duplicate placement", "Add placement", "Edit markers", "Project settings"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("placement session missing %q", want)
@@ -138,5 +139,48 @@ func TestPlacementTimelineShowsOverlappingAudioOnSeparateRows(t *testing.T) {
 		if !strings.Contains(page, want) {
 			t.Fatalf("overlapping audio timeline missing %s: %s", want, page)
 		}
+	}
+}
+
+func assertArrangementViewTools(t *testing.T, page string, placement bool) {
+	t.Helper()
+	class := "arrange-view-tools"
+	if placement {
+		class = "placement-navigation"
+	}
+	start := strings.Index(page, `class="`+class+`"`)
+	if start < 0 {
+		t.Fatal("missing view strip", class)
+	}
+	strip := page[start:]
+	end := strings.Index(strip, "</div>")
+	if end < 0 {
+		t.Fatal("unterminated view strip")
+	}
+	strip = strip[:end]
+	for _, want := range []string{"Timeline zoom", "Fit song", "Follow song"} {
+		if !strings.Contains(strip, want) {
+			t.Errorf("strip missing %s", want)
+		}
+	}
+	// The engine writes the paused state into this label; without the hook it has nowhere to write.
+	if !strings.Contains(strip, `<span data-follow-label>Follow song</span>`) {
+		t.Errorf("the Follow label lacks its hook: %s", strip)
+	}
+	for _, tag := range regexp.MustCompile(`<(?:input|select|button)\b[^>]*>`).FindAllString(strip, -1) {
+		if !strings.Contains(tag, "data-studio-view-control") {
+			t.Errorf("unmarked control: %s", tag)
+		}
+	}
+	if strings.Contains(strip, "Draw") {
+		t.Error("strip offers Draw")
+	}
+	for _, want := range []string{"Snap step", "Copy drag", "Show selected"} {
+		if strings.Contains(strip, want) != placement {
+			t.Errorf("unexpected %s in %s", want, class)
+		}
+	}
+	if !placement && !strings.Contains(strip, "Snap: whole bars") {
+		t.Error("missing scene snap label")
 	}
 }
