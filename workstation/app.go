@@ -346,7 +346,7 @@ func (s *studioApp) workspaceContent(ctx *server.Context) (gosx.Node, workspace)
 }
 
 func (s *studioApp) form(view workspace, csrf, panel, name string, children ...gosx.Node) gosx.Node {
-	if name == "pattern" || name == "take" || name == "automation" || name == "project" {
+	if name == "pattern" || name == "take" || name == "automation" || name == "project" || name == "scene-rename" || name == "scene-duplicate" || name == "scene-add" || name == "scene-delete" || name == "track-delete" || name == "song-convert" {
 		children = append([]gosx.Node{hidden("source_revision", view.SourceRevision)}, children...)
 	}
 	return ui.Form(ui.FormProps{Action: "/__actions/" + name, CSRF: csrf, Revision: view.Revision, ReturnTo: "/?panel=" + panel, Class: "action-form"}, children...)

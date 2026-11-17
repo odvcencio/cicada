@@ -126,6 +126,9 @@ test('scene headers open guarded block controls and Undo restores the song', {ti
   // the suite uses the full width again, fitted.
   await page.setViewportSize({width:1440,height:1000});
   await page.getByRole('button',{name:'Fit song',exact:true}).click();
+  // Playback was just restarted: live input is accepted again once the Record
+  // control is enabled, and a note sent before that is dropped.
+  await page.waitForFunction(() => !document.querySelector('[data-live-control=record]').disabled);
   await page.evaluate(() => { window.__sceneLive = document.querySelector('#cicada-live'); window.__sceneDocument = document; __sendSceneMIDI(0x90,60,100); });
   await until(() => notes.some(note => note.on === 'true' && note.note === '60'), 'MIDI note-on was not delivered');
   const oldURL = await edit.getAttribute('href');
@@ -201,12 +204,14 @@ test('scene headers open guarded block controls and Undo restores the song', {ti
   // The clip must not be the one already open: a click on the open clip changes nothing.
   const otherClip = await page.evaluate(() => {
     const now = new URLSearchParams(location.search);
+    const panel = document.querySelector('details.arrange-popover[open] .arrange-popover-panel').getBoundingClientRect();
     return [...document.querySelectorAll('#arrangement .timeline-clip[data-scene-pattern-open]')].findIndex(link => {
-      const next = new URL(link.href).searchParams;
-      return ['pattern', 'scene', 'track'].some(name => next.get(name) !== now.get(name));
+      const next = new URL(link.href).searchParams, box = link.getBoundingClientRect();
+      const intersects = box.left < panel.right && box.right > panel.left && box.top < panel.bottom && box.bottom > panel.top;
+      return box.width > 0 && box.height > 0 && !intersects && ['pattern', 'scene', 'track'].some(name => next.get(name) !== now.get(name));
     });
   });
-  assert.notEqual(otherClip, -1, 'the fixture needs a second clip');
+  assert.notEqual(otherClip, -1, 'the fixture needs another clip outside the open Add section panel');
   await page.locator('#arrangement .timeline-clip[data-scene-pattern-open]').nth(otherClip).click();
   try {
     await page.locator('#detail-tab-clip[aria-selected="true"]').waitFor({timeout: 8000});

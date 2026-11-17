@@ -318,7 +318,7 @@ func (s *studioApp) trackRail(ctx *server.Context, v workspace, csrf string) fun
 		if ctx != nil && ctx.Request.URL.Path == "/studio" {
 			label = "✎"
 		}
-		rename := gosx.El("details", gosx.Attrs(gosx.Attr("class", "rail-rename"), gosx.BoolAttr("data-discard-on-close")), gosx.El("summary", gosx.Attrs(gosx.Attr("aria-label", "Rename "+track), gosx.Attr("title", "Rename "+track)), gosx.Text(label)), form)
+		rename := gosx.El("details", gosx.Attrs(gosx.Attr("class", "rail-rename"), gosx.BoolAttr("data-discard-on-close")), gosx.El("summary", gosx.Attrs(gosx.Attr("aria-label", "Rename "+track), gosx.Attr("title", "Rename "+track)), gosx.Text(label)), form, s.form(v, csrf, "session", "track-delete", hidden("track", track), gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("aria-label", "Delete track "+track)), gosx.Text("Delete track"))))
 		return gosx.El("div", gosx.Attrs(gosx.Attr("class", "rail-toggles")), gosx.Fragment(toggles...), rename)
 	}
 }

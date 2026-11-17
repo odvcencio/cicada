@@ -44,6 +44,10 @@ func (s *studioApp) arrangementView(ctx *server.Context, v workspace, csrf, sele
 		scenes[scene.ID] = scene
 		sceneNames = append(sceneNames, scene.ID)
 	}
+	uses := map[string]int{}
+	for _, entry := range p.Song {
+		uses[entry.Scene]++
+	}
 	var columns []string
 	columns = append(columns, "var(--timeline-track-width,130px)")
 	tickStart := int64(0)
@@ -95,11 +99,28 @@ func (s *studioApp) arrangementView(ctx *server.Context, v workspace, csrf, sele
 		if len(p.Song) > 1 {
 			controls = append(controls, s.form(v, csrf, "session", "song", hidden("index", i), block, submit("action", "delete", "Remove block")))
 		}
+		copyName := entry.Scene + "-2"
+		for n := 2; ; n++ {
+			copyName = fmt.Sprintf("%s-%d", entry.Scene, n)
+			if _, exists := scenes[copyName]; !exists {
+				break
+			}
+		}
+		sectionWord := "sections"
+		if uses[entry.Scene] == 1 {
+			sectionWord = "section"
+		}
+		sceneControls := gosx.El("section", gosx.Attrs(gosx.Attr("aria-label", "Scene"), gosx.Attr("class", "actions scene-controls")),
+			gosx.El("span", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text(fmt.Sprintf("Scene %s · used by %d %s", entry.Scene, uses[entry.Scene], sectionWord))),
+			s.form(v, csrf, "session", "scene-rename", hidden("scene", entry.Scene), field("Scene name", textInput("name", entry.Scene)), submit("", "", "Rename")),
+			s.form(v, csrf, "session", "scene-duplicate", hidden("scene", entry.Scene), field("Copy name", textInput("name", copyName)), submit("", "", "Duplicate")),
+			gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.BoolAttr("disabled"), gosx.Attr("aria-describedby", "scene-used-"+i)), gosx.Text("Delete scene")),
+			gosx.El("span", gosx.Attrs(gosx.Attr("id", "scene-used-"+i), gosx.Attr("class", "muted")), gosx.Text("This scene is used by the song.")))
 		attrs := gosx.Attrs(gosx.Attr("class", "arrangement-block"), gosx.Attr("data-song-index", i), gosx.Attr("data-song-key", songBlockKey(p.Song, index)), gosx.Attr("data-song-generation", generation), gosx.Attr("id", "song-block-"+i))
 		if index == selectedBlock {
 			attrs = append(attrs, gosx.BoolAttr("open"), gosx.BoolAttr("data-song-selected"))
 		}
-		blockNode := gosx.El("details", attrs, gosx.El("summary", gosx.Text(label)), gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), gosx.Fragment(controls...)))
+		blockNode := gosx.El("details", attrs, gosx.El("summary", gosx.Text(label)), gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), gosx.Fragment(controls...)), sceneControls)
 		if index == selectedBlock {
 			blocks = append([]gosx.Node{blockNode}, blocks...)
 		} else {
@@ -168,12 +189,24 @@ func (s *studioApp) arrangementView(ctx *server.Context, v workspace, csrf, sele
 		selectionNotice = gosx.El("p", gosx.Attrs(gosx.Attr("role", "status")), gosx.Text("The song changed. Choose Edit on a block to continue editing it."))
 	}
 	appendBlock := s.form(v, csrf, "session", "song", hidden("action", "append"), field("Scene", selectInput("scene", "", sceneNames)), field("Bars", wholeInput("bars", 4, 1, 999)), submit("", "", "Add to arrangement"))
+	var unused []gosx.Node
+	for _, name := range sceneNames {
+		if uses[name] == 0 {
+			unused = append(unused, s.form(v, csrf, "session", "scene-delete", hidden("scene", name), gosx.El("span", gosx.Text(name)), gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("aria-label", "Delete scene "+name)), gosx.Text("Delete"))))
+		}
+	}
+	newScene := s.form(v, csrf, "session", "scene-add", field("New scene", textInput("name", "")), submit("", "", "Create"))
+	convert := s.form(v, csrf, "session", "song-convert", submit("", "", "Convert"))
 	settings := s.form(v, csrf, "session", "project", field("Title", textInput("title", p.Title)), field("Tempo (BPM)", numberInput("tempo", strconv.FormatFloat(float64(p.TempoMilli)/1000, 'f', -1, 64), "20", "300")), field("Key", selectInput("root", phraseKeys[p.Key.Root], phraseKeys)), field("Scale", selectInput("scale", p.Key.Scale, phraseScales)), submit("", "", "Save project settings"))
 	if shell {
 		panel := func(label string, content ...gosx.Node) gosx.Node {
 			return gosx.El("details", gosx.Attrs(gosx.Attr("class", "arrange-popover"), gosx.Attr("name", "arrange-tools"), gosx.BoolAttr("data-discard-on-close"), gosx.BoolAttr("data-dismiss-outside")), gosx.El("summary", gosx.Text(label)), gosx.El("div", gosx.Attrs(gosx.Attr("class", "arrange-popover-panel")), gosx.Fragment(content...)))
 		}
 		end := p.MeterMap().BarStart(int64(bar - 1))
+		addSection := []gosx.Node{appendBlock, newScene}
+		if len(unused) > 0 {
+			addSection = append(addSection, gosx.El("p", gosx.Text("Unused scenes")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "arrange-unused-scenes")), gosx.Fragment(unused...)))
+		}
 		exact := s.listeningForm(v, csrf, selected, hidden("action", "loop"), field("Loop start", textInput("start", placementLiteral(p.MeterMap(), 0, true))), field("Loop end", textInput("end", placementLiteral(p.MeterMap(), min(end, p.MeterMap().BarStart(4)), true))), submit("", "", "Loop range"))
 		tools := gosx.El("section", gosx.Attrs(gosx.Attr("class", "arrange-tools"), gosx.Attr("aria-label", "Arrangement tools"), gosx.BoolAttr("data-dismiss-scope")),
 			s.listeningForm(v, csrf, selected, submit("action", "fullSong", "Play full song")),
@@ -181,8 +214,8 @@ func (s *studioApp) arrangementView(ctx *server.Context, v workspace, csrf, sele
 			arrangementTools(false, 0, 0, ""),
 			panel("Loop an exact range", exact, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("A section runs from its marker to the next marker, or the song end. Loop end is exclusive. Playback controls keep your arrangement unchanged."))),
 			gosx.El("div", gosx.Attrs(gosx.Attr("class", "arrange-tools-spacer"))),
-			panel("Add section", appendBlock),
-			panel("Project", settings, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Changing the key retunes scale-degree notes. Explicit letter pitches retain their pitch."))))
+			panel("Add section", addSection...),
+			panel("Project", settings, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Changing the key retunes scale-degree notes. Explicit letter pitches retain their pitch.")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "arrange-convert")), gosx.El("h3", gosx.Text("Convert to placements")), gosx.El("p", gosx.Text("Sections become placements on a timeline that can be moved and trimmed freely. Undo reverts this change.")), convert)))
 		return ui.Panel(ui.PanelProps{ID: "arrangement", Title: "Arrangement"}, gosx.El("div", gosx.Attrs(gosx.BoolAttr("data-scene-navigation"), gosx.Attr("data-placement-bars", strconv.Itoa(bar-1))), tools,
 			gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll timeline"), gosx.Attr("aria-label", "Song timeline"), gosx.Attr("data-scene-ticks", strconv.FormatInt(tickStart, 10))), gosx.El("div", gosx.Attrs(gosx.Attr("class", "scene-timeline"), gosx.Attr("style", fmt.Sprintf("--placement-bars:%d", bar-1))), gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-playhead"), gosx.BoolAttr("data-placement-playhead"), gosx.BoolAttr("hidden"), gosx.Attr("aria-hidden", "true"))), gosx.Fragment(rows...)))),
 			gosx.El("p", gosx.Attrs(gosx.Attr("class", "arrange-status")), gosx.Text(length+" · Click a clip to edit it below. ↳ carries the previous pattern. After a song edit, choose Edit again to continue.")),

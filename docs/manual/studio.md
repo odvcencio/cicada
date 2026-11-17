@@ -212,6 +212,10 @@ playback. **Play full song** restores all parts and starts at the beginning;
 
 For a scene song, the Arrange tool strip provides playback, exact looping, **Zoom**, **Fit song**, **Follow song**, **Add section**, and **Project**. Choose a section’s **Edit** link to open its controls below the lanes. For every project with scenes, the scene launch grid is in Session.
 
+The section inspector shows how many sections use its scene. Rename the scene or duplicate it there; a duplicate is not added to the song. **Add section** can create an empty scene, place a scene in the song, and delete unused scenes. A scene used by a section cannot be deleted. The track rail action panel can delete a track; Undo restores it, and Studio explains if the track cannot be deleted.
+
+**Project** can convert a scene song to placements that can be moved and trimmed freely; Undo restores the song. Studio explains if conversion cannot preserve the sound.
+
 **Project** opens project settings for the title, tempo, key, and scale. Tempo keeps up
 to three decimal places. Changing the key retunes scale-degree notes; explicit
 letter pitches keep their pitch. Every edit validates and checks the current

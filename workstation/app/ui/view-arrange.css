@@ -60,6 +60,10 @@
 .shell #arrangement .arrangement-block { padding:4px 10px; border-radius:4px; background:var(--panel); }
 .shell #arrangement .arrangement-block[open] { flex-basis:100%; }
 .shell #arrangement .arrangement-block summary { font:12px var(--mono); }
+.shell #arrangement .scene-controls { gap:6px 10px; }
+.shell #arrangement .scene-controls .field { display:flex; align-items:center; gap:4px; margin:0; }
+.shell #arrangement .scene-controls .field span { white-space:nowrap; }
+.shell #arrangement .scene-controls .field input { width:14ch; }
 .shell #arrangement > .actions, .shell #arrangement > .pattern-management { margin:6px 12px; }
 .shell #arrangement > .actions .action-form { display:flex; flex-wrap:wrap; align-items:end; gap:8px; }
 .shell #arrangement > .actions .field { margin:0; }
@@ -98,6 +102,10 @@
 .shell #arrangement .rail-rename-hint { margin:0; color:var(--muted); font-size:11px; line-height:1.3; }
 .shell #arrangement .rail-rename input { box-sizing:border-box; width:100%; min-width:0; }
 .shell #arrangement .rail-rename button { box-sizing:border-box; width:100%; min-width:0; padding:4px; }
+.shell #arrangement .rail-rename form[action$="/track-delete"] { margin-top:8px; }
+/* Match the quiet stop actions in the session view. */
+.shell #arrangement .rail-rename form[action$="/track-delete"] button { color:var(--muted); background:none; }
+.shell #arrangement .rail-rename form[action$="/track-delete"] button:hover { background:var(--hover); }
 
 /* Scene-song controls float above the timeline and wrap on narrow screens. */
 .shell #arrangement .arrange-tools { position:relative; z-index:6; display:flex; flex-wrap:wrap; align-items:center; gap:6px; min-width:0; padding:5px 10px; background:var(--panel); border-bottom:1px solid var(--border); }
@@ -109,6 +117,8 @@
 .shell #arrangement .arrange-popover-panel .action-form { display:flex; flex-wrap:wrap; align-items:end; gap:8px; }
 .shell #arrangement .arrange-popover-panel .field { margin:0; }
 .shell #arrangement .arrange-popover-panel p { margin:8px 0 0; }
+.shell #arrangement .arrange-convert { margin-top:12px; padding-top:12px; border-top:1px solid var(--border); }
+.shell #arrangement .arrange-unused-scenes { max-height:120px; overflow:auto; }
 .shell #arrangement .arrange-status { margin:8px 12px; color:var(--muted); font-size:12px; }
 .shell #arrangement .arrangement-block:not([open]) { display:none; }
 .shell #arrangement .arrangement-block[open] { width:100%; }
@@ -163,3 +173,7 @@
 /* The server cannot know the window width; phones briefly see a fitted view. */
 .shell #arrangement .scene-timeline:not([data-placement-zoom]) { width:100%; }
 @media (max-width:799px) { .shell #arrangement .scene-snap-hint { display:none; } }
+
+/* Keep structure forms within floating panels at narrow widths. */
+.shell #arrangement .arrange-popover-panel :is(.action-form, .field, input, select) { min-width:0; max-width:100%; box-sizing:border-box; }
+.shell #arrangement .arrange-popover-panel .action-form { margin-top:8px; }
