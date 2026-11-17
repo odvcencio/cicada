@@ -110,6 +110,7 @@ type transportSnapshot struct {
 	MacroTargets        map[string]float32           `json:"macroTargets,omitempty"`
 	MIDIPickupValues    map[string]*float64          `json:"midiPickupValues,omitempty"`
 	MIDIClockEpoch      uint64                       `json:"midiClockEpoch"`
+	FrameTick           *int64                       `json:"frameTick,omitempty"`
 	FrameAgeNanos       *int64                       `json:"frameAgeNanos,omitempty"`
 	NextTempo           *musictime.ObservedTempoStep `json:"nextTempo,omitempty"`
 	Frames              *snapshotFrames              `json:"frames,omitempty"`
@@ -136,8 +137,8 @@ type transportSnapshot struct {
 	Streaming           *studioStreamHealth          `json:"streaming,omitempty"`
 
 	// Tick is the song tick of Bar and Step on the playing score's meter map,
-	// the map that encoded them. It stays on the server.
-	Tick int64 `json:"-"`
+	// the map that encoded them. It is step-quantised display data.
+	Tick int64 `json:"tick"`
 }
 
 type studioStreamHealth struct {
@@ -316,6 +317,7 @@ func (t *studioTransport) snapshot() transportSnapshot {
 			}
 			state.FrameAgeNanos = &age
 			tick := transportFrameTick(t.meterMap(), int64(frame.Bar), int64(frame.Beat), int64(frame.Tick))
+			state.FrameTick = &tick
 			if next.Valid(tick, int64(frame.TempoMilli)) {
 				state.NextTempo = &next
 			}

@@ -43,17 +43,36 @@ test('scene playhead follows 3/4 transport bars', {timeout:60000}, async t => {
   await page.getByLabel('Timeline zoom',{exact:true}).selectOption('192');
   await page.locator('[name=placementFollow]').check();
   await page.locator('#transport-form button[value=play]').click();
-  await until(async()=>{
+  // The transport and the page are read at different moments, so the song
+  // position is sampled on both sides of the page read and the playhead must
+  // lie between the two. A pair that wrapped, or that took too long to tell a
+  // 3/4 playhead from a 4/4 one, is taken again. The song is five 3/4 bars of
+  // 2880 ticks; from bar 3 on, a playhead that assumed 4/4 is off by a tenth
+  // of the song or more.
+  const position = async () => {
     const t = await (await page.request.get(new URL('/api/transport',base).href)).json();
-    if (!t.frames?.transport) return false;
+    if (!t.frames?.transport) return null;
     const frame = Buffer.from(t.frames.transport,'base64');
-    if (frame.length!==64) return false;
+    if (frame.length!==64) return null;
     const bar=frame.readInt32LE(52), beat=frame.readInt32LE(56), tick=frame.readInt32LE(60);
-    if (bar<2 || beat!==1 || tick>240) return false;
-    const fraction=await scroller.evaluate(el=>{const w=el.querySelector('.scene-timeline'), rail=w.querySelector('.timeline-track').getBoundingClientRect().width, line=w.querySelector('[data-placement-playhead]'); return (parseFloat(line.style.left)-rail)/(w.getBoundingClientRect().width-rail);});
-    assert.ok(Math.abs(fraction-(bar-1)/5)<.04, `3/4 playhead fraction ${fraction} at bar ${bar}`);
-    return true;
-  },'transport did not reach a 3/4 bar line');
+    return {bar, fraction:((bar-1)+(beat-1)/3+tick/2880)/5};
+  };
+  let last = 'no sample';
+  for (const targetBar of [3, 5]) for (const end = Date.now()+30000;;) {
+    assert.ok(Date.now() < end, `no pair of transport samples bracketed the playhead from bar ${targetBar} on (${last})`);
+    const before = await position();
+    if (before && before.bar >= targetBar && (targetBar !== 5 || before.fraction < .94)) {
+      const fraction=await scroller.evaluate(el=>{const w=el.querySelector('.scene-timeline'), rail=w.querySelector('.timeline-track').getBoundingClientRect().width, line=w.querySelector('[data-placement-playhead]'); return (parseFloat(line.style.left)-rail)/(w.getBoundingClientRect().width-rail);});
+      const after = await position();
+      last = `playhead ${fraction}, transport ${before.fraction}..${after && after.fraction}`;
+      if (after && after.fraction >= before.fraction && after.fraction-before.fraction <= .06) {
+        assert.ok(fraction > before.fraction-.03 && fraction < after.fraction+.03, `3/4 ${last}`);
+        if (targetBar === 5) assert.ok(fraction < .98, `playhead reached the end early: ${last}`);
+        break;
+      }
+    }
+    await new Promise(resolve => setTimeout(resolve, 40));
+  }
   await until(async()=>scroller.evaluate(el=>{const r=el.getBoundingClientRect(), h=el.querySelector('[data-placement-playhead]').getBoundingClientRect(); return el.scrollLeft>0 && h.left>=r.left && h.left<=r.right;}),'Follow did not keep the playhead visible at 4x');
   await page.locator('#transport-form button[value=pause]').click();
   await until(async()=>!(await (await page.request.get(new URL('/api/transport',base).href)).json()).playing,'transport did not pause');

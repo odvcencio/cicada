@@ -83,7 +83,7 @@ func placementTimeline(p *project.Project, placements []project.Placement, selec
 			gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-lane"), gosx.Attr("data-placement-ticks", strconv.FormatInt(ticks, 10)), gosx.Attr("style", fmt.Sprintf("height:%dpx", max(1, len(laneEnds))*68+8)), gosx.Attr("role", "group"), gosx.Attr("aria-label", track.ID+" placements")), gosx.Fragment(blocks...))))
 	}
 
-	navigation := gosx.Attrs(gosx.BoolAttr("data-placement-navigation"), gosx.Attr("data-placement-bars", strconv.FormatInt(bars, 10)))
+	navigation := gosx.Attrs(gosx.BoolAttr("data-placement-navigation"), gosx.Attr("data-placement-bars", strconv.FormatInt(bars, 10)), gosx.Attr("data-placement-ticks", strconv.FormatInt(ticks, 10)))
 	meter := ""
 	if p.Meter != nil {
 		// Shift+Arrow moves one 4/4 bar in the browser; explain why it is

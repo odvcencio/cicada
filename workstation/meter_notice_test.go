@@ -88,3 +88,18 @@ func TestMeterDisablesVocalLanesAndLiveRecording(t *testing.T) {
 		t.Fatalf("live recording: %s", live)
 	}
 }
+
+func TestPlacementTimelineRealTickLength(t *testing.T) {
+	score, ds := notation.Parse([]byte("cicada 2\nmeter 3/4\ntrack bass acid {}\npattern riff { c3 . c4 . }\narrange {\n  place verse bass riff { at = @1.1.1 length = 5bars }\n}\n"))
+	if score == nil {
+		t.Fatal(ds)
+	}
+	p, ds := project.FromScore(score)
+	if p == nil {
+		t.Fatal(ds)
+	}
+	html := gosx.RenderHTML(placementTimeline(p, p.Arrange.Placements, "", 5*2880, nil))
+	if !strings.Contains(html, `data-placement-ticks="14400"`) {
+		t.Fatalf("missing real span: %s", html)
+	}
+}

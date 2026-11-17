@@ -15,6 +15,8 @@ import (
 // dependencies out of the browser module.
 type PlaybackState struct {
 	MIDIClockEpoch uint64                      `json:"midiClockEpoch"`
+	FrameTick      *int64                      `json:"frameTick,omitempty"`
+	Tick           *int64                      `json:"tick,omitempty"`
 	FrameAgeNanos  *int64                      `json:"frameAgeNanos,omitempty"`
 	RoundTrip      time.Duration               `json:"-"` // Measured by the client; not a host clock.
 	NextTempo      musictime.ObservedTempoStep `json:"nextTempo,omitempty"`
@@ -50,10 +52,13 @@ type Playhead struct {
 	NextTempo   musictime.ObservedTempoStep
 }
 
-// Playhead decodes the snapshot's bar, step and transport frame on the meter
-// map that encoded them: the playing song's.
+// Playhead uses song ticks supplied by the service. The map is only used to
+// decode older snapshots that lack those display values.
 func (s PlaybackState) Playhead(meterMap seq.MeterMap) Playhead {
 	p := Playhead{Tick: meterMap.BarStart(max(0, s.Bar-1)) + max(0, s.Step-1)*seq.TicksPerStep, Playing: s.Playing, Range: s.Range, NextTempo: s.NextTempo}
+	if validDisplayTick(s.Tick) {
+		p.Tick = *s.Tick
+	}
 	if s.FrameAgeNanos != nil {
 		p.Age = time.Duration(*s.FrameAgeNanos)
 		if p.Age >= 0 {
@@ -70,11 +75,27 @@ func (s PlaybackState) Playhead(meterMap seq.MeterMap) Playhead {
 	beat := int64(int32(binary.LittleEndian.Uint32(b[56:])))
 	tick := int64(int32(binary.LittleEndian.Uint32(b[60:])))
 	tempo := int64(binary.LittleEndian.Uint32(b[22:]))
-	if bar < 1 || beat < 1 || beat > meterMap.BeatsInBar(bar-1) || tick < 0 || tick >= meterMap.BeatTicks(bar-1) || tempo < 20000 || tempo > 300000 {
+	if bar < 1 || beat < 1 || tick < 0 || tempo < 20000 || tempo > 300000 {
 		return p
 	}
-	p.Tick, p.Tempo = meterMap.BarStart(bar-1)+(beat-1)*meterMap.BeatTicks(bar-1)+tick, tempo
+	if s.FrameTick != nil {
+		if !validDisplayTick(s.FrameTick) {
+			return p
+		}
+		p.Tick = *s.FrameTick
+	} else {
+		if beat > meterMap.BeatsInBar(bar-1) || tick >= meterMap.BeatTicks(bar-1) {
+			return p
+		}
+		p.Tick = meterMap.BarStart(bar-1) + (beat-1)*meterMap.BeatTicks(bar-1) + tick
+	}
+	p.Tempo = tempo
 	return p
+}
+
+// Display ticks must remain exactly representable by browser numbers.
+func validDisplayTick(tick *int64) bool {
+	return tick != nil && *tick >= 0 && *tick <= 1<<53-1
 }
 
 // Extrapolate only a short interval, so a lost connection never runs the
