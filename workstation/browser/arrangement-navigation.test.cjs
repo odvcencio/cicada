@@ -35,6 +35,8 @@ test('arranging zooms, reveals and follows playback without editing the song', {
  try {
   await page.goto(base+'/studio?placement=far-home'); await ready();
   const before=await state(); assert.ok(before.source.includes('cicada-placement-test: disposable fixture'));
+  // The corner above the track rail must lay its label out in the rail's text column; in the 6 px colour column it wraps one letter to a line (issue 400).
+  assert.ok(await page.locator('.placement-playhead + .placement-row > .placement-track small').evaluate(el=>el.getBoundingClientRect().width>20 && el.getBoundingClientRect().height<24),'the rail corner label is squeezed');
   // The track label column's width comes from the stylesheet; zoom scales only the bars.
   const label=await page.locator('.placement-timeline').evaluate(el=>parseFloat(getComputedStyle(el).getPropertyValue('--placement-label-width'))||112);
   const initial=await width();

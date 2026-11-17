@@ -47,7 +47,11 @@ func placementTimeline(p *project.Project, placements []project.Placement, selec
 	if rail == nil {
 		rail = func(string) gosx.Node { return gosx.Fragment() }
 	}
-	rows := []gosx.Node{gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-row")), gosx.El("span", gosx.Attrs(gosx.Attr("class", "placement-track")), gosx.Text("BARS")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-ruler")), gosx.Fragment(ruler...)))}
+	// The corner above the track rail carries the same "Tracks" label as the
+	// scene arrangement. It sits in an element, not a bare text node: the rail
+	// cell is a grid whose first column is the 6 px colour bar, and bare text
+	// would be laid out in that column, one letter to a line.
+	rows := []gosx.Node{gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-row")), gosx.El("span", gosx.Attrs(gosx.Attr("class", "placement-track")), gosx.El("small", gosx.Text("Tracks"))), gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-ruler"), gosx.Attr("role", "group"), gosx.Attr("aria-label", "Bars")), gosx.Fragment(ruler...)))}
 	for trackIndex, track := range p.Tracks {
 		placementHint := "Select this pattern placement to edit it. Drag to move; Option/Alt-drag copies. Shift-drag moves freely. Arrow keys use Snap step; Shift changes one bar. Escape cancels."
 		placementAction := "pattern"
