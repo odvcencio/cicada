@@ -47,6 +47,7 @@
 17	pr	GoSX workstation and Tymbal boundary
 10	pr	Studio build for the browser shards
 10	pr	Studio browser suites (shard */4)
+10	pr	Studio browser suites (portable, Mac pool, shard */4)
 13	pr	macOS desktop (*)
 7	pr	macOS platform contracts (*)
 75	nightly	macOS desktop exhaustive (*)

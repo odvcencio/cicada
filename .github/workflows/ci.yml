@@ -20,6 +20,7 @@ permissions:
 
 env:
   WASMOPT: wasm-opt
+  CHROME_VERSION: 152.0.7977.64
 
 # Skipped jobs and the required check (read before editing the jobs below)
 #
@@ -1181,6 +1182,81 @@ jobs:
           retention-days: 5
           compression-level: 0
 
+  # Optional early signal for all portable browser segments; hosted shards stay
+  # the gate. Enable with CI_TAILNET_MAC=on. The runner needs macOS arm64,
+  # Python 3, git, make, tar, curl, unzip and network access; setup actions supply Go and
+  # Node. The hosted build supplies the portable workstation assets and kernel.
+  studio-browser-mac:
+    name: Studio browser suites (portable, Mac pool, shard ${{ matrix.shard }}/4)
+    needs: [changes, studio-build]
+    # Repository approval settings for outside contributors protect this runner;
+    # this expression cannot protect against a fork editing the workflow.
+    if: ${{ vars.CI_TAILNET_MAC == 'on' && needs.changes.outputs.studio_browser == 'true' && (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) }}
+    runs-on: [tailnet-mac]
+    # Early signal only: this job does not decide a merge; hosted shards remain the gate.
+    # One matrix job per hosted shard, minus the segments that cannot run on
+    # macOS (scripts/ci-studio-browser.sh, linux_only_segments): the pool runs
+    # as many at once as it has idle runners.
+    continue-on-error: true
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        id: checkout
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: '1.27.3'
+          cache: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22.23.2'
+          package-manager-cache: false
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: studio-browser-build
+          path: ${{ runner.temp }}/studio-browser-mac-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
+      - name: Build native executables and unpack portable assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -xzf "$RUNNER_TEMP/studio-browser-mac-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-${{ matrix.shard }}/studio-browser-build.tgz" build/cicada-kernel.wasm build/workstation
+          make build-core
+          (cd workstation && go build -o ../build/cicada-workstation .)
+      - name: Run portable segments
+        shell: bash
+        run: |
+          set -euo pipefail
+          scratch="$RUNNER_TEMP/studio-browser-mac-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-${{ matrix.shard }}"
+          mkdir -p "$scratch/tmp"
+          # The runner's own tool cache keeps the pinned browser between runs.
+          export TMPDIR="$scratch/tmp" RUNNER_TEMP="$scratch"
+          export CICADA_STUDIO_RESULTS="$PWD/build/studio-mac-results.tsv"
+          : > "$CICADA_STUDIO_RESULTS"
+          # shellcheck disable=SC2046 # the segment names are separate words
+          bash scripts/ci-studio-browser.sh run-portable $(bash scripts/ci-studio-browser.sh list-portable ${{ matrix.shard }})
+      - name: Save portable Studio reports
+        if: ${{ always() && steps.checkout.outcome == 'success' }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: studio-browser-mac-reports-${{ matrix.shard }}
+          if-no-files-found: warn
+          path: |
+            build/studio-*-report.txt
+            build/studio-*-server.log
+            build/studio-mac-results.tsv
+            build/*proof*/
+      - name: Remove run scratch
+        if: ${{ always() }}
+        shell: bash
+        run: rm -rf -- "$RUNNER_TEMP/studio-browser-mac-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-${{ matrix.shard }}"
+
   # The suites that the single "Studio browser continuity" step ran one after
   # another, in four parallel shards. scripts/ci-studio-browser.sh lists the
   # shards and checks that every suite is in exactly one.
@@ -1203,7 +1279,6 @@ jobs:
         shard: [1, 2, 3, 4]
     env:
       GOWORK: off
-      CHROME_VERSION: 152.0.7977.64
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         id: checkout
@@ -1931,7 +2006,6 @@ jobs:
     timeout-minutes: 40
     env:
       GOWORK: off
-      CHROME_VERSION: 152.0.7977.64
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
@@ -2054,7 +2128,6 @@ jobs:
     timeout-minutes: 55
     env:
       GOWORK: off
-      CHROME_VERSION: 152.0.7977.64
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
