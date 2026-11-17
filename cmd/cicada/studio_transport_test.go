@@ -951,3 +951,43 @@ func TestStudioTelemetryTransportFrameFollowsPauseStopAndRestart(t *testing.T) {
 		t.Fatalf("restarted frame: %+v", frame)
 	}
 }
+
+func TestTransportSnapshotFrameSongTick(t *testing.T) {
+	for _, tc := range []struct {
+		name, meter string
+		want        int64
+	}{{"3/4", "meter 3/4\n", 6820}, {"4/4", "", 8740}} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "main.cicada")
+			source := "cicada 2\n" + tc.meter + "tempo 60\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene main { bass=pulse }\nsong { main*5 }\n"
+			if err := os.WriteFile(path, []byte(source), 0600); err != nil {
+				t.Fatal(err)
+			}
+			score, err := compileLiveScore(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			stream, err := liveplay.New(score, liveSampleRate)
+			if err != nil {
+				t.Fatal(err)
+			}
+			tr := newStudioTransport(path)
+			tr.stream, tr.playing = stream, true
+			tr.telemetry.PublishTransport(liveplay.TransportFrame{Bar: 3, Beat: 2, Tick: 100, TempoMilli: 60000, Playing: true})
+			data, err := json.Marshal(tr.snapshot())
+			if err != nil {
+				t.Fatal(err)
+			}
+			var result struct {
+				FrameTick *int64 `json:"frameTick"`
+				Tick      *int64 `json:"tick"`
+			}
+			if err := json.Unmarshal(data, &result); err != nil {
+				t.Fatal(err)
+			}
+			if result.FrameTick == nil || *result.FrameTick != tc.want || result.Tick == nil {
+				t.Fatalf("snapshot: %s", data)
+			}
+		})
+	}
+}

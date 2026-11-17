@@ -274,7 +274,7 @@ func (v *placementView) event(event js.Value) {
 			block := root.Call("querySelector", "[data-placement-selected=true]")
 			if workspacePresent(block) {
 				v.stopFollow()
-				ticks := v.bars() * float64(control.GridBarTicks())
+				ticks := float64(placementTicks(v.root, "data-placement-ticks"))
 				width := v.world.Call("getBoundingClientRect").Get("width").Float() - v.labelWidth()
 				v.setScroll(math.Max(0, float64(placementTicks(block, "data-placement-at"))*width/ticks-16))
 			}
@@ -342,7 +342,7 @@ func (v *placementView) draw() {
 		}
 		return
 	}
-	ticks := v.bars() * float64(control.GridBarTicks())
+	ticks := float64(placementTicks(v.root, "data-placement-ticks"))
 	if v.key != placementViewStorage {
 		// A scene song's lanes span its real length, in the song's meter.
 		ticks = float64(placementTicks(v.scroll, "data-scene-ticks"))
