@@ -71,7 +71,7 @@
 .shell #arrangement .placement-track small { grid-column:2; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:10px var(--mono); }
 /* The corner above the rail matches the scene arrangement's "Tracks" label. */
 .shell #arrangement .placement-playhead + .placement-row > .placement-track { align-content:end; padding-bottom:6px; }
-.shell #arrangement .placement-playhead + .placement-row > .placement-track small { color:var(--muted); font:500 10px var(--mono); letter-spacing:.1em; text-transform:uppercase; }
+.shell #arrangement .placement-playhead + .placement-row > .placement-track small { font:500 10px var(--mono); letter-spacing:.1em; text-transform:uppercase; }
 .shell #arrangement .placement-block { border-left:3px solid var(--arrange-kind); border-radius:4px; }
 .shell #arrangement .placement-select { justify-content:flex-start; gap:2px; padding:5px 18px 4px 7px; }
 .shell #arrangement .placement-select strong { font-size:12px; font-weight:650; }
