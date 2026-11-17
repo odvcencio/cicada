@@ -78,6 +78,11 @@ func TestNamedPlacementSessionShowsActualArrangement(t *testing.T) {
 	t.Cleanup(app.Close)
 	page := getPage(t, app.Client(), app.URL+"/?panel=session")
 	assertArrangementViewTools(t, page, true)
+	// The corner above the track rail is an element in the rail cell's text
+	// column; bare text there is laid out one letter to a line (issue 400).
+	if !strings.Contains(page, `<span class="placement-track"><small>Tracks</small></span>`) {
+		t.Error("the placement rail's corner label is missing or is bare text")
+	}
 	for _, want := range []string{`name="source_revision" value="all-project-sources"`, `name="gosx-page-cache" content="no-store"`, `aria-label="Named placement timeline"`, `aria-label="Placement editor"`, "24 bars", "1:12 at 80.0 BPM", "9 placements", `data-placement-id="far-in"`, "@5.2.1", "@9.2.1", "shore @1.1.1", "open-water @9.1.1", `data-placement-block="far-in"`, `data-placement-inspector="far-in"`, `aria-label="Resize placement far-in"`, "Update placement", "Duplicate placement", "Add placement", "Edit markers", "Project settings"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("placement session missing %q", want)
