@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -103,5 +105,34 @@ func TestStudioConvertWithoutRenderCheckIsRefusedNotWritten(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(path); string(got) != convertSongScore {
 		t.Fatal("score changed")
+	}
+}
+
+type cancelingRenderCheck struct {
+	edits.RenderCheck
+	cancel context.CancelFunc
+}
+
+func (c cancelingRenderCheck) Hash(source []byte) (string, error) {
+	c.cancel()
+	return c.RenderCheck.Hash(source)
+}
+
+func TestStudioConvertCanceledDuringRenderPreservesScoreAndHistory(t *testing.T) {
+	isolateState(t)
+	s, handler, path := proposalFixture(t, convertSongScore)
+	disconnectDuringRender := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithCancel(r.Context())
+		defer cancel()
+		s.renderCheck = cancelingRenderCheck{RenderCheck: rendercheck.New(path), cancel: cancel}
+		handler.ServeHTTP(w, r.WithContext(ctx))
+	})
+	response := studioCall(t, disconnectDuringRender, "/api/intents", convertEnvelope(convertSongScore, false))
+	if response.Code < 400 || !strings.Contains(response.Body.String(), context.Canceled.Error()) {
+		t.Fatalf("canceled conversion: %d %s", response.Code, response.Body.String())
+	}
+	got, err := os.ReadFile(path)
+	if err != nil || string(got) != convertSongScore || len(studioHistoryEdits(t, handler)) != 0 {
+		t.Fatalf("canceled conversion changed the score or history: %v", err)
 	}
 }

@@ -43,7 +43,7 @@ test('track rename updates project references, guards conflicts, and is one Undo
   const summary=page.locator('.timeline-track .rail-rename summary[aria-label="Rename bass"]');
   await summary.click();
   if (process.env.CICADA_TRACK_RENAME_PROOF_DIR) { fs.mkdirSync(process.env.CICADA_TRACK_RENAME_PROOF_DIR,{recursive:true}); await summary.locator('..').screenshot({path:path.join(process.env.CICADA_TRACK_RENAME_PROOF_DIR,'track-rename.png')}); }
-  const form=summary.locator('..').locator('form');
+  const form=summary.locator('..').locator('form[action$="/__actions/track-rename"]');
   await form.getByLabel('New name for bass').fill('draft');
   await form.getByLabel('New name for bass').press('Escape');
   await until(async()=>await summary.locator('..').getAttribute('open')===null && await form.getByLabel('New name for bass').inputValue()==='bass','Escape did not close and discard rename');
@@ -74,7 +74,7 @@ test('track rename updates project references, guards conflicts, and is one Undo
   const originalCode=await code.inputValue(); await code.fill(originalCode+'// unsaved composer draft\n');
   const currentSummary=page.locator('.timeline-track .rail-rename summary[aria-label="Rename bass"]');
   if (await currentSummary.locator('..').getAttribute('open')===null) await currentSummary.click();
-  const currentForm=currentSummary.locator('..').locator('form');
+  const currentForm=currentSummary.locator('..').locator('form[action$="/__actions/track-rename"]');
   const otherSummary=page.locator('.timeline-track .rail-rename summary[aria-label="Rename lead"]');
   await otherSummary.click();
   const otherDraft=otherSummary.locator('..').getByLabel('New name for lead'); await otherDraft.fill('upper');
@@ -110,7 +110,7 @@ test('track rename updates project references, guards conflicts, and is one Undo
   await page.locator('#view-tab-arrange').click();
   const retainedSummary=page.locator('.timeline-track .rail-rename summary[aria-label="Rename low"]');
   if (await retainedSummary.locator('..').getAttribute('open')===null) await retainedSummary.click();
-  const retainedForm=retainedSummary.locator('..').locator('form');
+  const retainedForm=retainedSummary.locator('..').locator('form[action$="/__actions/track-rename"]');
   await retainedForm.getByLabel('New name for low').fill('lower');
   const retainedRename=page.waitForResponse(response=>response.url().includes('/__actions/track-rename'));
   await retainedForm.getByRole('button',{name:'Rename track'}).click();
@@ -140,7 +140,7 @@ test('track rename updates project references, guards conflicts, and is one Undo
   await until(()=>fs.readFileSync(file,'utf8')===entry && fs.readFileSync(part,'utf8')===secondary,'one Undo did not restore both exact files'); await ready();
   await page.reload(); await ready();
   await page.locator('#view-tab-arrange').click();
-  const open=async()=>{const s=page.locator('.timeline-track .rail-rename summary[aria-label="Rename bass"]'); await s.click(); return s.locator('..').locator('form');};
+  const open=async()=>{const s=page.locator('.timeline-track .rail-rename summary[aria-label="Rename bass"]'); await s.click(); return s.locator('..').locator('form[action$="/__actions/track-rename"]');};
   let invalid=await open(); await invalid.getByLabel('New name for bass').fill('lead');
   const duplicateResponse=page.waitForResponse(response=>response.url().includes('/__actions/track-rename'));
   await invalid.getByRole('button',{name:'Rename track'}).click();

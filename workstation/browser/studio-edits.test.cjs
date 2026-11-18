@@ -1382,7 +1382,7 @@ test('Remove block after another client inserted a block earlier is not sent', a
   await page.keyboard.press('Alt+Shift+Digit1');
   await page.locator('#view-tab-arrange[aria-selected="true"]').waitFor();
   await page.locator('#update-center-arrange').getByText('Add section', {exact: true}).click();
-  const add = page.locator('#update-center-arrange form:has(input[name=action][value=append])');
+  const add = page.locator('#update-center-arrange form[action$="/__actions/song"]:has(input[name=action][value=append])');
   await add.locator('select[name=scene]').selectOption('alternate');
   await add.locator('input[name=bars]').fill('4');
   await add.getByRole('button', {name: 'Add to arrangement'}).click();

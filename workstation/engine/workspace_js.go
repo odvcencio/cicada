@@ -1519,7 +1519,7 @@ func (u *workspaceUI) request(job workspaceJob) (workspaceProjection, string, er
 		ctx = job.ctx
 	}
 	timeout := 15 * time.Second
-	if job.method == methodPost && job.target == "/__actions/split-placement" {
+	if job.method == methodPost && (job.target == "/__actions/split-placement" || job.target == "/__actions/song-convert") {
 		timeout = 135 * time.Second // render comparison and confirmed projection
 	}
 	if job.method == methodPost && (job.target == "/__actions/note-commit" || job.target == "/__actions/arrange" && job.values["action"] == "vary" || job.target == "/__actions/pattern" && job.values["action"] == "duplicate") {

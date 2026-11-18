@@ -33,7 +33,7 @@ shard_count=4
 # shard_segments SHARD prints the segments the shard runs, in order.
 shard_segments() {
 	case "$1" in
-	1) echo "print_sources placements performance_pitch performance_sources placement_commands track_rename split_placement code_recovery pattern_machine portable_midi macro_controls preset_save" ;;
+	1) echo "print_sources structure_controls placements performance_pitch performance_sources placement_commands track_rename split_placement code_recovery pattern_machine portable_midi macro_controls preset_save" ;;
 	2) echo "pattern_song precision first_song silent_scene_create gestures portable_song sound_context continuity modulation_source collaboration columns midi_pickup shared_capture vocals vocal_levels dock_fit" ;;
 	3) echo "owner_session chrome_gpu_raster page_stall scene_launch_keys pattern_grid tempo_editor recording_sources autoscroll arrangement_sources solo_clock mixer_strips navigation sampler_waveform export_sources library_recording midi_binding studio_edits recording_setup recording_levels meter_performance performance amp_automation" ;;
 	4) echo "shutdown_proof live_write grid_sources shell direct_variation placement_variation editor performance_time startup scene_blocks tempo_clock export_stems chorus add_insert observation_clock note_editor engine_requests" ;;
@@ -73,6 +73,7 @@ segment_runs() {
 	precision) echo placement-precision ;;
 	startup) echo startup ;;
 	scene_blocks) echo scene-blocks scene-meter ;;
+	structure_controls) echo structure-controls ;;
 	sampler_waveform) echo sampler-waveform ;;
 	autoscroll) echo placement-autoscroll ;;
 	placement_commands) echo placement-commands ;;
@@ -582,6 +583,14 @@ seg_startup() { # 13 s
 	node workstation/browser/placements.test.cjs --write-fixture "$browser_root/startup.cicada"
 	start_studio "$browser_root/startup.cicada" build/studio-startup-server.log
 	run_suite startup env CICADA_STARTUP_PROOF_DIR="$PWD/build/studio-startup-proof" node --test workstation/browser/startup.test.cjs | tee build/studio-startup-report.txt
+	stop_studio
+}
+
+seg_structure_controls() { # new; time to be recorded in CI
+	mkdir -p "$browser_root/structure-controls"
+	node workstation/browser/structure-controls.test.cjs --write-fixture "$browser_root/structure-controls/main.cicada"
+	start_studio "$browser_root/structure-controls/main.cicada" build/studio-structure-controls-server.log
+	run_suite structure-controls node --test workstation/browser/structure-controls.test.cjs | tee build/studio-structure-controls-report.txt
 	stop_studio
 }
 

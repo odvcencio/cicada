@@ -317,7 +317,12 @@ func (s *studio) intents(w http.ResponseWriter, r *http.Request) {
 		studioJSON(w, http.StatusBadRequest, map[string]any{"error": "missing revision"})
 		return
 	}
-	s.applyIntents(w, studioEdit{Revision: env.Revision, SourceRevision: r.Header.Get("X-Cicada-Source-Revision"), Author: env.Author, Session: env.Session}, env, edits.ParamWriterAuto, nil)
+	edit := studioEdit{Revision: env.Revision, SourceRevision: r.Header.Get("X-Cicada-Source-Revision"), Author: env.Author, Session: env.Session}
+	// A full render comparison can outlive the request. Check for cancellation
+	// after preparing the edit and before committing it to the score and history.
+	s.applyPreparedIntents(w, edit, env, edits.ParamWriterAuto, nil, func(*edits.Result) error {
+		return r.Context().Err()
+	}, nil)
 }
 
 // Pattern edits can replace declarations in owned secondary sources. The

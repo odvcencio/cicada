@@ -223,6 +223,13 @@ func (s *studioApp) actions() map[string]action.Handler {
 	edit := func(f map[string]string) map[string]any { return map[string]any{"revision": f["revision"]} }
 	return map[string]action.Handler{
 		"track-rename":    s.renameTrack,
+		"scene-rename":    s.structureAction("scene-rename"),
+		"scene-duplicate": s.structureAction("scene-duplicate"),
+		"scene-add":       s.structureAction("scene-add"),
+		"scene-delete":    s.structureAction("scene-delete"),
+		"track-delete":    s.structureAction("track-delete"),
+		"song-convert":    s.structureAction("song-convert"),
+
 		"split-placement": s.splitPlacement,
 		"add-effect":      s.addEffect,
 		"midi-learn":      s.learnPortableMIDI,
