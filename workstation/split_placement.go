@@ -34,7 +34,7 @@ func (s *studioApp) splitPlacement(ctx *action.Context) error {
 	}
 	env := edit.Envelope{Version: edit.EnvelopeVersion, Revision: f["revision"], Intents: []edit.Intent{&edit.SplitClip{Entity: edit.EntityID("placement:" + f["name"]), AtTick: at}}}
 	request := context.WithValue(ctx.Request.Context(), expectedProjectSourcesKey{}, f["source_revision"])
-	request = context.WithValue(request, splitIntentTimeoutKey{}, true)
+	request = context.WithValue(request, renderCompareTimeoutKey{}, true)
 	var result any
 	if err := s.backend.call(request, http.MethodPost, "/api/intents", env, &result); err != nil {
 		var failure *backendError

@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"m31labs.dev/cicada/project"
 	"m31labs.dev/gosx"
@@ -51,6 +52,19 @@ func TestStructureActions(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			b.client.Transport = variationDeadlineTransport(func(r *http.Request) (*http.Response, error) {
+				if r.URL.Path == "/api/intents" {
+					want := 30 * time.Second
+					if tc.name == "song-convert" {
+						want = 120 * time.Second
+					}
+					deadline, ok := r.Context().Deadline()
+					if remaining := time.Until(deadline); !ok || remaining < want-2*time.Second || remaining > want {
+						t.Errorf("%s intent deadline: %v, want %v", tc.name, remaining, want)
+					}
+				}
+				return http.DefaultTransport.RoundTrip(r)
+			})
 			h, err := newApp(b)
 			if err != nil {
 				t.Fatal(err)

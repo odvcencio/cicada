@@ -42,8 +42,12 @@ func (s *studioApp) structureAction(kind string) action.Handler {
 			return err
 		}
 		env := edit.Envelope{Version: edit.EnvelopeVersion, Revision: f["revision"], Intents: []edit.Intent{intent}}
+		request := context.WithValue(ctx.Request.Context(), expectedProjectSourcesKey{}, f["source_revision"])
+		if kind == "song-convert" {
+			request = context.WithValue(request, renderCompareTimeoutKey{}, true)
+		}
 		var result any
-		if err := s.backend.call(context.WithValue(ctx.Request.Context(), expectedProjectSourcesKey{}, f["source_revision"]), http.MethodPost, "/api/intents", env, &result); err != nil {
+		if err := s.backend.call(request, http.MethodPost, "/api/intents", env, &result); err != nil {
 			var failure *backendError
 			if errors.As(err, &failure) {
 				refusal := action.Error(failure.Status, failure.Message)
