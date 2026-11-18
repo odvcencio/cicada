@@ -591,6 +591,7 @@ seg_structure_controls() { # new; time to be recorded in CI
 	node workstation/browser/structure-controls.test.cjs --write-fixture "$browser_root/structure-controls/main.cicada"
 	start_studio "$browser_root/structure-controls/main.cicada" build/studio-structure-controls-server.log
 	run_suite structure-controls node --test workstation/browser/structure-controls.test.cjs | tee build/studio-structure-controls-report.txt
+	stop_studio
 }
 
 seg_scene_blocks() {
