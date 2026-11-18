@@ -3,10 +3,11 @@ package main
 import (
 	"strconv"
 
+	"m31labs.dev/cicada/project"
 	"m31labs.dev/gosx"
 )
 
-func arrangementTools(placement bool, barTicks, beatTicks int64, meter string) gosx.Node {
+func arrangementTools(p *project.Project, placement bool, barTicks, beatTicks int64, meter string) gosx.Node {
 	viewButton := func(action, label string) gosx.Node {
 		return gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-placement-view", action), gosx.BoolAttr("data-studio-view-control")), gosx.Text(label))
 	}
@@ -45,6 +46,7 @@ func arrangementTools(placement bool, barTicks, beatTicks int64, meter string) g
 		editStatus = gosx.El("span", gosx.Attrs(gosx.BoolAttr("data-placement-edit-status"), gosx.Attr("role", "status"), gosx.Attr("aria-live", "polite"), gosx.Attr("class", "muted placement-edit-status")), gosx.Text("Drag moves · Option/Alt-drag copies · Shift-drag is free · hold edges to scroll"))
 	}
 	return gosx.El("div", gosx.Attrs(gosx.Attr("class", class), gosx.Attr("aria-label", "Arrangement navigation")),
+		arrangementBrush(p, placement),
 		// The visible label is short so the strip fits one row; the select's
 		// accessible name stays "Timeline zoom".
 		field("Zoom", gosx.El("select", gosx.Attrs(gosx.Attr("name", "placementZoom"), gosx.BoolAttr("data-studio-view-control"), gosx.Attr("aria-label", "Timeline zoom")), gosx.Fragment(zoomOptions...))),
@@ -53,4 +55,40 @@ func arrangementTools(placement bool, barTicks, beatTicks int64, meter string) g
 		gosx.El("label", gosx.Attrs(gosx.Attr("class", "placement-follow")), gosx.El("input", gosx.Attrs(gosx.Attr("type", "checkbox"), gosx.Attr("name", "placementFollow"), gosx.BoolAttr("data-studio-view-control"))), gosx.El("span", gosx.Attrs(gosx.BoolAttr("data-follow-label")), gosx.Text("Follow song"))),
 		gosx.El("span", gosx.Attrs(gosx.BoolAttr("data-placement-playback-status"), gosx.Attr("class", "muted")), gosx.Text("Timeline view")),
 		editStatus)
+}
+
+func arrangementBrush(p *project.Project, placement bool) gosx.Node {
+	lengths := make(map[string]int64, len(p.Patterns))
+	for _, pattern := range p.Patterns {
+		lengths[pattern.ID] = pattern.DurationTicks()
+	}
+	options := []gosx.Node{gosx.El("option", gosx.Attrs(gosx.Attr("value", "")), gosx.Text("Choose pattern"))}
+	for _, track := range p.Tracks {
+		var patterns []gosx.Node
+		for _, slot := range track.Slots {
+			if slot == nil || lengths[*slot] == 0 {
+				continue
+			}
+			attrs := gosx.Attrs(gosx.Attr("value", track.ID+":"+*slot), gosx.Attr("data-length", strconv.FormatInt(lengths[*slot], 10)))
+			patterns = append(patterns, gosx.El("option", attrs, gosx.Text(*slot)))
+		}
+		if len(patterns) != 0 {
+			options = append(options, gosx.El("optgroup", gosx.Attrs(gosx.Attr("label", track.ID)), gosx.Fragment(patterns...)))
+		}
+	}
+	hint := "Click a cell on the pattern’s track. The assignment applies wherever that scene plays."
+	if placement {
+		hint = "Click an empty space on the pattern’s track, or focus the lane and press Enter for its first gap."
+	}
+	draw := gosx.Attrs(gosx.Attr("value", "draw"))
+	if len(options) == 1 {
+		draw = append(draw, gosx.BoolAttr("disabled"))
+	}
+	return gosx.Fragment(
+		field("Tool", gosx.El("select", gosx.Attrs(gosx.Attr("name", "arrangeTool"), gosx.Attr("aria-label", "Arrangement tool"), gosx.BoolAttr("data-studio-view-control")),
+			gosx.El("option", gosx.Attrs(gosx.Attr("value", "select")), gosx.Text("Select")),
+			gosx.El("option", draw, gosx.Text("Draw")))),
+		gosx.El("label", gosx.Attrs(gosx.Attr("class", "arrange-brush"), gosx.BoolAttr("hidden")), gosx.Text("Pattern"),
+			gosx.El("select", gosx.Attrs(gosx.Attr("name", "arrangeBrush"), gosx.Attr("aria-label", "Pattern to draw"), gosx.BoolAttr("data-studio-view-control")), gosx.Fragment(options...))),
+		gosx.El("span", gosx.Attrs(gosx.Attr("class", "arrange-draw-help muted"), gosx.Attr("role", "status"), gosx.Attr("data-draw-hint", hint), gosx.BoolAttr("hidden")), gosx.Text(hint)))
 }

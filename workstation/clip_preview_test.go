@@ -15,7 +15,7 @@ func TestClipPreviewLoopsThePatternAcrossTheClip(t *testing.T) {
 		Data: []*project.Step{note(57), nil, note(64), nil},
 	}}}
 	// Four steps of 240 ticks loop four times across one 3,840-tick bar.
-	html := gosx.RenderHTML(clipPreview(p, "pulse", 3840))
+	html := gosx.RenderHTML(clipPreview(p, "pulse", 0, 3840))
 	if got := strings.Count(html, "M"); got != 8 {
 		t.Fatalf("want 8 note bars (2 notes x 4 loops), got %d in %s", got, html)
 	}
@@ -55,7 +55,7 @@ func TestClipPreviewDrumLanesAndEmptyPatterns(t *testing.T) {
 		t.Fatalf("lanes in name order (bd, sd): %+v rows %d", notes, rows)
 	}
 	for _, id := range []string{"rest", "missing"} {
-		if html := gosx.RenderHTML(clipPreview(p, id, 3840)); strings.Contains(html, "<svg") {
+		if html := gosx.RenderHTML(clipPreview(p, id, 0, 3840)); strings.Contains(html, "<svg") {
 			t.Fatalf("%s should draw nothing, got %s", id, html)
 		}
 	}
@@ -68,8 +68,15 @@ func TestClipPreviewBoundsALongBlock(t *testing.T) {
 	}
 	p := &project.Project{Patterns: []project.Pattern{{ID: "run", Kind: "notes", Steps: 16, Data: steps}}}
 	// 999 bars of sixteen notes would be 15,984 bars without the bound.
-	html := gosx.RenderHTML(clipPreview(p, "run", 999*3840))
+	html := gosx.RenderHTML(clipPreview(p, "run", 0, 999*3840))
 	if got := strings.Count(html, "M"); got != previewMaxBars {
 		t.Fatalf("want %d bars, got %d", previewMaxBars, got)
+	}
+}
+
+func TestClipPreviewStartsAtTheSongStep(t *testing.T) {
+	p := &project.Pattern{Steps: 4, Kind: "drums", Lanes: map[string][]*project.Step{"bd": {{Note: 36}, nil, nil, nil}}}
+	if local, song := previewPath(p, 0, 240), previewPath(p, 7*960+240, 240); local == "" || song != "" {
+		t.Fatalf("expected only the first step to contain a hit: local %q song %q", local, song)
 	}
 }

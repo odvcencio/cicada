@@ -19,6 +19,13 @@
 .shell #arrangement .session-listening details[open] { flex-basis:100%; }
 .shell #arrangement .session-listening > p { display:none; }
 
+[data-arrange-tool="draw"] [data-draw-track], [data-arrange-tool="draw"] [data-draw-track] a { cursor:crosshair; }
+.arrange-brush:not([hidden]) { display:inline-flex; align-items:center; gap:4px; }
+.arrange-brush select { max-width:13rem; }
+.arrange-draw-help:not([hidden]) { order:1; flex-basis:100%; font-size:12px; }
+[data-arrange-tool="draw"] [data-placement-edit-status] { display:none; }
+[data-arrange-tool="draw"] [data-draw-track]:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+
 /* Timeline: a two-row ruler (sections, bars), the pinned track rail, lanes. */
 .shell #arrangement .timeline { margin:0; max-height:none; overflow:auto; border:0; border-radius:0; }
 .shell #arrangement .timeline-row { min-height:64px; border-bottom:1px solid var(--border); }
