@@ -7,8 +7,7 @@ import (
 	"m31labs.dev/cicada/project"
 )
 
-// Consume the same start/release regions as playback. Each placement has its
-// own pattern origin, and its exclusive end closes even a tied chord.
+// Consume the same start/release regions and pattern clocks as playback.
 func appendPlacements(file *File, p *project.Project, cfg *project.NoteSchedule, channels []uint8, endTick int64) {
 	for _, marker := range p.Arrange.Markers {
 		if marker.AtTick < endTick {
@@ -22,28 +21,33 @@ func appendPlacements(file *File, p *project.Project, cfg *project.NoteSchedule,
 		ti, slot := event.Track, uint8(event.Index)
 		track := &file.Tracks[int(ti)+1]
 		end := min(event.EndTick, endTick)
+		origin := event.PatternOrigin(0)
 		isDrum := cfg.TrackKinds[ti] == engine.VoiceDrums
 		if isDrum {
 			for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
-				appendPlacementPattern(track, &cfg.Patterns[ti].Drums[slot][lane], event.Tick, end, ti, slot, drum.MIDINotes[lane], true, channels[ti])
+				appendPlacementPattern(track, &cfg.Patterns[ti].Drums[slot][lane], origin, event.Tick, end, ti, slot, drum.MIDINotes[lane], true, channels[ti])
 			}
 		} else {
-			appendPlacementPattern(track, &cfg.Patterns[ti].Slots[slot], event.Tick, end, ti, slot, 0, false, channels[ti])
+			appendPlacementPattern(track, &cfg.Patterns[ti].Slots[slot], origin, event.Tick, end, ti, slot, 0, false, channels[ti])
 		}
 	}
 }
 
-func appendPlacementPattern(track *TrackChunk, pattern *seq.Pattern, origin, end int64, ti, slot, drumPitch uint8, isDrum bool, channel uint8) {
+func appendPlacementPattern(track *TrackChunk, pattern *seq.Pattern, origin, start, end int64, ti, slot, drumPitch uint8, isDrum bool, channel uint8) {
 	if pattern.Len == 0 {
 		return
 	}
 	if pattern.Performance != nil {
-		appendPerformedRange(track, pattern, origin, origin, end, end, ti, channel)
+		if start > origin {
+			appendPerformedChase(track, pattern, origin, start, end, ti, channel)
+		}
+		appendPerformedRange(track, pattern, origin, start, end, end, ti, channel)
 		return
 	}
 	first := len(track.Notes)
 	var held heldNote
-	for step := int64(0); origin+step*pattern.GridTicks() < end; step++ {
+	grid := pattern.GridTicks()
+	for step := (start - origin + grid - 1) / grid; origin+step*grid < end; step++ {
 		// Placements play on the scheduled engine, which draws drum
 		// humanize with the lane index.
 		appendStepOffset(track, pattern, step, origin, ti, ti, slot, drumPitch, isDrum, channel, &held)

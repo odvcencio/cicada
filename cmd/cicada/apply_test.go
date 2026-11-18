@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -235,7 +234,7 @@ func TestApplyAuxiliaryUpgradeDryRunAndWrite(t *testing.T) {
 	}
 }
 
-func TestApplyConvertSongConvertsTemplateAndRefusesRestartingChanceSteps(t *testing.T) {
+func TestApplyConvertSongPreservesTemplateAndSeededPasses(t *testing.T) {
 	path, intents, template := applyFixture(t)
 	writeApplyEnvelope(t, intents, edits.Envelope{Version: 1, Intents: []edits.Intent{&edits.ConvertSongToArrange{}}})
 	out, err := captureApply(t, path, intents, "--write")
@@ -246,22 +245,20 @@ func TestApplyConvertSongConvertsTemplateAndRefusesRestartingChanceSteps(t *test
 	// scene stops the drums, so they are one 4-bar placement; the bass and the
 	// chords bind the same patterns in both scenes, so each is one 8-bar placement.
 	converted, _ := os.ReadFile(path)
-	want := string(template)[:strings.Index(string(template), "song {")] + ("arrange {\n  place main-1-drums drums beat {\n    at = @1.1.1 length = 4bars\n  }\n  place main-1-bass bass pulse {\n    at = @1.1.1 length = 8bars\n  }\n  place main-1-chords chords progression {\n    at = @1.1.1 length = 8bars\n  }\n}\n")
+	want := string(template)[:strings.Index(string(template), "song {")] + ("arrange {\n  place main-1-drums drums beat {\n    at = @1.1.1 length = 4bars phase = song\n  }\n  place main-1-bass bass pulse {\n    at = @1.1.1 length = 8bars phase = song\n  }\n  place main-1-chords chords progression {\n    at = @1.1.1 length = 8bars phase = song\n  }\n}\n")
 	if string(converted) != want {
 		t.Fatalf("converted:\n%s\nwant:\n%s", converted, want)
 	}
-	// A different pattern with chance steps in the second scene needs a second placement, and chance passes restart at a placement origin.
-	if err := os.WriteFile(path, []byte(strings.Replace(string(template), "scene break {\n  drums = stop\n  bass = pulse\n", "scene break {\n  drums = stop\n  bass = lively\n", 1)+"\npattern lively {\n  1?50 . 5?50 1?50 1?50 . 5?50 1?50 1?50 . 5?50 1?50 1?50 . 5?50 1?50\n}\n"), 0600); err != nil {
+	// The second pattern enters on a later pass. The real render guard checks both chance and humanization.
+	if err := os.WriteFile(path, []byte(strings.Replace(string(template), "scene break {\n  drums = stop\n  bass = pulse\n", "scene break {\n  drums = stop\n  bass = lively\n", 1)+"\npattern lively {\n  humanize = 7\n  1?50 . 5?50 1?50 1?50 . 5?50 1?50 1?50 . 5?50 1?50 1?50 . 5?50 1?50\n}\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	before, _ := os.ReadFile(path)
-	_, err = captureApply(t, path, intents, "--write")
-	var refusal *edits.RefusalError
-	if !errors.As(err, &refusal) || refusal.Cause != "pattern lively has chance steps that restart at bar 5" {
-		t.Fatalf("chance boundary: %v", err)
+	if _, err := captureApply(t, path, intents, "--write"); err != nil {
+		t.Fatal(err)
 	}
-	if after, _ := os.ReadFile(path); !bytes.Equal(after, before) {
-		t.Fatal("a refused conversion changed the score")
+	after, err := os.ReadFile(path)
+	if err != nil || !strings.Contains(string(after), "at = @5.1.1 length = 4bars phase = song") || !strings.Contains(string(after), "humanize = 7") {
+		t.Fatalf("lost the second scene's seeded pass: %v\n%s", err, after)
 	}
 }
 

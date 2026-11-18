@@ -24,7 +24,7 @@ const (
 
 // clipPreview returns the preview for pattern id played for lengthTicks, or an
 // empty fragment when there is nothing to draw.
-func clipPreview(p *project.Project, id string, lengthTicks int64) gosx.Node {
+func clipPreview(p *project.Project, id string, phase, lengthTicks int64) gosx.Node {
 	var pattern *project.Pattern
 	for i := range p.Patterns {
 		if p.Patterns[i].ID == id {
@@ -35,7 +35,7 @@ func clipPreview(p *project.Project, id string, lengthTicks int64) gosx.Node {
 	if pattern == nil || lengthTicks <= 0 {
 		return gosx.Fragment()
 	}
-	d := previewPath(pattern, lengthTicks)
+	d := previewPath(pattern, phase, lengthTicks)
 	if d == "" {
 		return gosx.Fragment()
 	}
@@ -55,7 +55,7 @@ type previewNote struct {
 }
 
 // previewPath draws pattern looped over lengthTicks as rectangles in one path.
-func previewPath(pattern *project.Pattern, lengthTicks int64) string {
+func previewPath(pattern *project.Pattern, phase, lengthTicks int64) string {
 	notes, loop, rows := previewNotes(pattern)
 	if len(notes) == 0 || loop <= 0 {
 		return ""
@@ -64,14 +64,14 @@ func previewPath(pattern *project.Pattern, lengthTicks int64) string {
 	barHeight := min(rowHeight*0.8, 4.0)
 	var b strings.Builder
 	drawn := 0
-	for offset := int64(0); offset < lengthTicks && drawn < previewMaxBars; offset += loop {
+	for offset := -(phase % loop); offset < lengthTicks && drawn < previewMaxBars; offset += loop {
 		for _, note := range notes {
-			start := offset + note.start
-			if start >= lengthTicks || drawn >= previewMaxBars {
+			start := max(int64(0), offset+note.start)
+			end := min(offset+note.end, lengthTicks)
+			if end <= start || drawn >= previewMaxBars {
 				continue
 			}
 			drawn++
-			end := min(offset+note.end, lengthTicks)
 			x := float64(start) / previewTickUnit
 			w := max(float64(end-start)/previewTickUnit, 0.5)
 			y := note.row*rowHeight + (rowHeight-barHeight)/2

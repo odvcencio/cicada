@@ -25,6 +25,13 @@ type Placement struct {
 	Params               []Param
 	Position             Position
 }
+
+// SongPhase reports whether the pattern follows the transport's pattern clock.
+func (p Placement) SongPhase() bool {
+	phase, ok := findParam(p.Params, "phase")
+	return ok && phase.Value == "song"
+}
+
 type Marker struct {
 	Name     string
 	AtTick   int64
@@ -119,6 +126,12 @@ func ValidateArrangement(s *Score) []Diagnostic {
 				add("CICADA-DUPLICATE", "duplicate "+f.Name, f.Position)
 			}
 			seen[f.Name] = true
+			if placement && f.Name == "phase" {
+				if f.Value != "song" && f.Value != "local" {
+					add("CICADA-ARRANGEMENT", "pattern phase must be local or song", f.ValuePosition)
+				}
+				continue
+			}
 			if f.Name != "at" && (!placement || f.Name != "length") {
 				add("CICADA-ARRANGEMENT", "unknown arrangement field "+f.Name, f.Position)
 				continue
@@ -151,6 +164,9 @@ func ValidateArrangement(s *Score) []Diagnostic {
 			continue
 		}
 		if track.Kind == "audio" {
+			if _, ok := findParam(p.Params, "phase"); ok {
+				add("CICADA-ARRANGEMENT", "phase requires a pattern placement", p.Position)
+			}
 			if !scoreHasClip(s, p.Content) {
 				add("CICADA-REFERENCE", "unknown placement clip "+p.Content, p.Position)
 			}

@@ -11,9 +11,18 @@ type ScheduleEvent struct {
 	Tick, EndTick int64
 	Scene         uint16
 	Kind          ScheduleKind
+	SongPhase     bool // Pattern start follows the scene clock across switches and loops.
 	Track         uint8
 	Index         uint16
 	ID            uint32 // Placement identity, or milli-BPM for ScheduleTempo.
+}
+
+// PatternOrigin is the absolute tick of step zero, including the pass used for seeded hits.
+func (v ScheduleEvent) PatternOrigin(cycleStart int64) int64 {
+	if v.SongPhase {
+		return 0
+	}
+	return v.Tick + cycleStart
 }
 
 // SetPlaybackPlacement restricts scheduled starts and releases to one placement
@@ -115,7 +124,7 @@ func (e *Engine) validateSchedule() error {
 	var scenes, activeClips int
 	var previous int64
 	for i, v := range e.schedule {
-		if v.Tick < 0 || i > 0 && v.Tick < previous || v.EndTick < v.Tick || v.EndTick > 1<<53-1 || v.Kind > ScheduleTempo {
+		if v.Tick < 0 || i > 0 && v.Tick < previous || v.EndTick < v.Tick || v.EndTick > 1<<53-1 || v.Kind > ScheduleTempo || v.SongPhase && v.Kind != SchedulePattern {
 			return engineError("schedule event is out of range")
 		}
 		previous = v.Tick
@@ -305,8 +314,12 @@ func (e *Engine) applyScheduleEvent(v ScheduleEvent, tick int64) {
 		e.liveTempo = false
 	case SchedulePattern:
 		e.placementID[track] = v.ID
+		if v.SongPhase {
+			e.selectSceneSlot(track, uint8(v.Index), e.patterns[track].startTick == 0)
+			return
+		}
 		e.applyPatternCommand(cmd.Command{Op: cmd.OpSelectPattern, Track: v.Track, Index: v.Index, Arg1: 1})
-		e.patterns[track].startTick = v.Tick + e.cycleStart
+		e.patterns[track].startTick = v.PatternOrigin(e.cycleStart)
 		e.scheduleTrack(track)
 	case SchedulePatternEnd:
 		if e.placementID[track] != v.ID || e.patternHandoff(v) {

@@ -309,6 +309,10 @@ func (s *studioApp) patternAction(ctx *action.Context) error {
 			default:
 				return nil, fmt.Errorf("choose Assign, Stop, or Carry for the scene")
 			}
+			if f["draw"] == "scene" {
+				destination = ""
+				break
+			}
 			target, _ := url.Parse(patternURL(f["pattern"], 1, "", ""))
 			q := target.Query()
 			q.Set("track", f["track"])

@@ -27,6 +27,7 @@ func init() {
 type convertedPlacement struct {
 	name, track, content string
 	at, length           int64
+	songPhase            bool
 }
 
 func refuseConvert(cause string) error {
@@ -66,7 +67,17 @@ func convertSongToArrange(ctx *Context, _ Intent) error {
 		return err
 	}
 	if !same {
-		return refuseConvert(convertCause(ctx, placements))
+		var bars, end int64
+		for _, entry := range score.Song {
+			bars += int64(entry.Bars)
+		}
+		for _, p := range placements {
+			end = max(end, p.at+p.length)
+		}
+		if end < score.MeterMap().BarStart(bars) {
+			return refuseConvert(fmt.Sprintf("the song continues through bar %d after its last placement ends", bars))
+		}
+		return refuseConvert("the converted score renders differently")
 	}
 	ctx.Source, ctx.plan = converted, nil
 	ctx.SetLabel("Song converted to arrange")
@@ -121,7 +132,7 @@ func songPlacements(score *notation.Score) ([]convertedPlacement, error) {
 				open[track.Name] = len(placements)
 				placements = append(placements, convertedPlacement{
 					name: runName(entry.Scene, index+1, track.Name, used), track: track.Name, content: action,
-					at: tick, length: meterMap.BarsTicks(tick, bars),
+					at: tick, length: meterMap.BarsTicks(tick, bars), songPhase: track.Kind != "audio",
 				})
 			}
 		}
@@ -165,7 +176,11 @@ func convertedSource(ctx *Context, score *notation.Score, placements []converted
 	var block strings.Builder
 	block.WriteString("arrange {")
 	for _, p := range placements {
-		fmt.Fprintf(&block, "%s  place %s %s %s {%s    at = %s length = %s%s  }", nl, p.name, p.track, p.content, nl, FormatPosition(score.MeterMap(), p.at), FormatLength(score.MeterMap(), p.at, p.length), nl)
+		fmt.Fprintf(&block, "%s  place %s %s %s {%s    at = %s length = %s", nl, p.name, p.track, p.content, nl, FormatPosition(score.MeterMap(), p.at), FormatLength(score.MeterMap(), p.at, p.length))
+		if p.songPhase {
+			block.WriteString(" phase = song")
+		}
+		block.WriteString(nl + "  }")
 	}
 	block.WriteString(nl + "}")
 	spans := []Span{{int(song.StartByte()), int(song.EndByte()), block.String(), ctx.Options.Path}}
@@ -182,76 +197,10 @@ func convertedSource(ctx *Context, score *notation.Score, placements []converted
 	return PatchSpans(source, ctx.Options.Path, spans)
 }
 
-// convertCause names why a conversion rendered differently when the plan
-// shows a reason. The render check stays the ground truth: this only words the
-// refusal.
-func convertCause(ctx *Context, placements []convertedPlacement) string {
-	plan, err := ctx.CurrentPlan()
-	if err != nil || plan == nil {
-		return "the converted score renders differently"
-	}
-	patterns := make(map[string]Pattern, len(plan.Patterns))
-	for _, pattern := range plan.Patterns {
-		patterns[pattern.ID] = pattern
-	}
-	var chance string
-	for i, p := range placements {
-		var next *convertedPlacement
-		for j := i + 1; j < len(placements); j++ {
-			if placements[j].track == p.track {
-				next = &placements[j]
-				break
-			}
-		}
-		pattern, known := patterns[p.content]
-		if next == nil || next.at != p.at+p.length || !known {
-			continue
-		}
-		if unit := pattern.LengthTicks(); unit > 0 && p.length%unit != 0 {
-			return fmt.Sprintf("pattern %s (%s) would restart out of phase at bar %d", pattern.ID, describeBars(ctx.MeterMap(), unit), barNumber(ctx.MeterMap(), next.at))
-		}
-		if restarted := patterns[next.content]; hasChance(restarted) && chance == "" {
-			chance = fmt.Sprintf("pattern %s has chance steps that restart at bar %d", restarted.ID, barNumber(ctx.MeterMap(), next.at))
-		}
-	}
-	if chance != "" {
-		return chance
-	}
-	return "the converted score renders differently"
-}
-
-// describeBars spells a pattern length in bars of the meter map's first bar.
-func describeBars(meterMap seq.MeterMap, ticks int64) string {
-	bars, whole := meterMap.WholeBars(0, ticks)
-	switch {
-	case whole && bars == 1:
-		return "1 bar"
-	case whole:
-		return fmt.Sprintf("%d bars", bars)
-	}
-	return fmt.Sprintf("%d ticks", ticks)
-}
-
 // barNumber is the one-based bar that holds tick.
 func barNumber(meterMap seq.MeterMap, tick int64) int64 {
 	bar, _ := meterMap.BarAt(tick)
 	return bar + 1
-}
-
-// hasChance reports a step that plays with a probability below 100: chance
-// passes restart at each placement origin, so a placement boundary can change
-// which steps play.
-func hasChance(pattern Pattern) bool {
-	steps := pattern.Data
-	for _, lane := range pattern.Lanes {
-		steps = append(append([]*Step(nil), steps...), lane...)
-	}
-	for _, step := range steps {
-		if step != nil && step.Probability > 0 && step.Probability < 100 {
-			return true
-		}
-	}
-	return false
 }
 
 // runName names a placement run "<scene>-<entry>-<track>", shortening the

@@ -73,18 +73,22 @@ func placementTimeline(p *project.Project, placements []project.Placement, selec
 				laneEnds = append(laneEnds, 0)
 			}
 			laneEnds[lane] = placement.AtTick + placement.LengthTicks
+			var phase int64
+			if placement.SongPhase {
+				phase = placement.AtTick
+			}
 			blocks = append(blocks, gosx.El("div", gosx.Attrs(
 				gosx.Attr("class", "placement-block"), gosx.Attr("data-placement-block", placement.ID),
 				gosx.Attr("data-placement-at", strconv.FormatInt(placement.AtTick, 10)),
 				gosx.Attr("data-placement-kind", track.Kind), gosx.Attr("data-placement-track", placement.Track), gosx.Attr("data-placement-content", placement.Content), gosx.Attr("data-placement-length", strconv.FormatInt(placement.LengthTicks, 10)),
 				gosx.Attr("data-placement-selected", strconv.FormatBool(placement.ID == selected)),
 				gosx.Attr("style", fmt.Sprintf("left:%s;width:%s;top:%dpx", position(placement.AtTick), position(placement.LengthTicks), 8+lane*68))),
-				gosx.El("a", gosx.Attrs(gosx.Attr("class", "placement-select"), gosx.Attr("href", placementURL(placement.ID)), gosx.Attr("draggable", "false"), gosx.Attr("title", placementHint), gosx.Attr("aria-label", "Edit placement "+placement.ID+": "+placementAction+" "+placement.Content)), gosx.El("strong", gosx.Text(placement.ID)), gosx.El("span", gosx.Text(placement.Content)), clipPreview(p, placement.Content, placement.LengthTicks)),
+				gosx.El("a", gosx.Attrs(gosx.Attr("class", "placement-select"), gosx.Attr("href", placementURL(placement.ID)), gosx.Attr("draggable", "false"), gosx.Attr("title", placementHint), gosx.Attr("aria-label", "Edit placement "+placement.ID+": "+placementAction+" "+placement.Content)), gosx.El("strong", gosx.Text(placement.ID)), gosx.El("span", gosx.Text(placement.Content)), clipPreview(p, placement.Content, phase, placement.LengthTicks)),
 				gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.BoolAttr("data-placement-resize"), gosx.Attr("aria-label", "Resize placement "+placement.ID), gosx.Attr("title", "Drag or use arrow keys to resize")), gosx.El("span", gosx.Attrs(gosx.Attr("aria-hidden", "true")), gosx.Text("⋮")))))
 		}
 		rows = append(rows, gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-row"), gosx.Attr("data-arrange-kind", track.Kind), gosx.Attr("data-track-color", strconv.Itoa(trackIndex%trackColors))),
 			gosx.El("span", gosx.Attrs(gosx.Attr("class", "placement-track")), gosx.El("strong", gosx.Attrs(gosx.Attr("title", track.ID)), gosx.Text(track.ID)), gosx.El("small", gosx.Attrs(gosx.Attr("title", track.Kind)), gosx.Text(track.Kind)), rail(track.ID)),
-			gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-lane"), gosx.Attr("data-placement-ticks", strconv.FormatInt(ticks, 10)), gosx.Attr("style", fmt.Sprintf("height:%dpx", max(1, len(laneEnds))*68+8)), gosx.Attr("role", "group"), gosx.Attr("aria-label", track.ID+" placements")), gosx.Fragment(blocks...))))
+			gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-lane"), gosx.Attr("data-draw-track", track.ID), gosx.Attr("data-placement-ticks", strconv.FormatInt(ticks, 10)), gosx.Attr("style", fmt.Sprintf("height:%dpx", max(1, len(laneEnds))*68+8)), gosx.Attr("role", "group"), gosx.Attr("aria-label", track.ID+" placements")), gosx.Fragment(blocks...))))
 	}
 
 	navigation := gosx.Attrs(gosx.BoolAttr("data-placement-navigation"), gosx.Attr("data-placement-bars", strconv.FormatInt(bars, 10)))
@@ -96,7 +100,7 @@ func placementTimeline(p *project.Project, placements []project.Placement, selec
 		navigation = append(navigation, gosx.Attr("data-placement-bar-moves-off", "Shift+Arrow moves by a 4/4 bar, so it is off in this "+meter+" song until Studio draws its meter. Move with the arrow keys or type a position."))
 	}
 	return gosx.El("section", navigation,
-		arrangementTools(true, meterMap.BarTicks(0), meterMap.BeatTicks(0), meter),
+		arrangementTools(p, true, meterMap.BarTicks(0), meterMap.BeatTicks(0), meter),
 		gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll placement-scroll"), gosx.Attr("aria-label", "Placement editor")),
 			gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-timeline"), gosx.Attr("style", fmt.Sprintf("--placement-bars:%d", bars))),
 				gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-playhead"), gosx.BoolAttr("data-placement-playhead"), gosx.BoolAttr("hidden"), gosx.Attr("aria-hidden", "true"))), gosx.Fragment(rows...))))
@@ -243,7 +247,8 @@ func (s *studioApp) placementEditors(ctx *server.Context, v workspace, csrf stri
 		start := (end + seq.TicksPerStep - 1) / seq.TicksPerStep * seq.TicksPerStep
 		add = s.placementForm(v, csrf, selected, hidden("action", "append"), field("Placement name", textInput("newName", newName("new-placement"))), field("Track", selectInput("track", first.Track, tracks)), field("Pattern or clip", selectInput("content", first.Content, contents)), field("Start", textInput("at", placementLiteral(v.Project.MeterMap(), start, true))), field("Length", textInput("length", "4bars")), submit("", "", "Add placement"))
 	}
-	return gosx.Fragment(gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-editors")), gosx.Fragment(editors...)),
+	draw := s.placementForm(v, csrf, selected, hidden("action", "append"), hidden("newName", newName("new-placement")), hidden("at", ""), hidden("length", ""), hidden("track", ""), hidden("content", ""))
+	return gosx.Fragment(gosx.El("div", gosx.Attrs(gosx.BoolAttr("data-arrange-write"), gosx.BoolAttr("hidden")), draw), gosx.El("div", gosx.Attrs(gosx.Attr("class", "placement-editors")), gosx.Fragment(editors...)),
 		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Start uses @bar.beat.step or exact ticks. Length accepts 4bars, 1/8, or 320ticks. Pattern placements on the same track must not overlap.")),
 		gosx.El("details", gosx.Attrs(gosx.Attr("class", "placement-management")), gosx.El("summary", gosx.Text("Add a placement")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), add)),
 		gosx.El("details", gosx.Attrs(gosx.Attr("class", "placement-management")), gosx.El("summary", gosx.Text("Edit markers")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), gosx.Fragment(markerForms...))))

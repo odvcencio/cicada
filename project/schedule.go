@@ -46,6 +46,7 @@ func CompileSchedule(p *Project) ([]engine.ScheduleEvent, error) {
 			end.Kind = engine.ScheduleClipEnd
 		} else {
 			start.Kind = engine.SchedulePattern
+			start.SongPhase = v.SongPhase
 			end.Kind = engine.SchedulePatternEnd
 			for slot, pattern := range p.Tracks[ti].Slots {
 				if pattern != nil && *pattern == v.Content {

@@ -78,7 +78,7 @@ func (u *placementEditorUI) placementPointerDown(event js.Value) {
 		return
 	}
 	control := target.Call("closest", ".placement-select, [data-placement-resize]")
-	if !workspacePresent(control) || workspaceNative(control) || workspaceEngineOwned(control) {
+	if !workspacePresent(control) || workspaceNative(control) || workspaceEngineOwned(control) || workspacePresent(control.Call("closest", "[data-arrange-tool=draw]")) {
 		return
 	}
 	if u.blocked() {
@@ -265,6 +265,9 @@ func (u *placementEditorUI) placementKeyDown(event js.Value) bool {
 	}
 	control := target.Call("closest", ".placement-select, [data-placement-resize]")
 	key := event.Get("key").String()
+	if workspacePresent(target.Call("closest", "[data-arrange-tool=draw]")) {
+		return false
+	}
 	if !u.owned(target) || !workspacePresent(control) || (key != "ArrowLeft" && key != "ArrowRight") || event.Get("ctrlKey").Bool() || event.Get("metaKey").Bool() || event.Get("altKey").Bool() {
 		return false
 	}
@@ -326,7 +329,7 @@ func (u *placementEditorUI) placementViewChanged(event js.Value) {
 	target := event.Get("target")
 	name := workspaceAttr(target, "name")
 	viewButton := workspacePresent(target) && target.Get("closest").Type() == js.TypeFunction && workspacePresent(target.Call("closest", "[data-placement-view]"))
-	if name == "placementZoom" || name == "placementFollow" || name == "placementSnap" || name == "placementCopy" || viewButton {
+	if name == "placementZoom" || name == "placementFollow" || name == "placementSnap" || name == "placementCopy" || name == "arrangeTool" || viewButton {
 		u.abortPlacementDrag("Placement edit cancelled after changing the timeline view.")
 	}
 }

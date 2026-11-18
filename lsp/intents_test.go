@@ -294,7 +294,7 @@ func TestCodeActionOffersSongConversionAfterTheCheckAndCachesIt(t *testing.T) {
 		}
 		title, kind := actionTitle(replies[i][0])
 		_, applied, version := appliedEdit(t, replies[i][0], lspSongScore)
-		want := "cicada 2\n" + strings.Replace(lspSongScore, "song { main*2 break*2 }", "arrange {\n  place main-1-bass bass hits {\n    at = @1.1.1 length = 4bars\n  }\n}", 1)
+		want := "cicada 2\n" + strings.Replace(lspSongScore, "song { main*2 break*2 }", "arrange {\n  place main-1-bass bass hits {\n    at = @1.1.1 length = 4bars phase = song\n  }\n}", 1)
 		if title != "Convert song to arrange" || kind != "refactor" || version != 3 || applied != want {
 			t.Fatalf("request %d: %q %q v%d\n%s", i, title, kind, version, applied)
 		}
@@ -376,25 +376,30 @@ func peerDrums(steps string) string {
 	return "track bass acid {}\npattern beat acid {\n  " + steps + "\n}\npattern fill acid {\n  " + steps + "\n}\n"
 }
 
+const songWithPeerEnding = "scene a { bass = beat }\n\nsong { a*2 b*2 }\n"
+
+func peerEnding(binding string) string {
+	return peerDrums("1?50 . 5?50 1?50") + "scene b { bass = " + binding + " }\n"
+}
+
 // The decision follows the open buffers, not the saved files: conversion is
 // offered only when the project as edited renders the same as its conversion.
 func TestSongConversionFollowsUnsavedPeerBuffers(t *testing.T) {
-	const silent, audible = "1 . 5 . 1 . 5 . 1 . 5 . 1 . 5 .", "1?50 . 5?50 1?50 1?50 . 5?50 1?50 1?50 . 5?50 1?50 1?50 . 5?50 1?50"
-	entry := "scene a { bass = beat }\nscene b { bass = fill }\nsong { a*2 b*2 }\n"
+	entry := songWithPeerEnding
 	for _, c := range []struct {
 		name, disk, buffer string
 		offered            bool
 	}{
-		{"audible unsaved peer over silent disk", silent, audible, false},
-		{"silent unsaved peer over audible disk", audible, silent, true},
-		{"peer saved to match: audible", audible, audible, false},
-		{"peer saved to match: silent", silent, silent, true},
+		{"unsaved silent ending", "fill", "off", false},
+		{"unsaved playing ending", "off", "fill", true},
+		{"saved silent ending", "off", "off", false},
+		{"saved playing ending", "fill", "fill", true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			path := writePeerProject(t, entry, peerDrums(c.disk))
+			path := writePeerProject(t, entry, peerEnding(c.disk))
 			part := filepath.Join(filepath.Dir(path), "part.cicada")
 			request := map[string]any{"range": region{Start: position{Line: 2}, End: position{Line: 2}}, "context": map[string]any{"diagnostics": []any{}, "only": []string{"refactor"}}}
-			replies := actionFramesDocs(t, path, map[string]string{path: entry, part: peerDrums(c.buffer)}, request)
+			replies := actionFramesDocs(t, path, map[string]string{path: entry, part: peerEnding(c.buffer)}, request)
 			if offered := len(replies[0]) == 1; offered != c.offered {
 				t.Fatalf("offered=%v, want %v: %v", offered, c.offered, replies[0])
 			}
@@ -449,14 +454,13 @@ func TestRenderCacheKeyFollowsFilesStagedByABatch(t *testing.T) {
 // the LSP never offers a conversion that a fresh comparison of the project
 // refuses, and nothing from the first request is served to the second.
 func TestPeerRewrittenAndRestoredDuringTheRenderOffersNoConversionInTheLSP(t *testing.T) {
-	const chance = "1?50 . 5?50 1?50 1?50 . 5?50 1?50 1?50 . 5?50 1?50 1?50 . 5?50 1?50"
-	entry := "scene a { bass = beat }\nscene b { bass = fill }\nsong { a*2 b*2 }\n"
-	path := writePeerProject(t, entry, peerDrums(chance))
+	entry := songWithPeerEnding
+	path := writePeerProject(t, entry, peerEnding("off"))
 	peer := filepath.Join(filepath.Dir(path), "part.cicada")
 	rendercheck.AfterSnapshot = func() {
-		_ = os.WriteFile(peer, []byte(peerDrums("1 . 5 . 1 . 5 . 1 . 5 . 1 . 5 .")), 0o600)
+		_ = os.WriteFile(peer, []byte(peerEnding("fill")), 0o600)
 	}
-	rendercheck.AfterRender = func() { _ = os.WriteFile(peer, []byte(peerDrums(chance)), 0o600) }
+	rendercheck.AfterRender = func() { _ = os.WriteFile(peer, []byte(peerEnding("off")), 0o600) }
 	t.Cleanup(func() { rendercheck.AfterSnapshot, rendercheck.AfterRender = nil, nil })
 	request := func() map[string]any {
 		return map[string]any{"range": region{Start: position{Line: 2}, End: position{Line: 2}}, "context": map[string]any{"diagnostics": []any{}, "only": []string{"refactor"}}}

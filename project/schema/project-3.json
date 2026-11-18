@@ -2205,6 +2205,9 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 9007199254740991
+        },
+        "song_phase": {
+          "type": "boolean"
         }
       }
     },

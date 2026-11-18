@@ -18,6 +18,8 @@ var placementViewPublisher = &sharedLoop{start: func(ctx context.Context) { go r
 
 type placementView struct {
 	zoom, snap          string
+	brush               string
+	drawTool            bool
 	follow, copyDrag    bool
 	root, scroll, world js.Value
 	width, left         float64
@@ -36,6 +38,8 @@ type placementViewPreference struct {
 	Zoom   string
 	Snap   string
 	Copy   bool
+	Draw   bool
+	Brush  string
 	Follow bool
 	Scroll float64
 }
@@ -72,7 +76,7 @@ func (v *placementView) remember() {
 		return
 	}
 	v.left = v.scroll.Get("scrollLeft").Float()
-	p := placementViewPreference{Zoom: v.zoom, Snap: v.snap, Copy: v.copyDrag, Follow: v.follow, Scroll: v.left}
+	p := placementViewPreference{Zoom: v.zoom, Snap: v.snap, Copy: v.copyDrag, Draw: v.drawTool, Brush: v.brush, Follow: v.follow, Scroll: v.left}
 	if p == v.stored {
 		return
 	}
@@ -97,6 +101,7 @@ func (v *placementView) find() bool {
 	if key != v.key {
 		p := readPlacementViewPreference(key)
 		v.key, v.zoom, v.snap, v.copyDrag, v.follow, v.left, v.stored = key, p.Zoom, p.Snap, p.Copy, p.Follow, p.Scroll, p
+		v.drawTool, v.brush = p.Draw, p.Brush
 		v.paused, v.playing = false, false
 	}
 	scroll := root.Call("querySelector", scrollSelector)
@@ -121,6 +126,7 @@ func (v *placementView) find() bool {
 		follow.Set("checked", v.follow)
 	}
 	if restore {
+		v.showArrangeTool()
 		if snap := root.Call("querySelector", "[name=placementSnap]"); workspacePresent(snap) {
 			snap.Set("value", v.snap)
 		}
@@ -227,7 +233,8 @@ func (v *placementView) event(event js.Value) {
 	if !workspacePresent(target) || target.Get("closest").Type() != js.TypeFunction {
 		return
 	}
-	if event.Get("type").String() == "click" && !workspacePresent(target.Call("closest", "[data-placement-view]")) {
+	drawTarget := target.Call("closest", "[data-draw-track]")
+	if event.Get("type").String() == "click" && !workspacePresent(drawTarget) && !workspacePresent(target.Call("closest", "[data-placement-view]")) {
 		return
 	}
 	value, checked := workspaceString(target, "value"), target.Get("checked")
@@ -238,9 +245,22 @@ func (v *placementView) event(event js.Value) {
 	if (!workspacePresent(v.root) || !root.Equal(v.root)) && !v.find() {
 		return
 	}
+	if v.drawTool && workspacePresent(drawTarget) && (event.Get("type").String() == "click" || event.Get("type").String() == "keydown" && event.Get("key").String() == "Enter" && target.Equal(drawTarget)) {
+		workspaceStop(event)
+		if !event.Get("repeat").Truthy() {
+			v.paintPattern(event, drawTarget)
+		}
+		return
+	}
 	switch event.Get("type").String() {
 	case "input", "change":
 		switch workspaceAttr(target, "name") {
+		case "arrangeTool":
+			v.drawTool = value == "draw"
+			v.showArrangeTool()
+		case "arrangeBrush":
+			v.brush = value
+			v.showArrangeTool()
 		case "placementZoom":
 			v.zoom = value
 			target.Set("value", value)
@@ -385,14 +405,14 @@ func runPlacementView(ctx context.Context) {
 		return nil
 	})
 	v.wheelCallback = callback
-	for _, name := range []string{"click", "input", "change", "scroll"} {
+	for _, name := range []string{"click", "keydown", "input", "change", "scroll"} {
 		document.Call("addEventListener", name, callback, map[string]any{"capture": true, "passive": false})
 	}
 	defer func() {
 		if workspacePresent(v.scroll) {
 			v.scroll.Call("removeEventListener", "wheel", callback)
 		}
-		for _, name := range []string{"click", "input", "change", "scroll"} {
+		for _, name := range []string{"click", "keydown", "input", "change", "scroll"} {
 			document.Call("removeEventListener", name, callback, true)
 		}
 		callback.Release()

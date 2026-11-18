@@ -19,14 +19,12 @@ import (
 )
 
 const (
-	proposalSongMain  = "scene a { bass = beat }\nscene b { bass = fill }\nsong { a*2 b*2 }\n"
-	proposalPlain     = "1 . 5 . 1 . 5 . 1 . 5 . 1 . 5 ."
-	proposalChance    = "1?50 . 5?50 1?50 1?50 . 5?50 1?50 1?50 . 5?50 1?50 1?50 . 5?50 1?50"
+	proposalSongMain  = "scene a { bass = beat }\nsong { a*2 b*2 }\n"
 	proposalSplitPart = "track bass acid {}\npattern pulse { c3 . c4~ c3 }\n"
 )
 
-func proposalSongPeer(steps string) string {
-	return "track bass acid {}\npattern beat acid {\n  " + steps + "\n}\npattern fill acid {\n  " + steps + "\n}\n"
+func proposalSongPeer(ending string) string {
+	return "track bass acid {}\npattern beat acid { 1 . 5 . }\npattern fill acid { 5?50 . 1?50 . }\nscene b { bass = " + ending + " }\n"
 }
 
 type renderProposalProject struct {
@@ -70,8 +68,8 @@ func TestRenderCheckedProposalsAreReverifiedWhenProjectInputsChange(t *testing.T
 		harmless          string // peer after staging that keeps the candidate and the render
 		cause             string
 	}{
-		{"convert", proposalSongMain, proposalSongPeer(proposalPlain), &edits.ConvertSongToArrange{},
-			proposalSongPeer(proposalChance), proposalSongPeer(proposalPlain) + "// unrelated\n", "chance steps"},
+		{"convert", proposalSongMain, proposalSongPeer("fill"), &edits.ConvertSongToArrange{},
+			proposalSongPeer("off"), proposalSongPeer("fill") + "// unrelated\n", "after its last placement ends"},
 		{"split", "cicada 2\narrange {\n  place run bass pulse {\n    at = @1.1.1\n    length = 4bars\n  }\n}\n", proposalSplitPart, &edits.SplitClip{Entity: "placement:run", AtTick: 7680},
 			"track bass acid {}\npattern pulse { c3?50 . c4?50 c3?50 }\n", proposalSplitPart + "// unrelated\n", "restarts its chance steps"},
 	}
@@ -157,10 +155,10 @@ func TestProjectChangeAfterTheSnapshotIsCaughtBeforeAnyWrite(t *testing.T) {
 	const cause = "the project changed during the render check; try again"
 	for _, route := range []string{"/api/intents", "/api/proposals"} {
 		t.Run(route, func(t *testing.T) {
-			p := newRenderProposalProject(t, proposalSongMain, proposalSongPeer(proposalPlain))
+			p := newRenderProposalProject(t, proposalSongMain, proposalSongPeer("fill"))
 			t.Cleanup(func() { rendercheck.AfterSnapshot = nil })
 			rendercheck.AfterSnapshot = func() {
-				_ = os.WriteFile(p.peer, []byte(proposalSongPeer(proposalChance)), 0o600)
+				_ = os.WriteFile(p.peer, []byte(proposalSongPeer("off")), 0o600)
 			}
 			env := edits.Envelope{Version: 1, Revision: studioRevision([]byte(proposalSongMain)), Intents: []edits.Intent{&edits.ConvertSongToArrange{}}}
 			if route == "/api/intents" {
@@ -171,7 +169,7 @@ func TestProjectChangeAfterTheSnapshotIsCaughtBeforeAnyWrite(t *testing.T) {
 			} else {
 				id := p.stage(t, proposalSongMain, &edits.ConvertSongToArrange{})
 				r := studioCall(t, p.handler, "/api/proposals/"+id+"/accept", map[string]any{})
-				if r.Code != 422 || !strings.Contains(r.Body.String(), "chance steps") {
+				if r.Code != 422 || !strings.Contains(r.Body.String(), "after its last placement ends") {
 					t.Fatalf("accept: %d %s", r.Code, r.Body.String())
 				}
 			}
@@ -184,7 +182,7 @@ func TestProjectChangeAfterTheSnapshotIsCaughtBeforeAnyWrite(t *testing.T) {
 
 // The shared comparison the commit tail runs (and cicada apply runs before its own exchange).
 func TestRenderIdentityIsRecheckedBeforeTheCommit(t *testing.T) {
-	p := newRenderProposalProject(t, proposalSongMain, proposalSongPeer(proposalPlain))
+	p := newRenderProposalProject(t, proposalSongMain, proposalSongPeer("fill"))
 	s, err := newStudio(p.path)
 	if err != nil {
 		t.Fatal(err)
@@ -201,7 +199,7 @@ func TestRenderIdentityIsRecheckedBeforeTheCommit(t *testing.T) {
 	if err := s.verifyRenderIdentity(result.RenderChecked, result.RenderIdentity, result.RenderRecheck); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(p.peer, []byte(proposalSongPeer(proposalChance)), 0o600); err != nil {
+	if err := os.WriteFile(p.peer, []byte(proposalSongPeer("off")), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.verifyRenderIdentity(result.RenderChecked, result.RenderIdentity, result.RenderRecheck); err == nil || !strings.Contains(err.Error(), "changed during the render check") {
@@ -213,13 +211,13 @@ func TestRenderIdentityIsRecheckedBeforeTheCommit(t *testing.T) {
 // acceptance-time identity comparison. The commit tail must still refuse.
 func TestPeerChangeDuringAcceptanceCompileIsRefusedByTheCommitTail(t *testing.T) {
 	isolateState(t)
-	p := newRenderProposalProject(t, proposalSongMain, proposalSongPeer(proposalPlain))
+	p := newRenderProposalProject(t, proposalSongMain, proposalSongPeer("fill"))
 	id := p.stage(t, proposalSongMain, &edits.ConvertSongToArrange{})
 	previous := studioCompile
 	t.Cleanup(func() { studioCompile = previous })
 	studioCompile = func(path string, source []byte, overrides map[string][]byte) (*project.Project, error) {
 		compiled, err := previous(path, source, overrides)
-		_ = os.WriteFile(p.peer, []byte(proposalSongPeer(proposalChance)), 0o600)
+		_ = os.WriteFile(p.peer, []byte(proposalSongPeer("off")), 0o600)
 		return compiled, err
 	}
 	r := studioCall(t, p.handler, "/api/proposals/"+id+"/accept", map[string]any{})
@@ -232,7 +230,7 @@ func TestPeerChangeDuringAcceptanceCompileIsRefusedByTheCommitTail(t *testing.T)
 	}
 	// A fresh request sees the changed project and is refused for the real reason.
 	fresh := edits.Envelope{Version: 1, Revision: studioRevision([]byte(proposalSongMain)), Intents: []edits.Intent{&edits.ConvertSongToArrange{}}}
-	if r := studioCall(t, p.handler, "/api/intents", fresh); r.Code != 422 || !strings.Contains(r.Body.String(), "chance steps") {
+	if r := studioCall(t, p.handler, "/api/intents", fresh); r.Code != 422 || !strings.Contains(r.Body.String(), "after its last placement ends") {
 		t.Fatalf("fresh request: %d %s", r.Code, r.Body.String())
 	}
 }
@@ -241,7 +239,7 @@ func TestPeerChangeDuringAcceptanceCompileIsRefusedByTheCommitTail(t *testing.T)
 // that was render-checked without an identity is refused.
 func TestCommitTailRefusesStaleOrMissingRenderIdentity(t *testing.T) {
 	isolateState(t)
-	p := newRenderProposalProject(t, proposalSongMain, proposalSongPeer(proposalPlain))
+	p := newRenderProposalProject(t, proposalSongMain, proposalSongPeer("fill"))
 	s, err := newStudio(p.path)
 	if err != nil {
 		t.Fatal(err)
@@ -278,15 +276,15 @@ func TestCommitTailRefusesStaleOrMissingRenderIdentity(t *testing.T) {
 // A peer rewritten during the render and put back before any later check leaves
 // the disk identical to the start, so before/after comparisons cannot see it.
 // The renders read a snapshot, so what was rendered is what a fresh comparison
-// of the original project renders: here the chance steps, which are refused.
+// of the original project renders: here the silent ending, which is refused.
 func TestPeerRewrittenAndRestoredDuringTheRenderCannotApproveAConversion(t *testing.T) {
 	isolateState(t)
 	for _, route := range []string{"/api/intents", "/api/proposals"} {
 		t.Run(route, func(t *testing.T) {
-			p := newRenderProposalProject(t, proposalSongMain, proposalSongPeer(proposalChance))
+			p := newRenderProposalProject(t, proposalSongMain, proposalSongPeer("off"))
 			t.Cleanup(func() { rendercheck.AfterSnapshot, rendercheck.AfterRender = nil, nil })
-			rendercheck.AfterSnapshot = func() { _ = os.WriteFile(p.peer, []byte(proposalSongPeer(proposalPlain)), 0o600) }
-			rendercheck.AfterRender = func() { _ = os.WriteFile(p.peer, []byte(proposalSongPeer(proposalChance)), 0o600) }
+			rendercheck.AfterSnapshot = func() { _ = os.WriteFile(p.peer, []byte(proposalSongPeer("fill")), 0o600) }
+			rendercheck.AfterRender = func() { _ = os.WriteFile(p.peer, []byte(proposalSongPeer("off")), 0o600) }
 			env := edits.Envelope{Version: 1, Revision: studioRevision([]byte(proposalSongMain)), Intents: []edits.Intent{&edits.ConvertSongToArrange{}}}
 			var body any = env
 			if route == "/api/proposals" {
@@ -294,7 +292,7 @@ func TestPeerRewrittenAndRestoredDuringTheRenderCannotApproveAConversion(t *test
 			}
 			for attempt := 1; attempt <= 2; attempt++ {
 				r := studioCall(t, p.handler, route, body)
-				if r.Code != 422 || !strings.Contains(r.Body.String(), "chance steps") {
+				if r.Code != 422 || !strings.Contains(r.Body.String(), "after its last placement ends") {
 					t.Fatalf("attempt %d: %d %s", attempt, r.Code, r.Body.String())
 				}
 			}
@@ -371,10 +369,10 @@ func TestPublicationBoundaryVetoesAStaleRenderApproval(t *testing.T) {
 	const cause = "the project changed during the render check; try again"
 	boundary := func(t *testing.T, peer string) {
 		t.Cleanup(func() { studioPublishSeam = nil })
-		studioPublishSeam = func() { _ = os.WriteFile(peer, []byte(proposalSongPeer(proposalChance)), 0o600) }
+		studioPublishSeam = func() { _ = os.WriteFile(peer, []byte(proposalSongPeer("off")), 0o600) }
 	}
 	t.Run("direct", func(t *testing.T) {
-		p := newRenderProposalProject(t, proposalSongMain, proposalSongPeer(proposalPlain))
+		p := newRenderProposalProject(t, proposalSongMain, proposalSongPeer("fill"))
 		boundary(t, p.peer)
 		names := dirNames(t, filepath.Dir(p.path))
 		env := edits.Envelope{Version: 1, Revision: studioRevision([]byte(proposalSongMain)), Intents: []edits.Intent{&edits.ConvertSongToArrange{}}}
@@ -389,7 +387,7 @@ func TestPublicationBoundaryVetoesAStaleRenderApproval(t *testing.T) {
 		}
 	})
 	t.Run("proposal acceptance", func(t *testing.T) {
-		p := newRenderProposalProject(t, proposalSongMain, proposalSongPeer(proposalPlain))
+		p := newRenderProposalProject(t, proposalSongMain, proposalSongPeer("fill"))
 		id := p.stage(t, proposalSongMain, &edits.ConvertSongToArrange{})
 		boundary(t, p.peer)
 		names := dirNames(t, filepath.Dir(p.path))
@@ -404,7 +402,7 @@ func TestPublicationBoundaryVetoesAStaleRenderApproval(t *testing.T) {
 		}
 	})
 	t.Run("cicada apply", func(t *testing.T) {
-		p := newRenderProposalProject(t, proposalSongMain, proposalSongPeer(proposalPlain))
+		p := newRenderProposalProject(t, proposalSongMain, proposalSongPeer("fill"))
 		file := filepath.Join(t.TempDir(), "intents.json")
 		writeApplyEnvelope(t, file, edits.Envelope{Version: 1, Intents: []edits.Intent{&edits.ConvertSongToArrange{}}})
 		boundary(t, p.peer)
@@ -453,9 +451,9 @@ func TestNewlyDiscoveredManifestIsRefusedByTheCommitTail(t *testing.T) {
 // A dry run says a conversion is safe, so it is held to the same freshness.
 func TestStaleDryRunIsNotReportedConvertible(t *testing.T) {
 	isolateState(t)
-	p := newRenderProposalProject(t, proposalSongMain, proposalSongPeer(proposalPlain))
+	p := newRenderProposalProject(t, proposalSongMain, proposalSongPeer("fill"))
 	t.Cleanup(func() { rendercheck.AfterSnapshot = nil })
-	rendercheck.AfterSnapshot = func() { _ = os.WriteFile(p.peer, []byte(proposalSongPeer(proposalChance)), 0o600) }
+	rendercheck.AfterSnapshot = func() { _ = os.WriteFile(p.peer, []byte(proposalSongPeer("off")), 0o600) }
 	env := edits.Envelope{Version: 1, Revision: studioRevision([]byte(proposalSongMain)), DryRun: true, Intents: []edits.Intent{&edits.ConvertSongToArrange{}}}
 	r := studioCall(t, p.handler, "/api/intents", env)
 	if r.Code != 200 || !strings.Contains(r.Body.String(), `"convertible":false`) || strings.Contains(r.Body.String(), `"convertible":true`) {

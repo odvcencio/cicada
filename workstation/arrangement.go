@@ -135,7 +135,9 @@ func (s *studioApp) arrangementView(ctx *server.Context, v workspace, csrf, sele
 		cells := []gosx.Node{gosx.El("span", gosx.Attrs(gosx.Attr("class", "timeline-track")), gosx.El("strong", gosx.Attrs(gosx.Attr("title", track.ID)), gosx.Text(track.ID)), gosx.El("small", gosx.Attrs(gosx.Attr("title", track.Kind)), gosx.Text(track.Kind)), rail(track.ID))}
 		silentScenes := silentSongScenes(p, track.ID)
 		inherited := "off"
+		var cellStart int64
 		for _, entry := range p.Song {
+			cellLength := p.MeterMap().BarsTicks(cellStart, int64(entry.Bars))
 			binding := scenes[entry.Scene].Bindings[track.ID]
 			keep := binding == "" || binding == "keep"
 			if !keep {
@@ -150,7 +152,7 @@ func (s *studioApp) arrangementView(ctx *server.Context, v workspace, csrf, sele
 				text = "↳ " + text
 				class += " inherited"
 			}
-			attrs := gosx.Attrs(gosx.Attr("class", class), gosx.Attr("title", entry.Scene+" / "+track.ID))
+			attrs := gosx.Attrs(gosx.Attr("class", class), gosx.Attr("title", entry.Scene+" / "+track.ID), gosx.Attr("data-draw-track", track.ID), gosx.Attr("data-draw-scene", entry.Scene))
 			content := []gosx.Node{gosx.El("span", gosx.Attrs(gosx.Attr("class", "clip-name")), gosx.Text(text))}
 			if inherited != "off" {
 				href := patternURL(inherited, 1, "", "")
@@ -163,7 +165,7 @@ func (s *studioApp) arrangementView(ctx *server.Context, v workspace, csrf, sele
 					}
 					href = patternContextURL(href, track.ID, scene) + "&dock=clip&region=detail"
 					attrs = append(attrs, gosx.BoolAttr("data-scene-pattern-open"))
-					content = append(content, clipPreview(p, inherited, p.MeterMap().BarsTicks(0, int64(entry.Bars))))
+					content = append(content, clipPreview(p, inherited, cellStart, cellLength))
 					if inherited == openPattern && (openTrack == "" || openTrack == track.ID) {
 						attrs = append(attrs, gosx.BoolAttr("data-arrange-pattern-open"))
 					}
@@ -176,6 +178,7 @@ func (s *studioApp) arrangementView(ctx *server.Context, v workspace, csrf, sele
 			} else {
 				cells = append(cells, gosx.El("span", attrs, gosx.Fragment(content...)))
 			}
+			cellStart += cellLength
 		}
 		rows = append(rows, gosx.El("div", gosx.Attrs(gosx.Attr("class", "timeline-row"), gosx.Attr("data-arrange-kind", track.Kind), gosx.Attr("data-track-color", strconv.Itoa(trackIndex%trackColors)), gosx.Attr("style", style)), gosx.Fragment(cells...)))
 	}
@@ -211,7 +214,8 @@ func (s *studioApp) arrangementView(ctx *server.Context, v workspace, csrf, sele
 		tools := gosx.El("section", gosx.Attrs(gosx.Attr("class", "arrange-tools"), gosx.Attr("aria-label", "Arrangement tools"), gosx.BoolAttr("data-dismiss-scope")),
 			s.listeningForm(v, csrf, selected, submit("action", "fullSong", "Play full song")),
 			s.listeningForm(v, csrf, selected, submit("action", "stop", "Stop listening")),
-			arrangementTools(false, 0, 0, ""),
+			arrangementTools(p, false, 0, 0, ""),
+			gosx.El("div", gosx.Attrs(gosx.BoolAttr("data-arrange-write"), gosx.BoolAttr("hidden")), s.form(v, csrf, "session", "pattern", hidden("action", "bind"), hidden("draw", "scene"), hidden("scene", ""), hidden("track", ""), hidden("pattern", ""))),
 			panel("Loop an exact range", exact, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("A section runs from its marker to the next marker, or the song end. Loop end is exclusive. Playback controls keep your arrangement unchanged."))),
 			gosx.El("div", gosx.Attrs(gosx.Attr("class", "arrange-tools-spacer"))),
 			panel("Add section", addSection...),
@@ -350,7 +354,7 @@ func (s *studioApp) placementArrangement(ctx *server.Context, v workspace, csrf,
 		markerList,
 		s.arrangementTempos(v, csrf, selected, end),
 		s.sessionListening(v, csrf, selected, end),
-		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Select a block to edit it. Drag to move; drag its right edge to resize. Arrow keys on a block or edge change it by a sixteenth; hold Shift for a bar. Each placement restarts its pattern; End is exclusive.")),
+		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Select a block to edit it. Drag to move or drag its right edge to resize. Arrow keys use the selected snap step. End is exclusive.")),
 		s.placementEditors(ctx, v, csrf, placements, selected, end),
 		gosx.El("details", gosx.Attrs(gosx.Attr("class", "placement-list")), gosx.El("summary", gosx.Text("Placement list")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll")), gosx.El("table", gosx.Attrs(gosx.Attr("aria-label", "Named placement timeline")), gosx.El("thead", gosx.El("tr", gosx.Fragment(headers...))), gosx.El("tbody", gosx.Fragment(rows...))))),
 		gosx.El("details", gosx.Attrs(gosx.Attr("class", "pattern-management")), gosx.El("summary", gosx.Text("Project settings")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), settings)))

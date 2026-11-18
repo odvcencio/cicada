@@ -85,6 +85,8 @@ On a narrow window, choose **Center** for the
 
 ## Transport, Arrange, and Session
 
+In Arrange, choose **Draw** and pick a pattern from its track. A click in a scene cell assigns the pattern wherever that scene plays. A click in an empty placement lane adds one pattern at the snap position, ending earlier if another placement starts. Focus a lane and press Enter to use its first gap. Each draw has one Undo step. **Select** restores ordinary clip selection and dragging.
+
 **Play**, **Pause**, **Stop**, and **Return to start** control native playback.
 The bar, step, backend, and errors update through GoSX live bindings. Valid
 score edits become active at the next bar; during a shorter loop they become

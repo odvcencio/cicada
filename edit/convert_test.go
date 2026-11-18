@@ -11,7 +11,7 @@ const templateHead = "title \"t\"\ntempo 130\nkey a minor\n\ntrack bass acid {}\
 const templateScenes = "scene main { bass = pulse drums = beat }\nscene break { bass = pulse drums = beat }\n\n"
 
 func place(name, track, content, at, length string) string {
-	return "  place " + name + " " + track + " " + content + " {\n    at = " + at + " length = " + length + "\n  }\n"
+	return "  place " + name + " " + track + " " + content + " {\n    at = " + at + " length = " + length + " phase = song\n  }\n"
 }
 
 func convertScore(t *testing.T, source string, opts Options) (*Result, error) {
@@ -129,23 +129,11 @@ func TestConvertSongToArrangeRefusals(t *testing.T) {
 	}
 }
 
-func TestConvertSongToArrangeNamesPhaseCause(t *testing.T) {
-	two := "pattern two acid {\n  1 . . . 5 . . . 1 . . . 7 . . . 3 . . . 5 . . . 3 . . . 7 . . .\n}\n"
-	other := strings.Replace(two, "pattern two", "pattern other", 1)
-	source := "title \"t\"\ntrack bass acid {}\n" + two + other + "scene a { bass = two }\nscene b { bass = other }\nsong { a*3 b*3 }\n"
+func TestConvertSongRefusesTrailingSilenceWhenTheRenderDiffers(t *testing.T) {
+	source := templateHead + "scene a { bass = pulse }\nscene b { bass = off }\nsong { a*1 b*2 }\n"
 	differ := &fakeCheck{hashes: map[string]string{"arrange {": "converted"}}
 	var refusal *RefusalError
-	if _, err := convertScore(t, source, Options{RenderCheck: differ}); !errors.As(err, &refusal) || refusal.Cause != "pattern two (2 bars) would restart out of phase at bar 4" {
-		t.Fatalf("phase: %v", err)
-	}
-	// Pass-restarting chance steps are named when the next pattern has them.
-	chance := "title \"t\"\ntrack bass acid {}\npattern first acid {\n  c3?50 . c4?50 c3?50\n}\npattern second acid {\n  c3?50 . c4?50 c3?50\n}\nscene a { bass = first }\nscene b { bass = second }\nsong { a*2 b*2 }\n"
-	if _, err := convertScore(t, chance, Options{RenderCheck: differ}); !errors.As(err, &refusal) || refusal.Cause != "pattern second has chance steps that restart at bar 3" {
-		t.Fatalf("chance: %v", err)
-	}
-	// Drum placements no longer restart audibly, so no drums cause is named.
-	drums := "title \"t\"\ntrack drums drums {}\npattern beat drums {\n  bd: X... .... X... ....\n}\npattern fill drums {\n  sd: X... .... X... ....\n}\nscene a { drums = beat }\nscene b { drums = fill }\nsong { a*2 b*2 }\n"
-	if _, err := convertScore(t, drums, Options{RenderCheck: differ}); !errors.As(err, &refusal) || refusal.Cause != "the converted score renders differently" {
-		t.Fatalf("drums: %v", err)
+	if _, err := convertScore(t, source, Options{RenderCheck: differ}); !errors.As(err, &refusal) || refusal.Cause != "the song continues through bar 3 after its last placement ends" {
+		t.Fatalf("trailing silence: %v", err)
 	}
 }

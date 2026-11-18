@@ -6,12 +6,14 @@ const fixture = `// cicada-structure-controls-test: disposable fixture
 cicada 2
 title "Structure controls"
 tempo 120
-track bass acid {}
+track bass fm_bass {}
 track spare acid {}
-pattern pulse { 1 . 5 . }
+pattern pulse { humanize = 3 1 . 5 . }
+pattern turn { 5 . 1 . }
 scene main { bass=pulse }
-scene unused { bass=pulse }
-song { main*4 }
+scene unused { bass=turn }
+scene wait { bass=off }
+song { wait*1 main*4 }
 `;
 if (process.argv[2] === '--write-fixture') {
   fs.writeFileSync(process.argv[3], fixture, {flag:'wx'});
@@ -56,11 +58,11 @@ test('structure controls edit the score and Undo restores it', {timeout:120000},
   assert.equal((await state()).source, fixture);
   await openInspector();
   let before = (await state()).source;
-  let form = page.locator('form[action$="/__actions/scene-rename"]').first();
+  let form = page.locator('[aria-label="Section inspector"] details[open] form[action$="/__actions/scene-rename"]').first();
   await form.getByLabel('Scene name').fill('verse'); await submit(form.getByRole('button',{name:'Rename',exact:true}), 'scene-rename');
   await changedAndUndo(before, /scene verse/);
   await openInspector(); before = (await state()).source;
-  form = page.locator('form[action$="/__actions/scene-duplicate"]').first();
+  form = page.locator('[aria-label="Section inspector"] details[open] form[action$="/__actions/scene-duplicate"]').first();
   await submit(form.getByRole('button',{name:'Duplicate',exact:true}), 'scene-duplicate');
   await changedAndUndo(before, /scene main-2/);
   await openPanel('Add section'); before = (await state()).source;
@@ -88,7 +90,47 @@ test('structure controls edit the score and Undo restores it', {timeout:120000},
   await until(async () => (await page.locator('body').textContent()).includes('only track'), 'last track refusal was not shown');
   assert.ok(!(await state()).source.includes('track spare'));
   await undo(); await until(async () => (await state()).source === before, 'Undo did not restore track'); await ready();
+  const tool = page.getByLabel('Arrangement tool', {exact:true});
+  const brush = page.getByLabel('Pattern to draw', {exact:true});
+  const chooseBrush = async pattern => {
+    const revision = (await state()).revision;
+    await tool.selectOption('draw');
+    await brush.selectOption('bass:' + pattern);
+    assert.equal((await state()).revision, revision);
+  };
+  await chooseBrush('turn');
+  await submit(page.locator('[data-draw-track=bass][data-draw-scene=wait]'), 'pattern');
+  await changedAndUndo(fixture, /scene wait\s*\{\s*bass\s*=\s*turn/);
   await openPanel('Project'); before = (await state()).source;
   await submit(panel('Project').locator('form[action$="/__actions/song-convert"]').getByRole('button',{name:'Convert',exact:true}), 'song-convert');
-  await changedAndUndo(before, /arrange\s*\{/);
+  await until(async () => (await state()).source.includes('phase = song'), 'converted placement lost its pattern clock');
+  const converted = (await state()).source;
+  await ready();
+  await chooseBrush('pulse');
+  const revision = (await state()).revision;
+  await page.locator('[data-placement-block] .placement-select').first().click();
+  await page.getByText('That position is occupied. Choose an empty space.').waitFor();
+  assert.equal((await state()).revision, revision);
+  const lane = page.locator('.placement-lane[data-draw-track=bass]');
+  // Hold a real read of the saved state. It marks the shell busy while the
+  // arrangement's revision is current, as can happen just after Undo.
+  let releaseRead;
+  const readGate = new Promise(resolve => { releaseRead = resolve; });
+  const readStarted = page.waitForRequest(r => new URL(r.url()).pathname === '/__studio/regions');
+  await page.route('**/__studio/regions?*', async route => {
+    await readGate;
+    await route.continue();
+  }, {times:1});
+  await page.locator('[data-workspace-retry]').evaluate(button => button.click());
+  await readStarted;
+  await lane.focus();
+  try {
+    assert.equal(await page.locator('#studio-shell').getAttribute('aria-busy'), 'true');
+    await lane.press('Enter');
+  } finally {
+    releaseRead();
+  }
+  await changedAndUndo(converted, /place new-placement bass pulse\s*\{[^}]*at\s*=\s*0ticks/);
+  await undo();
+  await until(async () => (await state()).source === before, 'Undo did not restore the scene song');
 });
