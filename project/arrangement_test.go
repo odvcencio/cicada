@@ -14,7 +14,7 @@ pattern hits { c . c . }
 arrange {
   // Preserve the placement identity and surrounding source.
   place bass-1 bass hits { at = @2.3.4 length = 1/2 }
-  place bass-2 bass hits { at = @4.1.1 length = 2bars }
+  place bass-2 bass hits { at = @4.1.1 length = 2bars phase = song }
   marker chorus { at = @5.1.1 }
 }
 `)
@@ -40,6 +40,9 @@ arrange {
 	}
 	if p.Tracks[0].Slots[0] == nil || *p.Tracks[0].Slots[0] != "hits" || p.Patterns[0].Data[0].Note != 60 {
 		t.Fatalf("placement lost track octave or slot: %+v", p)
+	}
+	if p.Arrange.Placements[0].SongPhase || !p.Arrange.Placements[1].SongPhase {
+		t.Fatalf("lost the placement origins: %+v", p.Arrange.Placements)
 	}
 	before, err := CanonicalJSON(p)
 	if err != nil {

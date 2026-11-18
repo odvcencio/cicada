@@ -21,11 +21,17 @@ Placement names identify instances; content names identify reusable patterns
 or clips. Positions use a one-based `@bar.beat.step` grid in 4/4. Durations
 accept bars, ticks, or exact note divisions. A quarter note has 960 ticks;
 unsupported fractional ticks fail validation. Step patterns start on a step
-and restart at the placement's origin. Audio placements may overlap. Step
+and restart at the placement's origin by default (`phase = local`). A pattern
+placement with `phase = song` counts steps and seeded passes from transport
+tick zero, including when playback seeks into the placement. Moving it samples
+the pattern at its new song position. Scene conversion uses this setting to
+preserve humanized velocities, chance decisions and mid-pattern entries.
+Audio placements may overlap. Step
 patterns on the same track must have disjoint intervals.
 
 Project JSON preserves integer `at_tick` and `length_ticks` values under
-`arrange`. `notation.SetPlacementField` changes one time literal while keeping
+`arrange` and sets `song_phase: true` for a song-phased pattern.
+`notation.SetPlacementField` changes one time literal while keeping
 all other source bytes. A move followed by its inverse restores the exact
 original source, including comments and authored units.
 
@@ -59,8 +65,7 @@ from stopping another instance. When another pattern placement starts on the
 same track at the release tick, including the wrap of a looping arrangement
 from the last end to a placement at tick 0, the release is skipped. Held notes,
 slides, and drum or voice tails carry across the boundary like a scene change.
-Step patterns, including chance steps, still restart at each placement's
-origin. A release followed by a gap still stops the track's notes and tails.
+A release followed by a gap stops the track's notes and tails.
 Preparation validates voice capacity and copies
 event data outside rendering. Seeking reconstructs active placements and clip
 source positions without rendering skipped frames.

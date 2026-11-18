@@ -5,6 +5,9 @@ import (
 	"math"
 )
 
+// Older v15 readers reject this kind rather than replaying the region from step zero.
+const songPhasePatternKind = 6
+
 // Version 15 always appends the schedule/asset/clip footer, even when empty.
 // Legacy projects continue
 // encoding as version 13, so old fixtures and consumers stay byte-identical.
@@ -31,7 +34,11 @@ func writeSchedule(w *writer, cfg *engine.Config) error {
 	for _, v := range cfg.Schedule {
 		w.u64(uint64(v.Tick))
 		w.u64(uint64(v.EndTick))
-		w.byte(byte(v.Kind))
+		kind := byte(v.Kind)
+		if v.SongPhase {
+			kind = songPhasePatternKind
+		}
+		w.byte(kind)
 		w.byte(v.Track)
 		w.u16(v.Scene)
 		w.u16(v.Index)
@@ -113,6 +120,9 @@ func readSchedule(r *reader, cfg *engine.Config) error {
 			return err
 		}
 		v.Kind = engine.ScheduleKind(kind)
+		if kind == songPhasePatternKind {
+			v.Kind, v.SongPhase = engine.SchedulePattern, true
+		}
 		if v.Track, err = r.byte(); err != nil {
 			return err
 		}

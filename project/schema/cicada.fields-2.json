@@ -2742,6 +2742,20 @@
       "layer": "semantic"
     },
     {
+      "construct": "placement",
+      "name": "song_phase",
+      "required": false,
+      "type": "boolean",
+      "unit": null,
+      "range": null,
+      "default": null,
+      "meaning": "Use the song's pattern origin for this placement",
+      "order": 6,
+      "introduced": "cicada.project/2",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
       "construct": "marker",
       "name": "id",
       "required": true,

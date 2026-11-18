@@ -8,6 +8,28 @@ import (
 	"testing"
 )
 
+func TestSchedulePatternOriginSurvivesImage(t *testing.T) {
+	cfg := engine.Config{SampleRate: 48000, MaxBlock: 128, Tracks: 1, MaxVoices: 1, BPMMilli: 120000, Patterns: []engine.PatternBank{{}}}
+	cfg.Track[0].Kind = engine.VoiceAcid
+	cfg.Patterns[0].Slots[0] = seq.Pattern{Len: 1, GatePercent: 55}
+	cfg.Schedule = []engine.ScheduleEvent{{Kind: engine.SchedulePattern, Tick: 3840, EndTick: 7680, ID: 1}, {Kind: engine.SchedulePatternEnd, Tick: 7680, EndTick: 7680, ID: 1}}
+	for _, songPhase := range []bool{true, false} {
+		cfg.Schedule[0].SongPhase = songPhase
+		data, err := Encode(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := Decode(data, 48000, 128)
+		if err != nil || got.Schedule[0] != cfg.Schedule[0] {
+			t.Fatalf("song phase %t: schedule round trip failed: %v", songPhase, err)
+		}
+	}
+	cfg.Schedule[1].SongPhase = true
+	if _, err := Encode(cfg); err == nil {
+		t.Fatal("encoded a release with a pattern origin")
+	}
+}
+
 func TestArrangementTempoImageRejectsMalformedRecords(t *testing.T) {
 	cfg := engine.Config{SampleRate: 48000, MaxBlock: 128, Tracks: 1, MaxVoices: 1, BPMMilli: 120000, Patterns: []engine.PatternBank{{}}}
 	cfg.Track[0].Kind = engine.VoiceAcid

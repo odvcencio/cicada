@@ -69,7 +69,7 @@ func TestConvertSongWithCompanionDefinitionsInPeerFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "cicada 2\nscene a { bass = pulse }\nscene b { bass = pulse }\narrange {\n  place a-1-bass bass pulse {\n    at = @1.1.1 length = 3bars\n  }\n}\n"
+	want := "cicada 2\nscene a { bass = pulse }\nscene b { bass = pulse }\narrange {\n  place a-1-bass bass pulse {\n    at = @1.1.1 length = 3bars phase = song\n  }\n}\n"
 	if string(got.Source) != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", got.Source, want)
 	}

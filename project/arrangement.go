@@ -19,6 +19,7 @@ type Placement struct {
 	Content     string `json:"content" cicada:"Pattern or audio clip identifier"`
 	AtTick      int64  `json:"at_tick" cicada:"Absolute start tick" unit:"tick"`
 	LengthTicks int64  `json:"length_ticks" cicada:"Exclusive duration" unit:"tick"`
+	SongPhase   bool   `json:"song_phase,omitempty" cicada:"Use the song's pattern origin for this placement" introduced:"cicada.project/2"`
 }
 type Marker struct {
 	ID     string `json:"id" cicada:"Stable marker identity"`
@@ -39,7 +40,7 @@ func lowerArrangement(p *Project, s *notation.Score) {
 	p.p2Syntax = true
 	p.Arrange = &Arrangement{Placements: []Placement{}, Markers: []Marker{}}
 	for _, v := range s.Arrange.Placements {
-		p.Arrange.Placements = append(p.Arrange.Placements, Placement{ID: v.Name, Track: v.Track, Content: v.Content, AtTick: v.AtTick, LengthTicks: v.LengthTicks})
+		p.Arrange.Placements = append(p.Arrange.Placements, Placement{ID: v.Name, Track: v.Track, Content: v.Content, AtTick: v.AtTick, LengthTicks: v.LengthTicks, SongPhase: v.SongPhase()})
 	}
 	for _, v := range s.Arrange.Markers {
 		p.Arrange.Markers = append(p.Arrange.Markers, Marker{ID: v.Name, AtTick: v.AtTick})
@@ -59,7 +60,11 @@ func arrangementSource(a *Arrangement) string {
 		fmt.Fprintf(&out, "\n  tempo @%d.1.1 %s", t.Bar+1, strconv.FormatFloat(float64(t.BPMMilli)/1000, 'f', -1, 64))
 	}
 	for _, p := range a.Placements {
-		fmt.Fprintf(&out, "\n  place %s %s %s {\n    at = %dticks\n    length = %dticks\n  }", p.ID, p.Track, p.Content, p.AtTick, p.LengthTicks)
+		fmt.Fprintf(&out, "\n  place %s %s %s {\n    at = %dticks\n    length = %dticks", p.ID, p.Track, p.Content, p.AtTick, p.LengthTicks)
+		if p.SongPhase {
+			out.WriteString("\n    phase = song")
+		}
+		out.WriteString("\n  }")
 	}
 	for _, m := range a.Markers {
 		fmt.Fprintf(&out, "\n  marker %s {\n    at = %dticks\n  }", m.ID, m.AtTick)
@@ -113,7 +118,11 @@ func validateArrangementProject(p *Project) error {
 		s.Kits = append(s.Kits, notation.Kit{Name: v.ID})
 	}
 	for _, v := range p.Arrange.Placements {
-		s.Arrange.Placements = append(s.Arrange.Placements, notation.Placement{Name: v.ID, Track: v.Track, Content: v.Content, AtTick: v.AtTick, LengthTicks: v.LengthTicks, Params: []notation.Param{{Name: "at", Value: strconv.FormatInt(v.AtTick, 10) + "ticks"}, {Name: "length", Value: strconv.FormatInt(v.LengthTicks, 10) + "ticks"}}})
+		params := []notation.Param{{Name: "at", Value: strconv.FormatInt(v.AtTick, 10) + "ticks"}, {Name: "length", Value: strconv.FormatInt(v.LengthTicks, 10) + "ticks"}}
+		if v.SongPhase {
+			params = append(params, notation.Param{Name: "phase", Value: "song"})
+		}
+		s.Arrange.Placements = append(s.Arrange.Placements, notation.Placement{Name: v.ID, Track: v.Track, Content: v.Content, AtTick: v.AtTick, LengthTicks: v.LengthTicks, Params: params})
 	}
 	for _, v := range p.Arrange.Markers {
 		s.Arrange.Markers = append(s.Arrange.Markers, notation.Marker{Name: v.ID, AtTick: v.AtTick, Params: []notation.Param{{Name: "at", Value: strconv.FormatInt(v.AtTick, 10) + "ticks"}}})

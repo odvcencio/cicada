@@ -9,6 +9,58 @@ import (
 	"m31labs.dev/cicada/kernel/seq"
 )
 
+func TestSongPhasePlacementMatchesScenesAcrossSeekAndLoop(t *testing.T) {
+	cfg := testConfig()
+	cfg.Tracks, cfg.MaxVoices, cfg.BPMMilli, cfg.LoopSong = 1, 1, 240000, true
+	cfg.Patterns = make([]PatternBank, 1)
+	for slot := 0; slot < 2; slot++ {
+		p := &cfg.Patterns[0].Slots[slot]
+		p.Len, p.GatePercent, p.Humanize, p.Seed = 32, 75, 9, 731001
+		for step := 0; step < 32; step += 4 {
+			p.Steps[step], _ = seq.PackStep(seq.Step{Note: uint8(42 + slot*5 + step/4), Gate: true, Ratchet: 1, Probability: 80, Velocity: 90})
+		}
+	}
+	cfg.Scenes = []Scene{{Track: [MaxTracks]SceneBinding{{Mode: SceneSlot}}}, {Track: [MaxTracks]SceneBinding{{Mode: SceneSlot, Slot: 1}}}}
+	cfg.Song = []SongEntry{{Scene: 0, Bars: 1}, {Scene: 1, Bars: 1}, {Scene: 0, Bars: 1}}
+	placed := cfg
+	placed.Song = nil
+	for i, entry := range cfg.Song {
+		start, end := int64(i)*ticksPerBar, int64(i+1)*ticksPerBar
+		placed.Schedule = append(placed.Schedule,
+			ScheduleEvent{Tick: start, EndTick: end, Kind: SchedulePattern, Index: entry.Scene, ID: uint32(i + 1), SongPhase: true},
+			ScheduleEvent{Tick: end, EndTick: end, Kind: SchedulePatternEnd, ID: uint32(i + 1)})
+	}
+	for _, at := range []cmd.Command{{}, {Op: cmd.OpSeek, Track: 0xff, Arg0: 1, Arg1: 240}} {
+		scenes, err := New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		regions, err := New(placed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, player := range []*Engine{scenes, regions} {
+			if at.Op == cmd.OpSeek {
+				player.Push(at)
+			}
+			player.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff})
+		}
+		var sl, sr, pl, pr [128]float32
+		var audible bool
+		for block := 0; block < 1600; block++ {
+			scenes.Render(sl[:], sr[:])
+			regions.Render(pl[:], pr[:])
+			audible = audible || sl != [128]float32{}
+			if sl != pl || sr != pr || scenes.faulted || regions.faulted {
+				t.Fatalf("scene/placement mismatch at tick %d (seek %v)", scenes.transport.Tick(), at)
+			}
+		}
+		if !audible {
+			t.Fatal("silent comparison")
+		}
+	}
+}
+
 func TestPlacementLoopPreservesLeadingClipGap(t *testing.T) {
 	for _, block := range []int{1, 128, 4096} {
 		t.Run(strconv.Itoa(block), func(t *testing.T) {

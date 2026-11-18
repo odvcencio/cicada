@@ -26,7 +26,7 @@ func (c *countingRender) Hash(source []byte) (string, error) {
 
 const convertSongScore = "title \"Convert\"\ntempo 130\n\ntrack bass acid {}\n\npattern pulse acid {\n  1 . . . 5 . . . 1 . . . 7 . . .\n}\n\nscene main { bass = pulse }\nscene break { bass = pulse }\n\nsong { main*2 break*2 }\n"
 
-const convertChanceSongScore = "title \"Convert\"\ntempo 130\n\ntrack bass acid {}\n\npattern first acid {\n  c3?50 . c4?50 c3?50\n}\n\npattern second acid {\n  c3?50 . c4?50 c3?50\n}\n\nscene main { bass = first }\nscene break { bass = second }\n\nsong { main*2 break*2 }\n"
+const convertTrailingSilence = "title \"Convert\"\ntempo 130\ntrack bass acid {}\npattern pulse acid { 1 . 5 . }\nscene main { bass = pulse }\nscene rest { bass = off }\nsong { main*2 rest*2 }\n"
 
 func convertEnvelope(source string, dryRun bool) edits.Envelope {
 	return edits.Envelope{Version: 1, Revision: studioRevision([]byte(source)), Author: "tester", Session: "convert-test", DryRun: dryRun, Intents: []edits.Intent{&edits.ConvertSongToArrange{}}}
@@ -34,18 +34,18 @@ func convertEnvelope(source string, dryRun bool) edits.Envelope {
 
 func TestStudioConvertDryRunRefusalNamesCauseAndCachesRender(t *testing.T) {
 	isolateState(t)
-	s, handler, path := proposalFixture(t, convertChanceSongScore)
+	s, handler, path := proposalFixture(t, convertTrailingSilence)
 	counter := &countingRender{inner: rendercheck.New(path)}
 	s.renderCheck = rendercheck.Cached(path, counter)
 	for call := 1; call <= 2; call++ {
-		r := studioCall(t, handler, "/api/intents", convertEnvelope(convertChanceSongScore, true))
+		r := studioCall(t, handler, "/api/intents", convertEnvelope(convertTrailingSilence, true))
 		var reply struct {
 			Convertible *bool
 			Cause       string
 			DryRun      bool
 		}
 		if r.Code != 200 || json.Unmarshal(r.Body.Bytes(), &reply) != nil || reply.Convertible == nil || *reply.Convertible || !reply.DryRun ||
-			reply.Cause != "pattern second has chance steps that restart at bar 3" {
+			reply.Cause != "the song continues through bar 4 after its last placement ends" {
 			t.Fatalf("call %d: %d %s", call, r.Code, r.Body.String())
 		}
 		// The first call renders the song and its conversion once each; the
@@ -54,12 +54,12 @@ func TestStudioConvertDryRunRefusalNamesCauseAndCachesRender(t *testing.T) {
 			t.Fatalf("call %d: %d renders, want 2", call, got)
 		}
 	}
-	if got, _ := os.ReadFile(path); string(got) != convertChanceSongScore || len(studioHistoryEdits(t, handler)) != 0 {
+	if got, _ := os.ReadFile(path); string(got) != convertTrailingSilence || len(studioHistoryEdits(t, handler)) != 0 {
 		t.Fatal("a refused dry run changed the score or history")
 	}
 	// Without a dry run the refusal is an error and the score stays.
-	r := studioCall(t, handler, "/api/intents", convertEnvelope(convertChanceSongScore, false))
-	if r.Code != 422 || !strings.Contains(r.Body.String(), "pattern second has chance steps that restart at bar 3") {
+	r := studioCall(t, handler, "/api/intents", convertEnvelope(convertTrailingSilence, false))
+	if r.Code != 422 || !strings.Contains(r.Body.String(), "the song continues through bar 4 after its last placement ends") {
 		t.Fatalf("committed refusal: %d %s", r.Code, r.Body.String())
 	}
 }
@@ -76,7 +76,7 @@ func TestStudioConvertCommitsOneHistoryEntryAndUndoRestoresSong(t *testing.T) {
 		t.Fatalf("commit: %d %s", r.Code, r.Body.String())
 	}
 	converted, _ := os.ReadFile(path)
-	want := "cicada 2\n" + strings.Replace(convertSongScore, "song { main*2 break*2 }", "arrange {\n  place main-1-bass bass pulse {\n    at = @1.1.1 length = 4bars\n  }\n}", 1)
+	want := "cicada 2\n" + strings.Replace(convertSongScore, "song { main*2 break*2 }", "arrange {\n  place main-1-bass bass pulse {\n    at = @1.1.1 length = 4bars phase = song\n  }\n}", 1)
 	if string(converted) != want {
 		t.Fatalf("converted:\n%s\nwant:\n%s", converted, want)
 	}

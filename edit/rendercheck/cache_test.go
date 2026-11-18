@@ -76,7 +76,7 @@ func writeProject(t *testing.T, files map[string]string) string {
 const peerManifest = "project peers\ncicada 2\nentry \"main.cicada\"\nsource \"patterns.cicada\"\n"
 const peerMain = "scene a { bass = beat }\nscene b { bass = fill }\nsong { a*2 b*2 }\n"
 
-// plainSteps converts cleanly; chanceSteps restart their passes at each placement origin, so splitting them changes the render.
+// Chance and plain patterns exercise both seeded and fixed render inputs.
 const plainSteps = "1 . 5 . 1 . 5 . 1 . 5 . 1 . 5 ."
 const chanceSteps = "1?50 . 5?50 1?50 1?50 . 5?50 1?50 1?50 . 5?50 1?50 1?50 . 5?50 1?50"
 
@@ -108,11 +108,13 @@ func convert(t *testing.T, path string, check edits.RenderCheck) error {
 // A conversion approved against silent peer patterns must not be reused after
 // only the peer file changes: the entry bytes (and its revision) stay the same.
 func TestCachedApprovalDoesNotSurvivePeerFileEdit(t *testing.T) {
-	path := writeProject(t, map[string]string{"cicada.mod": peerManifest, "main.cicada": peerMain, "patterns.cicada": peerPatterns(plainSteps)})
+	main := strings.Replace(peerMain, "scene b { bass = fill }\n", "", 1)
+	peer := peerPatterns(chanceSteps)
+	path := writeProject(t, map[string]string{"cicada.mod": peerManifest, "main.cicada": main, "patterns.cicada": peer + "scene b { bass = fill }\n"})
 	counted := &countedCheck{inner: New(path)}
 	check := Cached(path, counted)
 	if err := convert(t, path, check); err != nil {
-		t.Fatalf("plain patterns: %v", err)
+		t.Fatalf("initial song: %v", err)
 	}
 	renders := counted.calls.Load()
 	if renders != 2 {
@@ -122,8 +124,9 @@ func TestCachedApprovalDoesNotSurvivePeerFileEdit(t *testing.T) {
 	if err := convert(t, path, check); err != nil || counted.calls.Load() != renders {
 		t.Fatalf("unchanged inputs: err=%v renders=%d, want %d", err, counted.calls.Load(), renders)
 	}
-	// Only the peer file changes: both patterns gain chance steps.
-	if err := os.WriteFile(filepath.Join(filepath.Dir(path), "patterns.cicada"), []byte(peerPatterns(chanceSteps)), 0o600); err != nil {
+	// Only the peer file changes. The two-bar silent ending cannot be
+	// represented by the remaining placement and must invalidate approval.
+	if err := os.WriteFile(filepath.Join(filepath.Dir(path), "patterns.cicada"), []byte(peer+"scene b { bass = off }\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	err := convert(t, path, check)

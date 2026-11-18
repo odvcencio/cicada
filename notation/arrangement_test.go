@@ -17,6 +17,24 @@ arrange {
 }
 `
 
+func TestPlacementPhaseValidation(t *testing.T) {
+	for _, tc := range []struct {
+		field string
+		valid bool
+		song  bool
+	}{{"", true, false}, {" phase=local", true, false}, {" phase=song", true, true}, {" phase=later", false, false}, {" phase=song phase=local", false, false}} {
+		src := bytes.Replace([]byte(arrangeFixture), []byte("length = 1/2"), []byte("length = 1/2"+tc.field), 1)
+		score, ds := Parse(src)
+		if parseHasErrors(ds) == tc.valid || tc.valid && score.Arrange.Placements[0].SongPhase() != tc.song {
+			t.Errorf("%q: %v", tc.field, ds)
+		}
+	}
+	src := bytes.Replace([]byte(arrangeFixture), []byte("marker chorus {"), []byte("marker chorus { phase=song"), 1)
+	if _, ds := Parse(src); !parseHasErrors(ds) {
+		t.Fatal("accepted a phase on a marker")
+	}
+}
+
 func TestArrangementExactSourceAndMusicalTime(t *testing.T) {
 	source := []byte(arrangeFixture)
 	s, ds := Parse(source)

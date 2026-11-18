@@ -68,7 +68,7 @@ func validateUnifiedFields(cfg *engine.Config) error {
 	var previous int64
 
 	for i, v := range cfg.Schedule {
-		if v.Tick < 0 || v.EndTick < v.Tick || v.EndTick > 1<<53-1 || i > 0 && v.Tick < previous || v.Kind > engine.ScheduleTempo {
+		if v.Tick < 0 || v.EndTick < v.Tick || v.EndTick > 1<<53-1 || i > 0 && v.Tick < previous || v.Kind > engine.ScheduleTempo || v.SongPhase && v.Kind != engine.SchedulePattern {
 			return imageError("invalid schedule image event")
 		}
 		previous = v.Tick

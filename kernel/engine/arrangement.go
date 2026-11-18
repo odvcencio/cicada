@@ -236,18 +236,28 @@ func (e *Engine) launchSceneTracks(index uint16, skipManualPatterns bool) {
 			p.eventCount, p.eventIndex = 0, 0
 			e.emit(cmd.Message{Kind: cmd.Switched, Track: uint8(track), A: 0xffff, Tick: e.transport.Tick()})
 		case SceneSlot:
-			e.fadeSceneTrack(track, false)
-			if p.active == int8(binding.Slot) {
-				if v := &e.voices[track]; v.preparedClip && v.prepared.SelectSlot(binding.Slot, 0, e.transport.Playing()) != nil {
-					e.fault(FaultPreparedVoice)
-					return
-				}
-				p.chainArmed = false
-				continue
+			e.selectSceneSlot(track, binding.Slot, true)
+			if e.faulted {
+				return
 			}
-			e.applyPatternCommand(cmd.Command{Op: cmd.OpSelectPattern, Track: uint8(track), Index: uint16(binding.Slot)})
 		}
 	}
+}
+
+// Scene-clock handoffs can continue a held note in the same slot, including
+// across the loop boundary. Switching from a placement-local origin reselects it.
+func (e *Engine) selectSceneSlot(track int, slot uint8, keepActive bool) {
+	e.fadeSceneTrack(track, false)
+	p := &e.patterns[track]
+	if keepActive && p.active == int8(slot) {
+		if v := &e.voices[track]; v.preparedClip && v.prepared.SelectSlot(slot, 0, e.transport.Playing()) != nil {
+			e.fault(FaultPreparedVoice)
+			return
+		}
+		p.chainArmed = false
+		return
+	}
+	e.applyPatternCommand(cmd.Command{Op: cmd.OpSelectPattern, Track: uint8(track), Index: uint16(slot)})
 }
 
 // CurrentSceneTick is the render-owned tick of the latest scene transition.

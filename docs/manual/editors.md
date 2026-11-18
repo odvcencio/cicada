@@ -200,10 +200,10 @@ Unknown fields and intent kinds are rejected. The arrange intents are
 `moveclip`, `resizeclip`, `splitclip`, `duplicateclip` and `deleteclip`, each
 with an `entity` such as `placement:intro`, plus `attick` or `lengthticks` where
 they need a time. `convertsongtoarrange` replaces a `song` block with an
-`arrange` block, but only after a deterministic render shows the same audio; it
-refuses otherwise and names the cause when it can (for example scene settings,
-a pattern that would restart out of phase, or chance steps that restart at a
-new placement). A dry run of that intent answers `convertible: true` with the diff,
+`arrange` block after a deterministic render confirms identical audio. Converted
+patterns use `phase = song` so a drum break can enter mid-pattern and seeded
+humanization and chance follow the same passes. Scene settings and a trailing
+silent section can still prevent conversion. A dry run answers `convertible: true` with the diff,
 or `convertible: false` with a `cause`. A revision conflict returns
 HTTP 409 with `error`, `revision`, `source`, and `playingRevision`.
 

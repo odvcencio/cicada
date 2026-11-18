@@ -3,11 +3,40 @@ package smf
 import (
 	"bytes"
 	"slices"
+	"strings"
 	"testing"
 
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
+
+func TestSongPhasePlacementMIDIAtBarEight(t *testing.T) {
+	const instruments = `cicada 2
+track skins drums {}
+pattern fold drums steps=32 {
+  humanize = 7
+  bd: x7... .... x7... .... .... x7... .... x7...
+  sd: .... x6... .... x6... x6... .... x6... ....
+}
+`
+	const scenes = "scene rest { skins=off }\nscene fill { skins=fold }\nsong { rest*7 fill*1 }"
+	const placed = "arrange { place break8 skins fold { at=@8.1.1 length=1bar phase=song } }"
+	export := func(arrangement string) []Note {
+		f, err := FromProject(placementMIDIProject(t, instruments+arrangement), 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return f.Tracks[1].Notes
+	}
+	original, converted := export(scenes), export(placed)
+	downbeat := slices.ContainsFunc(original, func(n Note) bool { return n.Tick == 26880 && n.Note == 38 })
+	if len(original) != 4 || !downbeat || !slices.Equal(original, converted) {
+		t.Fatalf("bar 8 hit timing or velocity differed: scenes %+v, placements %+v", original, converted)
+	}
+	if local := export(strings.Replace(placed, "phase=song", "", 1)); slices.Equal(original, local) {
+		t.Fatal("the placement-local break should start on the other half of the pattern")
+	}
+}
 
 func placementMIDIProject(t *testing.T, source string) *project.Project {
 	t.Helper()
