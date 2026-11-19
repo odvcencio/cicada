@@ -3,6 +3,8 @@
 #
 #   scripts/ci-studio-browser.sh run SHARD     run the segments of one shard
 #   scripts/ci-studio-browser.sh list SHARD    print the segments of one shard
+#   scripts/ci-studio-browser.sh run-portable [SEGMENT...]  run the portable segments, or the ones named
+#   scripts/ci-studio-browser.sh list-portable [SHARD]       print the portable segments, or those of one shard
 #   scripts/ci-studio-browser.sh check         fail unless every suite runs in exactly one shard
 #
 # "run" expects what the workflow's studio-build job produced: build/cicada,
@@ -39,6 +41,50 @@ shard_segments() {
 	4) echo "shutdown_proof live_write grid_sources shell direct_variation placement_variation editor performance_time startup scene_blocks tempo_clock export_stems chorus add_insert observation_clock note_editor engine_requests" ;;
 	*) echo "unknown shard: $1" >&2; return 1 ;;
 	esac
+}
+
+# Segments require an explicit portability decision.
+portable_segments=(
+	print_sources placements performance_pitch performance_sources split_placement code_recovery
+	pattern_machine macro_controls preset_save pattern_song precision
+	first_song silent_scene_create gestures portable_song sound_context continuity
+	modulation_source collaboration columns shared_capture vocals
+	vocal_levels dock_fit owner_session chrome_gpu_raster page_stall scene_launch_keys
+	pattern_grid tempo_editor recording_sources autoscroll arrangement_sources solo_clock
+	mixer_strips navigation sampler_waveform export_sources library_recording
+	recording_setup recording_levels meter_performance performance amp_automation shutdown_proof
+	live_write grid_sources shell direct_variation placement_variation editor performance_time
+	startup tempo_clock export_stems chorus add_insert observation_clock
+	engine_requests
+ )
+linux_only_segments=(
+	# Each entry failed on macOS (arm64, Chrome for Testing headless) on
+	# 17 November 2026 for the reason given.
+	# On macOS Studio takes MIDI from the native input, so a suite's synthetic
+	# Web MIDI port is never used: the status reads "MIDI ready", never "MIDI
+	# enabled", and the suite's wait for it times out.
+	portable_midi
+	midi_pickup
+	midi_binding
+	placement_commands
+	track_rename
+	scene_blocks
+	note_editor  # Presses Mod+U as Control+U; on macOS the shortcut is Command+U.
+	studio_edits # Two Code editor recovery tests fail on macOS; cause not found yet.
+)
+
+# list_portable [SHARD] prints the portable segments, or those of one shard,
+# in shard order.
+list_portable() {
+	local seg want
+	if [[ $# -eq 0 ]]; then
+		printf '%s\n' "${portable_segments[@]+"${portable_segments[@]}"}"
+		return
+	fi
+	want="$(shard_segments "$1")" || return 1
+	for seg in $want; do
+		case " ${portable_segments[*]+"${portable_segments[*]}"} " in *" $seg "*) printf '%s\n' "$seg" ;; esac
+	done
 }
 
 # segment_runs SEGMENT prints what the segment must record with run_suite, as
@@ -137,7 +183,7 @@ self="${BASH_SOURCE[0]}"
 check_shards() {
 	local root problems=0 seg shard name file run
 	root="$(cd -- "$(dirname -- "$self")/.." && pwd)"
-	local -A seg_shard=() suite_shard=() suite_segments=() declared=()
+	local -A seg_shard=() suite_shard=() suite_segments=() declared=() classification=()
 
 	complain() {
 		echo "FAIL: $*" >&2
@@ -161,6 +207,16 @@ check_shards() {
 		# A here-string, not a pipe: grep -q exits at its first match, and under
 		# pipefail the writer's broken pipe would read as "no function".
 		if ! grep -qx -- "$seg" <<<"$(printf '%s\n' "${defined[@]}")"; then complain "shard ${seg_shard[$seg]} names segment $seg, which has no function"; fi
+	done
+
+	# Exactly one classification for every defined segment, with no unknowns.
+	for seg in "${portable_segments[@]+"${portable_segments[@]}"}" "${linux_only_segments[@]+"${linux_only_segments[@]}"}"; do
+		if [[ -n "${classification[$seg]:-}" ]]; then complain "segment $seg is classified more than once"; fi
+		classification[$seg]=1
+		if [[ -z "${seg_shard[$seg]:-}" ]]; then complain "classified segment $seg is in no shard"; fi
+	done
+	for seg in "${defined[@]}"; do
+		if [[ -z "${classification[$seg]:-}" ]]; then complain "segment $seg has no portability classification"; fi
 	done
 
 	# Every suite in segment_runs sits in exactly one shard. A suite may run in
@@ -199,7 +255,7 @@ check_shards() {
 	for file in "$root"/workstation/browser/*.test.cjs; do
 		name="$(basename "$file" .test.cjs)"
 		skip=false
-		for listed in "${not_run_by_ci[@]}"; do
+		for listed in ${not_run_by_ci[@]+"${not_run_by_ci[@]}"}; do
 			if [[ "$listed" == "$name" ]]; then skip=true; fi
 		done
 		if [[ "$skip" == true ]]; then
@@ -209,7 +265,7 @@ check_shards() {
 		if [[ -z "${declared[$name]:-}" ]]; then complain "suite $name is in no shard (add it to a segment or to not_run_by_ci)"; fi
 	done
 	# Every declared name and every not-run name is a real file.
-	for name in "${!declared[@]}" "${not_run_by_ci[@]}"; do
+	for name in "${!declared[@]}" ${not_run_by_ci[@]+"${not_run_by_ci[@]}"}; do
 		if [[ ! -f "$root/workstation/browser/$name.test.cjs" ]]; then complain "no file workstation/browser/$name.test.cjs"; fi
 	done
 
@@ -231,6 +287,8 @@ segment_tmp=
 # Allocate one recorded /tmp directory for a segment's fixture generators.
 fixture_tmp() {
 	if [[ -z "$segment_tmp" && "${CICADA_STUDIO_DRY_RUN:-}" != 1 ]]; then
+		# Literally under /tmp on every platform: the suites refuse to edit a
+		# score that is not a disposable /tmp file (macOS has /tmp too).
 		segment_tmp="$(mktemp -d /tmp/cicada-browser-segment.XXXXXX)"
 	fi
 }
@@ -245,7 +303,7 @@ start_studio() {
 	mkdir -p "$browser_root/state"
 	CICADA_STATE_DIR="$browser_root/state" ./build/cicada studio "$1" --audio null --listen "127.0.0.1:$studio_port" > "$2" 2>&1 &
 	studio_pid=$!
-	export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
+	export CICADA_STUDIO_STARTUP_LOG="$PWD/$studio_log"
 	local _
 	for _ in $(seq 1 100); do
 		if curl --silent --fail "$CICADA_STUDIO_URL$health" > /dev/null; then return 0; fi
@@ -283,13 +341,13 @@ start_synthetic_studio() {
 	backend="$(node -e 'process.stdout.write(require(process.argv[1]).backend)' "$manifest")"
 	token="$(node -e 'process.stdout.write(require(process.argv[1]).token)' "$manifest")"
 	# The workstation exits when its stdin closes; a sleeper holds it open.
-	exec {synthetic_stdin}< <(sleep 3600)
+	exec 9< <(sleep 3600)
 	synthetic_pids+=($!)
 	studio_log="build/studio-$name-server.log"
-	CICADA_BACKEND_TOKEN="$token" ./build/cicada-workstation --backend "$backend" --listen "127.0.0.1:$studio_port" --state-dir "$browser_root/$name-state" --parent-watch <&"$synthetic_stdin" > "$studio_log" 2>&1 &
+	CICADA_BACKEND_TOKEN="$token" ./build/cicada-workstation --backend "$backend" --listen "127.0.0.1:$studio_port" --state-dir "$browser_root/$name-state" --parent-watch <&9 > "$studio_log" 2>&1 &
 	studio_pid=$!
-	exec {synthetic_stdin}<&-
-	export CICADA_STUDIO_STARTUP_LOG="/proc/$studio_pid/fd/1"
+	exec 9<&-
+	export CICADA_STUDIO_STARTUP_LOG="$PWD/$studio_log"
 	for _ in $(seq 1 100); do
 		if curl --silent --fail "$CICADA_STUDIO_URL/" > /dev/null; then return 0; fi
 		if ! kill -0 "$studio_pid" 2>/dev/null; then break; fi
@@ -302,8 +360,8 @@ start_synthetic_studio() {
 
 stop_synthetic_studio() {
 	local pid
-	for pid in "$studio_pid" "${synthetic_pids[@]}"; do kill "$pid" 2>/dev/null || true; done
-	for pid in "$studio_pid" "${synthetic_pids[@]}"; do wait "$pid" 2>/dev/null || true; done
+	for pid in "$studio_pid" ${synthetic_pids[@]+"${synthetic_pids[@]}"}; do kill "$pid" 2>/dev/null || true; done
+	for pid in "$studio_pid" ${synthetic_pids[@]+"${synthetic_pids[@]}"}; do wait "$pid" 2>/dev/null || true; done
 	synthetic_pids=()
 	studio_log=
 }
@@ -326,13 +384,20 @@ suite_timeout="${CICADA_STUDIO_SUITE_TIMEOUT:-420}"
 studio_log=
 
 run_suite() {
-	local name="$1" status=0 report
+	local name="$1" status=0 report suite_start=$SECONDS
 	echo "$name" >> "$ran_file"
 	shift
 	if [[ "${CICADA_STUDIO_DRY_RUN:-}" == 1 ]]; then return 0; fi
 	report="$(mktemp "${TMPDIR:-/tmp}/ci-studio-suite.XXXXXX")"
 	# pipefail (set above) makes $? the command's status, not tee's.
-	timeout -k 15 "$suite_timeout" "$@" | tee "$report" || status=$?
+	if command -v timeout >/dev/null 2>&1; then
+		timeout -k 15 "$suite_timeout" "$@" | tee "$report" || status=$?
+	elif command -v gtimeout >/dev/null 2>&1; then
+		gtimeout -k 15 "$suite_timeout" "$@" | tee "$report" || status=$?
+	else
+		python3 scripts/run-with-timeout.py --kill-after=15s "$suite_timeout" "$@" | tee "$report" || status=$?
+	fi
+	printf '%s\t%s\t%s\n' "$name" "$status" "$((SECONDS - suite_start))" >> "${CICADA_STUDIO_RESULTS:-/dev/null}"
 	if [[ "$status" == 124 || "$status" == 137 ]]; then
 		echo "FAIL: suite $name timed out after ${suite_timeout}s (exit $status)" >&2
 		echo "--- last 60 lines of the report of $name ---" >&2
@@ -663,7 +728,7 @@ seg_tempo_editor() { # 43 s
 	for tempo_layout in primary secondary; do
 		tempo_args=()
 		if [[ "$tempo_layout" == primary ]]; then tempo_args+=(--primary); fi
-		node workstation/browser/tempo-editor.test.cjs --write-fixture "$browser_root/tempo-$tempo_layout" "${tempo_args[@]}" > "build/studio-tempo-$tempo_layout-fixture.json"
+		node workstation/browser/tempo-editor.test.cjs --write-fixture "$browser_root/tempo-$tempo_layout" ${tempo_args[@]+"${tempo_args[@]}"} > "build/studio-tempo-$tempo_layout-fixture.json"
 		export CICADA_TEMPO_FIXTURE="$PWD/build/studio-tempo-$tempo_layout-fixture.json"
 		export CICADA_TEMPO_PROOF_DIR="$PWD/build/studio-tempo-$tempo_layout-proof"
 		for tempo_phase in edit reopen; do
@@ -803,7 +868,7 @@ seg_shared_capture() { # new; 35 s locally
 		capture_env=()
 		if [[ "$capture_kind" == channel ]]; then capture_env+=(CICADA_CAPTURE_KIND=channel); fi
 		start_studio "$browser_root/shared-capture-$capture_kind/continuity.cicada" "build/studio-shared-capture-$capture_kind-server.log" /
-		run_suite "shared-capture@$capture_kind" env CICADA_SHARED_CAPTURE_PROOF_DIR="$PWD/build/studio-shared-capture-proof" "${capture_env[@]}" make test-studio-shared-capture | tee "build/studio-shared-capture-$capture_kind-report.txt"
+		run_suite "shared-capture@$capture_kind" env CICADA_SHARED_CAPTURE_PROOF_DIR="$PWD/build/studio-shared-capture-proof" ${capture_env[@]+"${capture_env[@]}"} make test-studio-shared-capture | tee "build/studio-shared-capture-$capture_kind-report.txt"
 		stop_studio
 	done
 }
@@ -857,7 +922,7 @@ seg_pattern_song() { # 132 s
 	for song_layout in scene placement; do
 		song_args=()
 		if [[ "$song_layout" == placement ]]; then song_args+=(--placement); fi
-		node workstation/browser/pattern-song.test.cjs --write-fixture "$browser_root/pattern-song-$song_layout.cicada" "${song_args[@]}"
+		node workstation/browser/pattern-song.test.cjs --write-fixture "$browser_root/pattern-song-$song_layout.cicada" ${song_args[@]+"${song_args[@]}"}
 		for song_phase in journey reopen; do
 			start_studio "$browser_root/pattern-song-$song_layout.cicada" "build/studio-pattern-song-$song_layout-$song_phase-server.log"
 			CICADA_PATTERN_SONG_REOPEN=0
@@ -1020,7 +1085,7 @@ seg_print_sources() { # 162 s
 			print_args+=(--scene-tempo --sampler-bank)
 			print_phases=(producer automation-recall tempo-arrangement roundtrip reopen)
 		fi
-		CICADA_PRINT_TMPDIR="$segment_tmp" go -C workstation run ./browser/testdata/print-sources "${print_args[@]}" > "build/studio-print-$print_layout-fixture.json"
+		CICADA_PRINT_TMPDIR="$segment_tmp" go -C workstation run ./browser/testdata/print-sources ${print_args[@]+"${print_args[@]}"} > "build/studio-print-$print_layout-fixture.json"
 		export CICADA_PRINT_FIXTURE="$PWD/build/studio-print-$print_layout-fixture.json"
 		CICADA_PRODUCER_SCORE="$(node -e 'process.stdout.write(require(process.argv[1]).score)' "$CICADA_PRINT_FIXTURE")"
 		CICADA_PRODUCER_STORAGE="$(dirname "$CICADA_PRODUCER_SCORE")/session.json"
@@ -1033,7 +1098,7 @@ seg_print_sources() { # 162 s
 			CICADA_PRODUCER_ARRANGEMENT_SOURCE="$CICADA_SAMPLER_ARRANGEMENT_SOURCE"
 			export CICADA_SAMPLER_ARRANGEMENT_SOURCE CICADA_PRODUCER_ARRANGEMENT_SOURCE
 		fi
-		for print_phase in "${print_phases[@]}"; do
+		for print_phase in ${print_phases[@]+"${print_phases[@]}"}; do
 			start_studio "$CICADA_PRODUCER_SCORE" "build/studio-print-$print_layout-$print_phase-server.log"
 			export CICADA_PRODUCER_URL="$CICADA_STUDIO_URL" CICADA_PRINT_REOPEN=0
 			print_test="$print_phase"
@@ -1070,7 +1135,10 @@ seg_editor() { # 22 s
 
 run_shard() {
 	local shard="$1" seg run missing=0
-	segments="$(shard_segments "$shard")"
+	if [[ "$shard" == portable ]]; then segments="${portable_pick:-$(list_portable)}"; else segments="$(shard_segments "$shard")"; fi
+	for seg in $segments; do
+		if ! declare -F "seg_$seg" > /dev/null; then echo "no segment named $seg" >&2; return 2; fi
+	done
 
 	if [[ "${CICADA_STUDIO_DRY_RUN:-}" == 1 ]]; then
 		# No Studio, browser, network or toolchain: stub what segments call.
@@ -1091,13 +1159,15 @@ run_shard() {
 		mkdir -p "$browser_root" build
 		npm install --prefix "$browser_root" --no-save --ignore-scripts playwright@1.62.1
 		export CICADA_PLAYWRIGHT_MODULE="$browser_root/node_modules/playwright"
-		local tool_root="$RUNNER_TOOL_CACHE/chrome-for-testing/$CHROME_VERSION/linux64"
-		export CICADA_CHROME_PATH="$tool_root/chrome-headless-shell-linux64/chrome-headless-shell"
+		local platform=linux64 tool_root
+		if [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]]; then platform=mac-arm64; fi
+		tool_root="$RUNNER_TOOL_CACHE/chrome-for-testing/$CHROME_VERSION/$platform"
+		export CICADA_CHROME_PATH="$tool_root/chrome-headless-shell-$platform/chrome-headless-shell"
 		if [[ ! -x "$CICADA_CHROME_PATH" ]]; then
 			mkdir -p "$tool_root"
-			curl --fail --location --retry 3 --output "$browser_root/chrome.zip" "https://storage.googleapis.com/chrome-for-testing-public/$CHROME_VERSION/linux64/chrome-headless-shell-linux64.zip"
+			curl --fail --location --retry 3 --output "$browser_root/chrome.zip" "https://storage.googleapis.com/chrome-for-testing-public/$CHROME_VERSION/$platform/chrome-headless-shell-$platform.zip"
 			unzip -q "$browser_root/chrome.zip" -d "$browser_root"
-			mv "$browser_root/chrome-headless-shell-linux64" "$tool_root/"
+			mv "$browser_root/chrome-headless-shell-$platform" "$tool_root/"
 		fi
 		# A page that stops responding gets native stacks in its report. On a
 		# GitHub-hosted runner gdb is installed only then, inside that failure
@@ -1107,7 +1177,7 @@ run_shard() {
 		export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--require=$PWD/workstation/browser/owner-session.cjs"
 		studio_port="$(node -e 'const server=require("node:net").createServer(); server.listen(0,"127.0.0.1",()=>{process.stdout.write(String(server.address().port));server.close()})')"
 		export CICADA_STUDIO_URL="http://127.0.0.1:$studio_port"
-		trap 'kill "${studio_pid:-}" "${synthetic_pids[@]}" 2>/dev/null || true; wait "${studio_pid:-}" "${synthetic_pids[@]}" 2>/dev/null || true; cleanup_segment_tmp' EXIT
+		trap 'kill "${studio_pid:-}" ${synthetic_pids[@]+"${synthetic_pids[@]}"} 2>/dev/null || true; wait "${studio_pid:-}" ${synthetic_pids[@]+"${synthetic_pids[@]}"} 2>/dev/null || true; cleanup_segment_tmp; rm -rf -- "$browser_root"' EXIT
 	fi
 	mkdir -p "$browser_root" build
 	song_root="$browser_root/song"
@@ -1135,6 +1205,15 @@ run_shard() {
 }
 
 case "${1:-}" in
+run-portable) # run-portable [SEGMENT...]: every portable segment, or the ones named
+	shift
+	portable_pick="$*"
+	run_shard portable
+	;;
+list-portable) # list-portable [SHARD]
+	shift
+	list_portable "$@"
+	;;
 run) run_shard "${2:?shard number}" ;;
 list) shard_segments "${2:?shard number}" ;;
 check) check_shards ;;
@@ -1144,7 +1223,7 @@ run-suite) # run-suite NAME COMMAND...: one suite under the time limit (used by 
 	run_suite "$@"
 	;;
 *)
-	echo "usage: $0 run SHARD | list SHARD | check" >&2
+	echo "usage: $0 run SHARD | run-portable [SEGMENT...] | list SHARD | list-portable [SHARD] | check" >&2
 	exit 2
 	;;
 esac

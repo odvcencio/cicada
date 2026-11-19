@@ -50,6 +50,18 @@ $(cd "$scratch" && CICADA_STUDIO_DRY_RUN=1 CICADA_STUDIO_DRY_ROOT="$scratch/dry"
 
 run_check "the real script passes" pass "ran all"
 
+# Portable mode runs exactly its listed segments, in order, without Linux-only ones.
+portable="$(bash "$repo/scripts/ci-studio-browser.sh" list-portable)"
+output="$(cd "$scratch" && CICADA_STUDIO_DRY_RUN=1 CICADA_STUDIO_DRY_ROOT="$scratch/dry" bash scripts/ci-studio-browser.sh run-portable)"
+actual="$(printf '%s\n' "$output" | sed -n 's/^::group::segment //p')"
+if [[ "$actual" != "$portable" ]] || grep -qx 'note_editor' <<<"$portable" || ! grep -q 'ran all' <<<"$output"; then
+	echo "FAIL: portable listing and dry run differ" >&2
+	failures=$((failures + 1))
+fi
+rm -rf "$scratch/dry"
+run_check "unclassified segment" fail "segment shell has no portability classification" 's/ shell direct_variation / direct_variation /'
+run_check "segment in both classes" fail "segment shell is classified more than once" 's/^linux_only_segments=($/linux_only_segments=(\n\tshell/'
+
 # A segment dropped from every shard leaves its suite in no shard.
 run_check "segment in no shard" fail "segment shell is in no shard" 's/ shell / /'
 
